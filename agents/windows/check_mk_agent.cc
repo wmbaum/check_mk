@@ -45,21 +45,43 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <winsock2.h>
 #include <windows.h>
 #include <winbase.h>
 #include <winreg.h>    // performance counters from registry
 #include <tlhelp32.h>  // list of processes
-#include <winsock2.h>
 #include <stdarg.h>
 #include <time.h>
 #include <string.h>
-#include <strings.h>
+//#include <strings.h>
 #include <locale.h>
-#include <unistd.h>
+//#include <unistd.h>
 #include <sys/types.h>
-#include <dirent.h>
+//#include <dirent.h>
 #include <sys/types.h>
 #include <ctype.h> // isspace()
+
+//http://botsikas.blogspot.com/2011/12/strcasecmp-identifier-not-found-when.html
+
+#if defined(_WIN32) || defined(_WIN64)
+  #define snprintf _snprintf
+  #define vsnprintf _vsnprintf
+  #define strcasecmp _stricmp
+  #define strncasecmp _strnicmp
+#endif
+//#define uint=unsigned int
+
+#define popen _popen
+#define pclose _pclose
+#define getcwd _getcwd 
+#include "dirent.h"
+
+#include <direct.h>
+
+
+//http://www.two-sdg.demon.co.uk/curbralan/code/dirent/dirent.html
+
+
 
 
 //  .----------------------------------------------------------------------.
@@ -1336,7 +1358,7 @@ void output_fileinfos(SOCKET &out, const char *path)
     if (h != INVALID_HANDLE_VALUE) {
         // compute basename of path: search backwards for '\'
         const char *basename = "";
-        char *end = strrchr(path, '\\');
+        char *end = strdup(strrchr(path, '\\'));
         if (end) {
             *end = 0; 
             basename = path;
