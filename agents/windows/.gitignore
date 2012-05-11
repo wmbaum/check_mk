@@ -1,2 +1,10 @@
 check_mk.ini
 logstate.txt
+Debug/
+Release/
+x64/
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.pdb
