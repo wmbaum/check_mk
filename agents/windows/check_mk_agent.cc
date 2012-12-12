@@ -81,7 +81,8 @@
 
 
 #include <sys/stat.h> // stat()
-#include <sys/time.h> // gettimeofday()
+// #include <sys/time.h> // gettimeofday()
+#include "gettimeofday.h" // gettimeofday()
 
 //  .----------------------------------------------------------------------.
 //  |       ____            _                 _   _                        |
