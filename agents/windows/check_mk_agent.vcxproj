@@ -24,6 +24,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="dirent.h" />
+    <ClInclude Include="gettimeofday.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{8339E2DA-766A-4C5D-BBDC-5896B3455277}</ProjectGuid>

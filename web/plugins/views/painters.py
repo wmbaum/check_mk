@@ -103,6 +103,16 @@ multisite_painter_options["ts_date"] = {
               ("%m/%d",    "12/18") ]
 }
 
+# This helper function returns the value of the given custom var 
+def paint_custom_host_var(what, row):
+    custom_vars = dict(zip(row["host_custom_variable_names"],
+                           row["host_custom_variable_values"]))
+
+    if what in custom_vars:
+        return what, custom_vars[what]
+    return what,  "" 
+
+
 #    ___
 #   |_ _|___ ___  _ __  ___
 #    | |/ __/ _ \| '_ \/ __|
@@ -116,11 +126,15 @@ multisite_icons = []
 
 load_web_plugins('icons', globals())
 
+# Paint column with various icons. The icons use
+# a plugin based mechanism so it is possible to
+# register own icon "handlers".
+# what: either "host" or "service"
+# row: the data row of the host or service
 def paint_icons(what, row):
-    """
-    what: "host" or "service"
-    row:  The livestatus row of the current object
-    """
+    if not row["host_name"]:
+        return "", ""# Host probably does not exist
+
     custom_vars = dict(zip(row["host_custom_variable_names"],
                            row["host_custom_variable_values"]))
 
@@ -140,7 +154,6 @@ def paint_icons(what, row):
             output += 'Exception in icon plugin!<br />' + traceback.format_exc()
 
     return "icons", output
-
 
 def iconpainter_columns(what):
     cols = set(['site',
@@ -308,11 +321,11 @@ warn_marker    = '<b class="stmark state1">WARN</b>'
 crit_marker    = '<b class="stmark state2">CRIT</b>'
 unknown_marker = '<b class="stmark state3">UNKN</b>'
 
-def format_plugin_output(row, output):
+def format_plugin_output(output, row = None):
     output =  output.replace("(!)", warn_marker) \
               .replace("(!!)", crit_marker) \
               .replace("(?)", unknown_marker)
-    if "[running on" in output:
+    if row and "[running on" in output:
         a = output.index("[running on")
         e = output.index("]", a)
         hosts = output[a+12:e].replace(" ","").split(",")
@@ -326,7 +339,7 @@ multisite_painters["svc_plugin_output"] = {
     "title"   : _("Output of check plugin"),
     "short"   : _("Status detail"),
     "columns" : ["service_plugin_output"],
-    "paint"   : lambda row: ("", format_plugin_output(row, row["service_plugin_output"])),
+    "paint"   : lambda row: ("", format_plugin_output(row["service_plugin_output"], row)),
     "sorter"  : 'svcoutput',
 }
 multisite_painters["svc_long_plugin_output"] = {
@@ -445,6 +458,13 @@ multisite_painters["svc_check_command"] = {
     "short"   : _("Check command"),
     "columns" : ["service_check_command"],
     "paint"   : lambda row: (None, row["service_check_command"]),
+}
+
+multisite_painters["svc_check_command_expanded"] = {
+    "title"   : _("Service check command expanded"),
+    "short"   : _("Check command expanded"),
+    "columns" : ["service_check_command_expanded"],
+    "paint"   : lambda row: (None, row["service_check_command_expanded"]),
 }
 
 multisite_painters["svc_contacts"] = {
@@ -797,6 +817,13 @@ multisite_painters["host_check_command"] = {
     "paint"   : lambda row: (None, row["host_check_command"]),
 }
 
+multisite_painters["host_check_command_expanded"] = {
+    "title"   : _("Host check command expanded"),
+    "short"   : _("Check command expanded"),
+    "columns" : ["host_check_command_expanded"],
+    "paint"   : lambda row: (None, row["host_check_command_expanded"]), 
+}
+
 multisite_painters["host_state_age"] = {
     "title"   : _("The age of the current host state"),
     "short"   : _("Age"),
@@ -966,10 +993,13 @@ def paint_host_with_state(row):
         state = row["host_state"]
     else:
         state = "p"
-    return "state hstate hstate%s" % state, row["host_name"]
+    if state != 0:
+        return "state hstate hstate%s" % state, row["host_name"]
+    else:
+        return "", row["host_name"]
 
 multisite_painters["host_with_state"] = {
-    "title"   : _("Hostname colored with state"),
+    "title"   : _("Hostname, marked red if down"),
     "short"   : _("Host"),
     "columns" : ["site", "host_name", "host_state", "host_has_been_checked" ],
     "paint"   : paint_host_with_state,
@@ -1486,21 +1516,21 @@ multisite_painters["downtime_fixed"] = {
     "title"   : _("Downtime is fixed"),
     "short"   : _("Fixed"),
     "columns" : ["downtime_fixed"],
-    "paint"   : lambda row: (None, row["downtime_fixed"] == 0 and "flexible" or "fixed"),
+    "paint"   : lambda row: (None, row["downtime_fixed"] == 0 and _("flexible") or _("fixed")),
 }
 
 multisite_painters["downtime_what"] = {
     "title"   : _("Downtime type (host/service)"),
     "short"   : _("Type"),
     "columns" : ["is_service"],
-    "paint"   : lambda row: (None, row["is_service"] and "Service" or "Host"),
+    "paint"   : lambda row: (None, row["is_service"] and _("Service") or _("Host")),
 }
 
 multisite_painters["downtime_type"] = {
     "title"   : _("Downtime active or pending"),
     "short"   : _("act/pend"),
     "columns" : ["downtime_type"],
-    "paint"   : lambda row: (None, row["downtime_type"] == 0 and "active" or "pending"),
+    "paint"   : lambda row: (None, row["downtime_type"] == 0 and _("active") or _("pending")),
 }
 
 multisite_painters["downtime_entry_time"] = {
@@ -1557,7 +1587,7 @@ multisite_painters["log_message"] = {
 def paint_log_plugin_output(row):
     output = row["log_plugin_output"]
     if output:
-        return "", format_plugin_output(row, output)
+        return "", format_plugin_output(output, row)
     else:
         log_type = row["log_type"]
         lst = row["log_state_type"]

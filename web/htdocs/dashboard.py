@@ -60,7 +60,6 @@ def load_plugins():
     global loaded_with_language
     if loaded_with_language == current_language:
         return
-    loaded_with_language = current_language
 
     # Permissions are currently not being defined. That will be the
     # case as soon as dashboards become editable.
@@ -69,6 +68,11 @@ def load_plugins():
     # Load plugins for dashboards. Currently these files
     # just may add custom dashboards by adding to builtin_dashboards.
     load_web_plugins("dashboard", globals())
+
+    # This must be set after plugin loading to make broken plugins raise
+    # exceptions all the time and not only the first time (when the plugins
+    # are loaded).
+    loaded_with_language = current_language
 
     # In future there will be user editable dashboards just like
     # views which will be loaded. Currently we only use the builtin
@@ -108,18 +112,31 @@ def render_dashboard(name):
     # sensitive.
 
     wato_folder = html.var("wato_folder")
-    if not wato_folder: # ignore wato folder in case of root folder
-        wato_folder = None
+
+    # When an empty wato_folder attribute is given a user really wants
+    # to see only the hosts contained in the root folder. So don't ignore
+    # the root folder anymore.
+    #if not wato_folder: # ignore wato folder in case of root folder
+    #    wato_folder = None
 
     # The title of the dashboard needs to be prefixed with the WATO path,
     # in order to make it clear to the user, that he is seeing only partial
     # data.
     title = board["title"]
-    if wato_folder:
+
+    global header_height
+    if title is None:
+        # If the title is none, hide the header line
+        html.set_render_headfoot(False)
+        header_height = 0
+        title = ''
+
+    elif wato_folder is not None:
         title = wato.api.get_folder_title(wato_folder) + " - " + title
+
     html.header(title, javascripts=["dashboard"], stylesheets=["pages", "dashboard", "status", "views"])
 
-    html.write("<div id=dashboard>\n") # Container of all dashlets
+    html.write("<div id=dashboard class=\"dashboard_%s\">\n" % name) # Container of all dashlets
 
     refresh_dashlets = [] # Dashlets with automatic refresh, for Javascript
     for nr, dashlet in enumerate(board["dashlets"]):
@@ -154,6 +171,7 @@ var refresh_dashlets = %r;
 var dashboard_name = '%s';
 set_dashboard_size();
 window.onresize = function () { set_dashboard_size(); }
+window.onload = function () { set_dashboard_size(); }
 dashboard_scheduler(1);
     """ % (header_height, screen_margin, title_height, dashlet_padding, 
            corner_overlap, refresh_dashlets, name))
@@ -187,6 +205,10 @@ def render_dashlet(nr, dashlet, wato_folder):
         bg = ""
     html.write('<div class="dashlet_inner%s" id="dashlet_inner_%d">' % (bg, nr))
 
+    # Optional way to render a dynamic iframe URL
+    if "iframefunc" in dashlet:
+        dashlet["iframe"] = dashlet["iframefunc"]()
+
     # The method "view" is a shortcut for "iframe" with a certain url
     if "view" in dashlet:
         dashlet["iframe"] = "view.py?view_name=%s&display_options=HRSIXL&_body_class=dashlet" % dashlet["view"]
@@ -196,8 +218,11 @@ def render_dashlet(nr, dashlet, wato_folder):
     if "content" in dashlet: # fixed content
         html.write(dashlet["content"])
     elif "iframe" in dashlet: # fixed content containing iframe
+        # Fix of iPad >:-P
+        html.write('<div style="width: 100%; height: 100%; -webkit-overflow-scrolling:touch; overflow: auto;">')
         html.write('<iframe allowTransparency="true" frameborder="0" width="100%%" height="100%%" src="%s"></iframe>' %
            add_wato_folder_to_url(dashlet["iframe"], wato_folder))
+        html.write('</div>')
     html.write("</div></div>\n")
 
 # Here comes the brain stuff: An intelligent liquid layout algorithm.
@@ -509,6 +534,16 @@ def render_statistics(pie_id, what, table, filter):
         # filter += "Filter: host_state = 0"
         filter += "Filter: host_filename ~ ^/wato/%s/\n" % wato_folder.replace("\n", "")
 
+    # Is the query restricted to a host contact group?
+    host_contact_group = html.var("host_contact_group")
+    if host_contact_group:
+        filter += "Filter: host_contact_groups >= %s\n" % host_contact_group.replace("\n", "")
+
+    # Is the query restricted to a service contact group?
+    service_contact_group = html.var("service_contact_group")
+    if service_contact_group:
+        filter += "Filter: service_contact_groups >= %s\n" % service_contact_group.replace("\n", "")
+
     query = "GET %s\n" % what
     for entry in table:
         query += entry[3]
@@ -526,11 +561,15 @@ def render_statistics(pie_id, what, table, filter):
         len(pies) > 1 and " narrow" or ""))
     table_entries = pies
     while len(table_entries) < 6:
-        table_entries = table_entries + [ (("", "#fff", "", ""), "&nbsp;") ]
+        table_entries = table_entries + [ (("", "#95BBCD", "", ""), "&nbsp;") ]
     table_entries.append(((_("Total"), "", "all%s" % what, ""), total))
     for (name, color, viewurl, query), count in table_entries:
         url = "view.py?view_name=" + viewurl + "&filled_in=filter&search=1&wato_folder=" \
               + htmllib.urlencode(html.var("wato_folder", ""))
+        if host_contact_group:
+            url += '&opthost_contactgroup=' + host_contact_group
+        if service_contact_group:
+            url += '&optservice_contactgroup=' + service_contact_group
         html.write('<tr><th><a href="%s">%s</a></th>' % (url, name))
         style = ''
         if color:
@@ -543,29 +582,36 @@ def render_statistics(pie_id, what, table, filter):
     r = 0.0
     pie_parts = []
     if total > 0:
-        # Counter number of non-zero classes
+        # Count number of non-empty classes
         num_nonzero = 0
         for info, value in pies:
             if value > 0:
                 num_nonzero += 1
 
-        # Each non-zero class gets at least a view pixels of visible thickness
-        separator = 0.05 # 5% of radius
-        rest_radius = 1 - num_nonzero * separator
+        # Each non-zero class gets at least a view pixels of visible thickness.
+        # We reserve that space right now. All computations are done in percent
+        # of the radius.
+        separator = 0.02                                    # 3% of radius
+        remaining_separatorspace = num_nonzero * separator  # space for separators
+        remaining_radius = 1 - remaining_separatorspace     # remaining space
+        remaining_part = 1.0 # keep track of remaining part, 1.0 = 100%
 
-        # Make sure, that each class that is not zero has at least a certain
-        # amount so that it will be visible
-        totalpart = 1
-        # Loop over classes, begin with red (most inner ball)
-        sum_separator = num_nonzero * separator
+        # Loop over classes, begin with most outer sphere. Inner spheres show
+        # worse states and appear larger to the user (which is the reason we 
+        # are doing all this stuff in the first place)
         for (name, color, viewurl, q), value in pies[::1]:
-            part = float(value) / total
-            if value > 0 and totalpart > 0:
-                radius = sum_separator + rest_radius * totalpart ** (1/3.0)
+            if value > 0 and remaining_part > 0: # skip empty classes
+
+                # compute radius of this sphere *including all inner spheres!* The first
+                # sphere always gets a radius of 1.0, of course.
+                radius = remaining_separatorspace + remaining_radius * (remaining_part ** (1/3.0))
                 pie_parts.append('chart_pie("%s", %f, %f, %r);' % (pie_id, pie_right_aspect, radius, color))
                 pie_parts.append('chart_pie("%s", -%f, %f, %r);' % (pie_id, pie_left_aspect, radius, color))
-                totalpart -= part
-                sum_separator -= separator
+
+                # compute relative part of this class
+                part = float(value) / total # ranges from 0 to 1
+                remaining_part           -= part
+                remaining_separatorspace -= separator
 
 
     html.write("</div>")
@@ -597,14 +643,17 @@ if (has_canvas_support()) {
 """ % { "x" : pie_diameter / 2, "y": pie_diameter/2, "d" : pie_diameter, 'p': '\n'.join(pie_parts) })
 
 def dashlet_pnpgraph():
-    render_pnpgraph(html.var("site"), html.var("host"), html.var("service"), int(html.var("source", 0)))
+    render_pnpgraph(
+        html.var("site"), html.var("host"), html.var("service"),
+        int(html.var("source", 0)), int(html.var("view", 0)),
+    )
 
 def dashlet_nodata():
     html.write("<div class=nograph><div class=msg>")
     html.write(html.var("message", _("No data available.")))
     html.write("</div></div>")
 
-def render_pnpgraph(site, host, service=None, source=0):
+def render_pnpgraph(site, host, service = None, source = 0, view = 0):
     if not host:
         html.message("Invalid URL to this dashlet. Missing <tt>host</tt>")
         return;
@@ -616,11 +665,11 @@ def render_pnpgraph(site, host, service=None, source=0):
     else:
         base_url = html.site_status[site]["site"]["url_prefix"]
     base_url += "pnp4nagios/index.php/"
-    var_part = "?host=%s&srv=%s&view=0&source=%d&theme=multisite&_t=%d" % \
-            (pnp_cleanup(host), pnp_cleanup(service), source, int(time.time()))
+    var_part = "?host=%s&srv=%s&view=0&source=%d&view=%d&theme=multisite&_t=%d" % \
+            (pnp_cleanup(host), pnp_cleanup(service), source, view, int(time.time()))
 
     pnp_url = base_url + "graph" + var_part
     img_url = base_url + "image" + var_part
     html.write('<a href="%s"><img border=0 src="%s"></a>' % (pnp_url, img_url))
 
-load_plugins()
+# load_plugins()

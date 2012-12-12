@@ -34,25 +34,64 @@ import config, wato
 #   |                        \_/\_/_/   \_\_| \___/                        |
 #   |                                                                      |
 #   +----------------------------------------------------------------------+
-def render_wato():
+def render_wato(mini):
     if not config.wato_enabled:
         html.write(_("WATO is disabled in <tt>multisite.mk</tt>."))
     elif not config.may("wato.use"):
         html.write(_("You are not allowed to use Check_MK's web configuration GUI."))
         return False
 
-    iconlink(_("Main Menu"), "wato.py", "home")
+    if mini:
+        html.icon_button("wato.py", _("Main Menu"), "home", target="main")
+    else:
+        iconlink(_("Main Menu"), "wato.py", "home")
     for mode, title, icon, permission, help in wato.modules:
-        if config.may("wato." + permission) or config.may("wato.seeall"):
-            iconlink(title, "wato.py?mode=%s" % mode, icon)
+        if "." not in permission:
+            permission = "wato." + permission
+        if config.may(permission) or config.may("wato.seeall"):
+            url = "wato.py?mode=%s" % mode
+            if mini:
+                html.icon_button(url, title, icon, target="main")
+            else:
+                iconlink(title, url, icon)
+
+    num_pending = wato.api.num_pending_changes()
+    if num_pending:
+        footnotelinks([(_("%d changes") % num_pending, "wato.py?mode=changelog")])
 
 
 sidebar_snapins["admin"] = {
     "title" : _("WATO &middot; Configuration"),
     "description" : _("Direct access to WATO - the web administration GUI of Check_MK"),
-    "author" : "Mathias Kettner",
-    "render" : render_wato,
+    "render" : lambda: render_wato(False),
+    "refresh" : 60, # refresh pending changes, if other user modifies something
     "allowed" : [ "admin", "user" ],
+}
+
+sidebar_snapins["admin_mini"] = {
+    "title" : _("WATO &middot; Quickaccess"),
+    "description" : _("Access to WATO modules with only icons (saves space)"),
+    "render" : lambda: render_wato(True),
+    "refresh" : 60, # refresh pending changes, if other user modifies something
+    "allowed" : [ "admin", "user" ],
+    "styles": """
+#snapin_admin_mini {
+    padding-top: 6px;
+}
+#snapin_admin_mini img { 
+    margin-right: 3.9px; 
+    margin-bottom: 4px;
+    width: 18px; 
+    height: 18px;
+    position: relative;
+    left: 3px;
+    padding: 0;
+}
+
+#snapin_admin_mini div.footnotelink { 
+    margin-top: -14px;
+}
+""",
 }
 
 
@@ -75,7 +114,6 @@ sidebar_snapins["wato"] = {
     "title" : _("Hosts"),
     "description" : _("A foldable tree showing all your WATO folders and files - "
                       "allowing you to navigate in the tree while using views or being in WATO"),
-    "author" : "Mathias Kettner",
     "render" : render_wato_folders,
     "allowed" : [ "admin", "user", "guest" ],
 }
@@ -188,9 +226,6 @@ def render_wato_foldertree():
     if user_folders:
         render_tree_folder(user_folders[''])
 
-def ajax_set_foldertree():
-    config.save_user_file("foldertree", (html.var('topic'), html.var('target')))
-
 def render_tree_folder(f):
     subfolders = f.get(".folders", {})
     is_leaf = len(subfolders) == 0
@@ -217,7 +252,6 @@ def render_tree_folder(f):
 sidebar_snapins['wato_foldertree'] = {
     'title'       : _('Foldertree'),
     'description' : _('This snapin shows the folders defined in WATO. It can be used to open views filtered by the WATO folder.'),
-    'author'      : 'Lars Michelsen',
     'render'      : render_wato_foldertree,
     'allowed'     : [ 'admin', 'user', 'guest' ],
     'styles'      : """

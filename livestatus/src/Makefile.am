@@ -22,14 +22,14 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
-bin_PROGRAMS = unixcat
+bin_PROGRAMS = unixcat livecheck
 unixcat_SOURCES = unixcat.c
 unixcat_LDADD = -lpthread
 
-pkglib_PROGRAMS = livecheck
 livecheck_SOURCES = livecheck.c strutil.cc check_icmp.c
 
-pkglib_LIBRARIES = livestatus.so
+pkglib_LIBRARIES = livestatus.so 
+
 livestatus_so_SOURCES = \
 	AndingFilter.cc ClientQueue.cc Column.cc ColumnsColumn.cc CustomVarsExplicitColumn.cc \
 	ContactsColumn.cc CustomVarsColumn.cc CustomVarsFilter.cc DoubleColumn.cc \
@@ -45,16 +45,18 @@ livestatus_so_SOURCES = \
 	StringColumn.cc StringColumnFilter.cc strutil.cc Table.cc TableColumns.cc \
 	TableCommands.cc TableContacts.cc TableDownComm.cc TableHostgroups.cc \
 	TableHosts.cc TableServicegroups.cc TableServices.cc TableStatus.cc  \
-	LogEntry.cc Logfile.cc TableLog.cc TableTimeperiods.cc TableContactgroups.cc \
+	LogEntry.cc LogCache.cc Logfile.cc TableStateHistory.cc TableLog.cc TableTimeperiods.cc TableContactgroups.cc \
 	ContactgroupsMemberColumn.cc OffsetStringMacroColumn.cc OffsetStringServiceMacroColumn.cc \
 	OffsetStringHostMacroColumn.cc StatsColumn.cc IntAggregator.cc CountAggregator.cc \
 	DoubleAggregator.cc AttributelistColumn.cc AttributelistFilter.cc \
 	global_counters.c  module.c  logger.c waittriggers.c TimeperiodsCache.cc pnp4nagios.cc \
 	ContactgroupsColumn.cc opids.cc auth.cc livechecking.c
 
+livecheck$(EXEEXT): livecheck.c strutil.cc check_icmp.c 
 if HAVE_DIET
-livecheck: livecheck.c strutil.cc check_icmp.c 
-	diet -v $(CC) $(CFLAGS) $(LDFLAGS) -I.. -s -o $@ $^
+	diet -v $(CC) -Wno-deprecated-declarations $(CFLAGS) $(LDFLAGS) -I.. -s -o $@ $^
+else
+	$(CC) -x c -Wno-deprecated-declarations $(CFLAGS) $(LDFLAGS) -I.. -s -o $@ $^
 endif
 
 livestatus_so_CXXFLAGS = -I$(top_srcdir)/nagios -fPIC
@@ -70,6 +72,8 @@ install-data-local:
 	$(mkinstalldirs) $(DESTDIR)$(pkglibdir)
 	$(INSTALL_PROGRAM) livestatus.o $(DESTDIR)$(pkglibdir)
 	rm -f $(DESTDIR)$(pkglibdir)/livestatus.so
+	$(INSTALL_PROGRAM) livecheck $(DESTDIR)$(pkglibdir)
+	rm -f $(DESTDIR)$(bindir)/livecheck
 
 clean-local:
 	rm -f *~

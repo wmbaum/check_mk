@@ -54,6 +54,12 @@ function wato_check_all(css_class) {
 function wato_toggle_attribute(oCheckbox, attrname) {
     var oEntry =   document.getElementById("attr_entry_" + attrname);
     var oDefault = document.getElementById("attr_default_" + attrname);
+
+    // Permanent invisible attributes do 
+    // not have attr_entry / attr_default
+    if( !oEntry ){
+       return;
+    }
     if (oCheckbox.checked) {
         oEntry.style.display = "";
         oDefault.style.display = "none";
@@ -75,7 +81,7 @@ function wato_fix_visibility() {
 
     var oHostTags = document.getElementById("wato_host_tags");
     // Skip this function when no tags defined
-    if(!oHostTags)
+    if (!oHostTags)
         return;
 
     var oTable = oHostTags.childNodes[0]; /* tbody */
@@ -83,9 +89,14 @@ function wato_fix_visibility() {
     for (var i in oTable.childNodes) {
         var oTr = oTable.childNodes[i];
         if (oTr.tagName == 'TR') {
+            var oTdLegend = oTr.childNodes[0];
+            if (oTdLegend.className != "legend") {
+                continue;
+            }
+            var oTdContent = oTr.childNodes[1];
             /* If the Checkbox is unchecked try to get a value from the inherited_tags */
-            var oCheckbox = oTr.childNodes[1].childNodes[0];
-            if( oCheckbox.checked == false ){
+            var oCheckbox = oTdLegend.childNodes[1].childNodes[0];
+            if (oCheckbox.checked == false ){
                 var attrname = oCheckbox.parentNode.parentNode.id;
                 if(attrname in inherited_tags && inherited_tags[attrname] !== null){
                     currentTags = currentTags.concat(inherited_tags[attrname].split("|"));
@@ -93,7 +104,7 @@ function wato_fix_visibility() {
             } else {
                 /* Find the <select>/<checkbox> object in this tr */
                 /*                td.content    div           select/checkbox */
-                var oElement = oTr.childNodes[2].childNodes[0].childNodes[0];
+                var oElement = oTdContent.childNodes[0].childNodes[0];
                 if( oElement.type == 'checkbox' && oElement.checked ){ // <checkbox>
                     currentTags = currentTags.concat(oElement.getAttribute('tags').split("|"));
                 } else if(oElement.tagName == 'SELECT') { // <select>
@@ -107,12 +118,20 @@ function wato_fix_visibility() {
     /* Now loop over all attributes that have conditions. Those are
        stored in the global variable wato_depends_on_tags, which is filled
        during the creation of the web page. */
+    
     for (var i in wato_check_attributes) {
-        var attrname = wato_check_attributes[i]
+        var attrname = wato_check_attributes[i];
         /* Now comes the tricky part: decide whether that attribute should
            be visible or not: */
         var display = "";
-        if(attrname in wato_depends_on_roles){
+
+        // Always invisible
+        if( hide_attributes.indexOf(attrname) > -1 ){
+            display = "none";
+        }
+
+        // Visibility depends on roles 
+        if( display == "" && attrname in wato_depends_on_roles){
             for (var i in wato_depends_on_roles[attrname]) {
                 var role = wato_depends_on_roles[attrname][i];
                 var negate = role[0] == '!';
@@ -125,6 +144,7 @@ function wato_fix_visibility() {
             }
         }
         
+        // Visibility depends on tags 
         if( display == "" && attrname in wato_depends_on_tags){
             for (var i in wato_depends_on_tags[attrname]) {
                 var tag = wato_depends_on_tags[attrname][i];
@@ -137,6 +157,7 @@ function wato_fix_visibility() {
                 }
             }
         }
+
 
         var oTr = document.getElementById("attr_" + attrname);
         if(oTr) {
@@ -155,6 +176,11 @@ function wato_fix_visibility() {
                 oTr.appendChild(oAttrDisp);
             }
             if ( display == "none" ) {
+                // Uncheck checkboxes of hidden fields
+                var chkbox = oAttrDisp.parentNode.childNodes[0].childNodes[1].childNodes[0];
+                chkbox.checked = false;
+                wato_toggle_attribute(chkbox, attrname);
+
                 oAttrDisp.value = "0";
             } else {
                 oAttrDisp.value = "1";
@@ -162,7 +188,7 @@ function wato_fix_visibility() {
             oAttrDisp = null;
 
             // There is at least one item in this topic -> show it
-            var topic = oTr.parentNode.parentNode.parentNode.id.substr(21);
+            var topic = oTr.parentNode.childNodes[0].textContent;
             if( display == "" ){
                 var index = hide_topics.indexOf(topic);
                 if( index != -1 )
@@ -170,14 +196,22 @@ function wato_fix_visibility() {
             }
         }
     }
-    for (var item in volatile_topics){
-        var name = volatile_topics[item];
-        var oTr = document.getElementById("topic_" + name);
-        if(oTr) {
-            if(hide_topics.indexOf(name) > -1 )
-                oTr.style.display = "none";
-            else
-                oTr.style.display = "";
+
+    // FIXME: use generic identifier for each form
+    var available_forms = [ "form_edithost", "form_editfolder", "form_bulkedit" ];
+    for ( var try_form in available_forms ){
+            var my_form = document.getElementById(available_forms[try_form]);
+            if (my_form != null) {
+            for (var child in my_form.childNodes){
+                oTr = my_form.childNodes[child];
+                if (oTr.className == "nform"){
+                    if( hide_topics.indexOf(oTr.childNodes[0].childNodes[0].textContent) > -1 )
+                        oTr.style.display = "none";
+                    else
+                        oTr.style.display = "";
+                }
+            }
+            break;
         }
     }
 }
@@ -206,6 +240,8 @@ var progress_found = 0;
 // The fields which signal that something has been successfully processed.
 // this is used together with progress_found to find out the correct redirect url
 var progress_success_stats = [];
+// The fields which signal that something has failed
+var progress_fail_stats = [];
 // The URL to redirect to after finish/abort button pressed
 var progress_end_url   = '';
 // The URL to redirect to after finish/abort button pressed when nothing found
@@ -219,23 +255,46 @@ var progress_paused  = false;
 // Is set to true when the user hit aborted/finished
 var progress_ended   = false;
 
-function progress_handle_response(data, code) {
+function progress_handle_error(data, code) {
+    // code contains no parsable response but the http code
+    progress_handle_response(data, '', code);
+}
+
+function progress_handle_response(data, code, http_code) {
     var mode = data[0];
     var item = data[1];
 
     var header = null;
-    try {
-        var header = eval(code.split("\n", 1)[0]);
-        if (header === null)
-	    alert('Header is null!');
-    } catch(err) {
-        alert('Invalid response: ' + code);
-    }
+    var body = null;
+    if(http_code !== undefined) {
+        // If the request failed report the item as failed
+        // - Report failed state
+        // - Update the total count (item 0 = 1)
+        // - Update the failed stats
+        header = [ 'failed', 1 ];
+        for(var i = 1; i <= Math.max.apply(Math, progress_fail_stats); i++) {
+            if(progress_fail_stats.indexOf(i) !== -1) {
+                header.push(1);
+            } else {
+                header.push(0);
+            }
+        }
+        body = 'HTTP-Request failed (' + http_code + ', ' + data + ')'
+    } else {
+        // Regular response processing
+        try {
+            var header = eval(code.split("\n", 1)[0]);
+            if (header === null)
+                alert('Header is null!');
+        } catch(err) {
+            alert('Invalid response: ' + code);
+        }
 
-    // Extract the body from the response
-    var body = code.split('\n');
-    body.splice(0,1);
-    body = body.join('');
+        // Extract the body from the response
+        var body = code.split('\n');
+        body.splice(0,1);
+        body = body.join('');
+    }
 
     // Process statistics
     update_progress_stats(header);
@@ -370,7 +429,7 @@ function progress_clean_log() {
     log = null;
 }
 
-function progress_scheduler(mode, url_prefix, timeout, items, end_url, success_stats, term_url, finished_txt) {
+function progress_scheduler(mode, url_prefix, timeout, items, end_url, success_stats, fail_stats, term_url, finished_txt) {
     // Initialize
     if (progress_items === null) {
         progress_items         = items;
@@ -379,6 +438,7 @@ function progress_scheduler(mode, url_prefix, timeout, items, end_url, success_s
         progress_end_url       = end_url;
         progress_term_url      = term_url;
         progress_success_stats = success_stats;
+        progress_fail_stats    = fail_stats;
         progress_fin_txt       = finished_txt;
         progress_mode          = mode;
         progress_url           = url_prefix;
@@ -396,8 +456,11 @@ function progress_scheduler(mode, url_prefix, timeout, items, end_url, success_s
             progress_running = true;
             // Remove leading pipe signs (when having no folder set)
             update_progress_title(progress_items[0].replace(/^\|*/g, ''));
-            get_url(url_prefix + '&_transid=-1&_item=' +
-                   escape(progress_items[0]), progress_handle_response, [ mode, progress_items[0] ]);
+            get_url(url_prefix + '&_transid=-1&_item=' + escape(progress_items[0]),
+                progress_handle_response,    // regular handler (http code 200)
+                [ mode, progress_items[0] ], // data to hand over to handlers
+                progress_handle_error        // error handler
+            );
         } else {
             progress_finished();
             return;
@@ -414,6 +477,56 @@ function update_bulk_moveto(val) {
             if(fields[i].options[a].value == val)
                 fields[i].options[a].selected = true;
     fields = null;
+}
+
+//   .----------------------------------------------------------------------.
+//   |              _        _   _            _   _                         |
+//   |             / \   ___| |_(_)_   ____ _| |_(_) ___  _ __              |
+//   |            / _ \ / __| __| \ \ / / _` | __| |/ _ \| '_ \             |
+//   |           / ___ \ (__| |_| |\ V / (_| | |_| | (_) | | | |            |
+//   |          /_/   \_\___|\__|_| \_/ \__,_|\__|_|\___/|_| |_|            |
+//   |                                                                      |
+//   +----------------------------------------------------------------------+
+
+function wato_do_activation(est) {
+    var siteid = 'local';
+
+    // Hide the activate changes button
+    var button = document.getElementById('act_changes_button');
+    if(button) {
+        button.style.display = 'none';
+        button = null;
+    }
+
+    get_url("wato_ajax_activation.py",
+            wato_activation_result, siteid);
+    replication_progress[siteid] = 20; // 10 of 10 10ths
+    setTimeout("replication_step('"+siteid+"',"+est+");", est/10);
+}
+
+function wato_activation_result(siteid, code) {
+    replication_progress[siteid] = 0;
+    var oState = document.getElementById("repstate_" + siteid);
+    var oMsg   = document.getElementById("repmsg_" + siteid);
+    if (code.substr(0, 3) == "OK:") {
+        oState.innerHTML = "<div class='repprogress ok' style='width: 160px;'>OK</div>";
+        oMsg.innerHTML = code.substr(3);
+
+        // Reload page after 2 secs
+        setTimeout(wato_replication_finish, 2000);
+    } else {
+        oState.innerHTML = '';
+        oMsg.innerHTML = code;
+        
+        // Show the activate changes button again
+        var button = document.getElementById('act_changes_button');
+        if(button) {
+            button.style.display = '';
+            button = null;
+        }
+    }
+    oState = null;
+    oMsg = null;
 }
 
 //   +----------------------------------------------------------------------+
@@ -465,14 +578,22 @@ function wato_replication_result(siteid, code) {
 function wato_replication_finish() {
     if(parent && parent.frames[1])
         parent.frames[1].location.reload(); // reload sidebar
-    oDiv = document.getElementById("act_changes_button");
+    var oDiv = document.getElementById("act_changes_button");
     oDiv.style.display = "none";
+    oDiv = null
+
+    // Hide the pending changes container
+    var oPending = document.getElementById("pending_changes");
+    if(oPending) {
+        oPending.style.display = "none";
+        oPending = null
+    }
 }
 
 function wato_randomize_secret(id, len) {
     var secret = "";
     for (var i=0; i<len; i++) {
-        var c = parseInt((126-33) * Math.random() + 33);
+        var c = parseInt(26 * Math.random() + 64);
         secret += String.fromCharCode(c);
     }
     var oInput = document.getElementById(id);

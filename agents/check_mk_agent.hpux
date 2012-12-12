@@ -38,10 +38,17 @@ PLUGINSDIR=$MK_LIBDIR/plugins
 # refer to online documentation for details about local checks.
 LOCALDIR=$MK_LIBDIR/local
 
-exec <&- 2>/dev/null
+# close standard input (for security reasons) and stderr
+if [ "$1" = -d ]
+then
+    set -xv
+else
+    exec <&- 2>/dev/null
+fi
+
 
 echo '<<<check_mk>>>'
-echo Version: 1.2.0b3
+echo Version: 1.2.1i4
 echo AgentOS: hpux
 echo PluginsDirectory: $PLUGINSDIR
 echo LocalDirectory: $LOCALDIR
@@ -102,6 +109,23 @@ echo '<<<ntp>>>'
 # remove heading, make first column space separated
 ntpq -p | sed -e 1,2d -e 's/^\(.\)/\1 /' -e 's/^ /%/'
 
+
+# Kernel tunnables
+if type kcusage >/dev/null 2>&1
+then
+    echo '<<<hpux_tunables>>>'
+    kcusage -l
+fi
+
+
+# State of FC HBAs
+fcms_util=/opt/fcms/bin/fcdutil
+echo '<<<hpux_hbahealth:sep(61)>>>'
+for hba in /dev/fcd* ; do
+    echo "$hba"
+    $fcms_util $hba | grep -e "Driver state" -e "Topology" -e "Dump Available"\
+                      -e "Code version" -e "Hardware Path" -e "Port World"
+done
 
 
 # Einbinden von lokalen Plugins, die eine eigene Sektion ausgeben

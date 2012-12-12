@@ -157,23 +157,17 @@ declare_1to1_sorter("svc_group_memberlist",       cmp_string_list)
 declare_1to1_sorter("svc_acknowledged",           cmp_simple_number)
 
 def cmp_perfdata_nth_value(r1, r2, n):
-    def saveint(s):
-        # Change None or empty strings to -1 to make these lines
-        # appear below the lines with a value of 0
-        if s is None or s == '':
-            return -1
-        return int(s)
-    return cmp(saveint(get_perfdata_nth_value(r1, n)), saveint(get_perfdata_nth_value(r2, n)))
+    return cmp(savefloat(get_perfdata_nth_value(r1, n)), savefloat(get_perfdata_nth_value(r2, n)))
 
 multisite_sorters['svc_perf_val01'] = {
-    "title"   : _("Service performance data - value number %02d") % 1,
+    "title"   : _("Service performance data - value number %02d" % 1),
     "columns" : [ 'service_perf_data' ],
     "cmp"     : lambda r1, r2: cmp_perfdata_nth_value(r1, r2, 0),
 }
 multisite_sorters['svc_perf_val02'] = {
-    "title"   : _("Service performance data - value number %02d"),
+    "title"   : _("Service performance data - value number %02d" % 2),
     "columns" : [ 'service_perf_data' ],
-    "cmp"     : lambda r1, r2: cmp_perfdata_nth_value(r1, r2, 1 % 2),
+    "cmp"     : lambda r1, r2: cmp_perfdata_nth_value(r1, r2, 1),
 }
 multisite_sorters['svc_perf_val03'] = {
     "title"   : _("Service performance data - value number %02d" % 3),

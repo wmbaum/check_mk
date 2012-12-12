@@ -43,12 +43,23 @@ multisite_datasources["bi_aggregations"] = {
 }
 
 multisite_datasources["bi_host_aggregations"] = {
-    "title"       : _("BI Host Aggregations"),
+    "title"       : _("BI Aggregations affected by one host"),
     "table"       : bi.host_table,
     "infos"       : [ "host", "aggr" ],
     "keys"        : [],
     "idkeys"      : [ 'aggr_name' ],
 }
+
+# Similar to host aggregations, but the name of the aggregation
+# is used to join the host table rather then the affected host
+multisite_datasources["bi_hostname_aggregations"] = {
+    "title"       : _("BI Hostname Aggregations"),
+    "table"       : bi.hostname_table,
+    "infos"       : [ "host", "aggr" ],
+    "keys"        : [],
+    "idkeys"      : [ 'aggr_name' ],
+}
+
 
 #     ____       _       _
 #    |  _ \ __ _(_)_ __ | |_ ___ _ __ ___
@@ -154,9 +165,11 @@ multisite_painter_options["aggr_treetype"] = {
  "title"   : _("Type of tree layout"),
  "default" : "foldable",
  "values"  : [ 
-    ("foldable",  "foldable"), 
-    ("bottom-up", "bottom up"), 
-    ("top-down",  "top down")]
+    ("foldable",     _("foldable")), 
+    ("boxes",        _("boxes")),
+    ("boxes-omit-root", _("boxes (omit root)")),
+    ("bottom-up",    _("bottom up")), 
+    ("top-down",     _("top down"))]
 }
 
 multisite_painter_options["aggr_wrap"] = {
@@ -218,10 +231,15 @@ def aggr_render_leaf(tree, show_host, bare = False):
     if show_host:
         content += '<a href="%s">%s</a><b class=bullet>&diams;</b>' % (host_url, host.replace(" ", "&nbsp;"))
 
-    if not service:
-        content += '<a href="%s">%s</a>' % (host_url, _("Host&nbsp;status"))
+    if tree[1] and tree[0] != tree[1]:
+        addclass = ' class="state assumed"'
     else:
-        content += '<a href="%s">%s</a>' % (service_url, service.replace(" ", "&nbsp;"))
+        addclass = ""
+
+    if not service:
+        content += '<a href="%s"%s>%s</a>' % (host_url, addclass, _("Host&nbsp;status"))
+    else:
+        content += '<a href="%s"%s>%s</a>' % (service_url, addclass, service.replace(" ", "&nbsp;"))
 
     if bare:
         return content
@@ -229,17 +247,13 @@ def aggr_render_leaf(tree, show_host, bare = False):
         return aggr_render_node(tree, content, None, show_host)
 
 def aggr_render_node(tree, title, mousecode, show_host):
-    state = tree[0]
-    assumed_state = tree[1]
-    if assumed_state != None:
-        effective_state = assumed_state
-    else:
-        effective_state = state
-
-    if (effective_state != state):
+    # Check if we have an assumed state: comparing assumed state (tree[1]) with state (tree[0])
+    if tree[1] and tree[0] != tree[1]:
         addclass = " " + _("assumed")
+        effective_state = tree[1]
     else:
         addclass = ""
+        effective_state = tree[0]
 
     h = '<span class="content state state%d%s">%s</span>\n' \
          % (effective_state["state"], addclass, render_bi_state(effective_state["state"]))
@@ -249,7 +263,7 @@ def aggr_render_node(tree, title, mousecode, show_host):
     else:
         h += title
 
-    output = effective_state["output"]
+    output = format_plugin_output(effective_state["output"])
     if output:
         output = "<b class=bullet>&diams;</b>" + output
     else:
@@ -274,49 +288,7 @@ def filter_tree_only_problems(tree):
     return state, assumed_state, node, new_subtrees
 
 
-def paint_aggr_tree_boxes(row):
-    mousecode = \
-       'onmouseover="this.style.cursor=\'pointer\';" ' \
-       'onmouseout="this.style.cursor=\'auto\';" ' \
-       'onclick="toggle_bi_box(this);" '
-
-    def render_subtree(tree, open, show_host, level):
-        ret = ""
-        if not open:
-            state = tree[0]
-            if len(tree) == 3:
-                mc = ""
-            else:
-                mc = mousecode
-            if len(tree) == 3:
-                leaf = " leaf"
-            else:
-                leaf = " noleaf"
-            ret = '<span %s class="bibox_box%s state%s">' % (mc, leaf, state["state"])
-            # ret += "&gt;" * (level-1) 
-            if len(tree) == 3:
-                ret += aggr_render_leaf(tree, show_host, bare = True) # .replace(" ", "&nbsp;")
-            else:
-                ret += tree[2]["title"].replace(" ", "&nbsp;")
-            ret += '</span> '
-        if len(tree) >= 4:
-            ret += '<span class="bibox" style="%s">' % (not open and "display: none;" or "")
-            parts = []
-            for node in tree[3]:
-                ret += render_subtree(node, False, show_host, level+1)
-            ret += '</span>'
-        return ret
-
-    tree = row["aggr_treestate"]
-    if get_painter_option("aggr_onlyproblems") == "1":
-        tree = filter_tree_only_problems(tree)
-
-    affected_hosts = row["aggr_hosts"]
-    htmlcode = render_subtree(tree, True, len(affected_hosts) > 1, 0)
-    return "aggrtree_box", htmlcode
-
-
-def paint_aggr_tree_foldable(row, boxes=False):
+def paint_aggr_tree_foldable(row, boxes, omit_root=True):
     saved_expansion_level = bi.load_ex_level()
     treestate = weblib.get_tree_states('bi')
     expansion_level = int(get_painter_option("aggr_expand"))
@@ -328,31 +300,71 @@ def paint_aggr_tree_foldable(row, boxes=False):
     mousecode = \
        'onmouseover="this.style.cursor=\'pointer\';" ' \
        'onmouseout="this.style.cursor=\'auto\';" ' \
-       'onclick="toggle_subtree(this);" '
-
+       'onclick="bi_toggle_%s(this);" ' % (boxes and "box" or "subtree")
 
     def render_subtree(tree, path, show_host):
-        if len(tree) == 3: # leaf
-            return aggr_render_leaf(tree, show_host)
+        is_leaf = len(tree) == 3
+        path_id = "/".join(path)
+        is_open = treestate.get(path_id)
+        if is_open == None:
+            is_open = len(path) <= expansion_level
+
+        h = ""
+        
+        state = tree[0]
+
+        # Variant: BI-Boxes
+        if boxes:
+            # Check if we have an assumed state: comparing assumed state (tree[1]) with state (tree[0])
+            if tree[1] and tree[0] != tree[1]:
+                addclass = " " + _("assumed")
+                effective_state = tree[1]
+            else:
+                addclass = ""
+                effective_state = tree[0]
+
+            if is_leaf:
+                leaf = "leaf"
+                mc = ""
+            else:
+                leaf = "noleaf"
+                mc = mousecode
+
+            omit = omit_root and len(path) == 1
+            if not omit:
+                h += '<span id="%d:%s" %s class="bibox_box %s %s state state%s%s">' % (
+                        expansion_level, path_id, mc, leaf, is_open and "open" or "closed", effective_state["state"], addclass)
+                if is_leaf:
+                    h += aggr_render_leaf(tree, show_host, bare = True) # .replace(" ", "&nbsp;")
+                else:
+                    h += tree[2]["title"].replace(" ", "&nbsp;")
+                h += '</span> '
+
+            if not is_leaf:
+                h += '<span class="bibox" style="%s">' % ((not is_open and not omit) and "display: none;" or "")
+                parts = []
+                for node in tree[3]:
+                    new_path = path + [node[2]["title"]]
+                    h += render_subtree(node, new_path, show_host)
+                h += '</span>'
+            return h
+
+        # Variant: foldable trees
         else:
-            h = '<span class=title>'
+            if is_leaf: # leaf
+                return aggr_render_leaf(tree, show_host, bare = boxes)
 
-            path_id = "/".join(path)
-            is_open = treestate.get(path_id)
-            if is_open == None:
-                is_open = len(path) <= expansion_level
-
+            h += '<span class=title>'
             is_empty = len(tree[3]) == 0
-
             if is_empty:
                 style = ''
                 mc = ''
             elif is_open:
                 style = ''
-                mc = mousecode + 'src="images/tree_open.png" '
+                mc = mousecode + 'src="images/tree_black_90.png" '
             else:
                 style = 'style="display: none" '
-                mc = mousecode + 'src="images/tree_00.png" '
+                mc = mousecode + 'src="images/tree_black_00.png" '
 
             h += aggr_render_node(tree, tree[2]["title"], mc, show_host)
             if not is_empty:
@@ -373,7 +385,7 @@ def paint_aggr_tree_foldable(row, boxes=False):
 
     affected_hosts = row["aggr_hosts"]
     htmlcode = render_subtree(tree, [tree[2]["title"]], len(affected_hosts) > 1)
-    return "aggrtree", htmlcode
+    return "aggrtree" + (boxes and "_box" or ""), htmlcode
 
 
 def paint_aggr_tree_ltr(row, mirror):
@@ -432,7 +444,11 @@ def paint_aggr_tree_ltr(row, mirror):
 def paint_aggregated_tree_state(row):
     treetype = get_painter_option("aggr_treetype")
     if treetype == "foldable":
-        return paint_aggr_tree_foldable(row)
+        return paint_aggr_tree_foldable(row, boxes = False, omit_root = False)
+    elif treetype == "boxes":
+        return paint_aggr_tree_foldable(row, boxes = True, omit_root = False)
+    elif treetype == "boxes-omit-root":
+        return paint_aggr_tree_foldable(row, boxes = True, omit_root = True)
     elif treetype == "bottom-up":
         return paint_aggr_tree_ltr(row, False)
     elif treetype == "top-down":
@@ -450,7 +466,7 @@ multisite_painters["aggr_treestate_boxed"] = {
     "title"   : _("Aggregation: simplistic boxed layout"),
     "short"   : _("Tree"),
     "columns" : [ "aggr_treestate", "aggr_hosts" ],
-    "paint"   : paint_aggr_tree_boxes,
+    "paint"   : lambda row: paint_aggr_tree_foldable(row, boxes = True, omit_root = True),
 }
 
 #     _____ _ _ _
@@ -469,9 +485,8 @@ class BIGroupFilter(Filter):
         return [ (self.htmlvars[0], row[self.column]) ]
 
     def display(self):
-        bi.compile_forest(config.user_id)
         htmlvar = self.htmlvars[0]
-        html.select(htmlvar, [ ("", "") ] + [(g,g) for g in bi.g_user_cache["forest"].keys()])
+        html.select(htmlvar, [ ("", "") ] + [(g, g) for g in bi.aggregation_groups()])
 
     def selected_group(self):
         return html.var(self.htmlvars[0])
@@ -550,6 +565,9 @@ class BIServiceFilter(Filter):
     def __init__(self):
         Filter.__init__(self, "aggr_service", _("Affected by service"), "aggr", ["site", "host", "service"], [])
 
+    def double_height(self):
+        return True
+
     def display(self):
         html.write(_("Host") + ": ")
         html.text_input("host")
@@ -585,17 +603,22 @@ class BIStatusFilter(Filter):
     def filter(self, tablename):
         return ""
 
+    def double_height(self):
+        return self.column == "aggr_assumed_state"
+
     def display(self):
         if html.var("filled_in"):
             defval = ""
         else:
             defval = "on"
-        for varend, text in [('0', 'OK'), ('1', 'WARN'), ('2', 'CRIT'), ('3', 'UNKNOWN'), ('-1', 'PENDING'), ('n', 'unset')]:
+        for varend, text in [('0', 'OK'), ('1', 'WARN'), ('2', 'CRIT'), 
+                             ('3', 'UNKN'), ('-1', 'PENDING'), ('n', _('no assumed state set'))]:
             if self.code != 'a' and varend == 'n':
                 continue # no unset for read and effective state
+            if varend == 'n':
+                html.write("<br>")
             var = self.prefix + varend
-            html.checkbox(var, defval)
-            html.write(" %s " % text)
+            html.checkbox(var, defval, label = text)
 
     def filter_table(self, rows):
         jeaders = []

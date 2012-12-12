@@ -31,6 +31,12 @@ def check_http_arguments(params):
     if "vhost" in settings:
         args += ' -H %s' % quote_shell_string(settings["vhost"])
 
+    if "virthost" in settings:
+        vhost, omit_ip = settings["virthost"]
+        args += ' -H %s' % quote_shell_string(vhost)
+    else:
+        omit_ip = False
+
     if "uri" in settings:
         args += ' -u %s' % quote_shell_string(settings["uri"])
 
@@ -39,6 +45,11 @@ def check_http_arguments(params):
 
     if settings.get("ssl"):
         args += ' --ssl'
+
+    if "cert_host" in settings:
+        omit_ip = True
+        args += '-H $HOSTADDRESS$'
+        args += ' -I %s' % quote_shell_string(settings['cert_host'])
 
     if "cert_days" in settings:
         args += ' -C %d' % settings["cert_days"]
@@ -65,7 +76,7 @@ def check_http_arguments(params):
         args += ' -a %s:%s' % (quote_shell_string(auth[0]), quote_shell_string(auth[1]))
 
     if "proxy_auth" in settings:
-        auth = settings["auth"]
+        auth = settings["proxy_auth"]
         args += ' -b %s:%s' % (quote_shell_string(auth[0]), quote_shell_string(auth[1]))
 
     if "onredirect" in settings:
@@ -76,6 +87,15 @@ def check_http_arguments(params):
 
     if "expect_string" in settings:
         args += ' -s %s' % quote_shell_string(settings["expect_string"])
+
+    if "expect_regex" in settings:
+        if settings['expect_regex'][1]:
+            args += ' -R'
+        else:
+            args += ' -r'
+        args += ' %s' % quote_shell_string(settings['expect_regex'][0])
+        if settings['expect_regex'][2]:
+            args += ' --invert-regex'
 
     if "post_data" in settings:
         data, content_type = settings["post_data"]
@@ -95,11 +115,13 @@ def check_http_arguments(params):
     if "max_age" in settings:
         args += ' -M %d' % settings["max_age"]
 
+    if not omit_ip:
+        args = " -I $HOSTADDRESS$" + args
     return args
 
 
 active_check_info['http'] = {
-    "command_line"        : '$USER1$/check_http -I $HOSTADDRESS$ $ARG1$',
+    "command_line"        : '$USER1$/check_http $ARG1$',
     "argument_function"   : check_http_arguments,
     "service_description" : lambda params: "HTTP %s" % params[0],
     "has_perfdata"        : True,

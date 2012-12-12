@@ -160,8 +160,8 @@ def page_login():
         origtarget = html.req.uri
     html.hidden_field('_origtarget', htmllib.attrencode(origtarget))
 
-    html.text_input("_username", size = 50, label = _("Username:"))
-    html.password_input("_password", size = 50, label = _("Password:"))
+    html.text_input("_username", label = _("Username:"))
+    html.password_input("_password", size=None, label = _("Password:"))
     html.write("<br>")
     html.button("_login", _('Login'))
     html.set_focus("_username")
@@ -209,6 +209,9 @@ def page_view():
         return page_index()
 
     view = html.available_views.get(view_name)
+    if not view:
+        raise MKGeneralException("No view defined with the name '%s'." % view_name)
+        
     title = views.view_title(view)
     mobile_html_head(title)
 
@@ -241,7 +244,7 @@ def render_view(view, rows, datasource, group_painters, painters,
     title = views.view_title(view)
     navbar = [ ( "data",     _("Results"), "grid", 'results_button'),
                ( "filter",   _("Filter"),   "search", False )]
-    if config.may("act"):
+    if config.may("general.act"):
         navbar.append(( "commands", _("Commands"), "gear", False ))
 
     # Should we show a page with context links?
@@ -261,7 +264,7 @@ def render_view(view, rows, datasource, group_painters, painters,
 
     elif page == "commands":
             # Page: Commands
-	    if config.may("act"):
+	    if config.may("general.act"):
 		jqm_page_header(_("Commands"), left_button=home, id="commands")
 		show_commands = True
 		if html.has_var("_do_actions"):
@@ -353,23 +356,23 @@ def show_command_form(view, datasource, rows):
 
 def do_commands(view, what, rows):
     command = None
-    title = views.core_command(what, rows[0])[1] # just get the title
-    r = html.confirm(_("Do you really want to %s the %d %ss?") %
-                     (title, len(rows), what), action=html.req.myfile + ".py#commands")
+    title, executor = views.core_command(what, rows[0])[1:3] # just get the title
+    r = html.confirm(_("Do you really want to %(title)s the %(count)d %(what)ss?") %
+            { "title" : title, "count" : len(rows), "what" : _(what + "s"), })
     if r != True:
         return r == None # Show commands on negative answer
 
     count = 0
     for row in rows:
-        nagios_commands, title = views.core_command(what, row)
+        nagios_commands, title, executor = views.core_command(what, row)
         for command in nagios_commands:
             if type(command) == unicode:
                 command = command.encode("utf-8")
-            html.live.command(command, row["site"])
+            executor(command, row["site"])
             count += 1
 
     if command:
-        html.message(_("Successfully sent %d commands to Nagios.") % count)
+        html.message(_("Successfully sent %d commands.") % count)
     return True # Show commands again
 
 def show_context_links(context_links):

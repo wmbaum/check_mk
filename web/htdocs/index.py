@@ -35,7 +35,7 @@ from mod_python import apache, util, Cookie
 import sys, os, pprint
 from lib import *
 import livestatus
-import defaults, config, htmllib, login
+import defaults, config, htmllib, login, userdb, default_permissions
 
 # Load page handlers
 pagehandlers = {}
@@ -156,7 +156,7 @@ def connect_to_livestatus(html):
 
     # If Multisite is retricted to data user is a nagios contact for,
     # we need to set an AuthUser: header for livestatus
-    if not config.may("see_all"):
+    if not config.may("general.see_all"):
         html.live.set_auth_user('read',   config.user_id)
         html.live.set_auth_user('action', config.user_id)
 
@@ -169,7 +169,7 @@ def connect_to_livestatus(html):
 
 # Call the load_plugins() function in all modules
 def load_all_plugins():
-    for module in [ views, sidebar, dashboard, wato, bi, mobile ]:
+    for module in [ userdb, views, sidebar, dashboard, wato, bi, mobile ]:
         try:
             module.load_plugins # just check if this function exists
             module.load_plugins()
@@ -206,6 +206,10 @@ def handler(req, profiling = True):
         # just a plain server result code of 500
         fail_silently = html.has_var("_ajaxid")
 
+        # Webservice functions may decide to get a normal result code
+        # but a text with an error message in case of an error
+        plain_error = html.has_var("_plain_error")
+
         config.load_config() # load multisite.mk
         if html.var("debug"): # Debug flag may be set via URL
             config.debug = True
@@ -224,11 +228,16 @@ def handler(req, profiling = True):
             os.chmod(profilefile + ".py", 0755)
             return apache.OK
 
+        # Make sure all plugins are avaiable as early as possible. At least
+        # we need the plugins (i.e. the permissions declared in these) at the
+        # time before the first login for generating auth.php.
+        load_all_plugins()
+
         # Detect mobile devices
         if html.has_var("mobile"):
             html.mobile = not not html.var("mobile")
         else:
-            user_agent = html.req.headers_in['User-Agent']
+            user_agent = html.req.headers_in.get('User-Agent', '')
             html.mobile = mobile.is_mobile(user_agent)
 
         # Redirect to mobile GUI if we are a mobile device and
@@ -243,7 +252,6 @@ def handler(req, profiling = True):
         # here. Automation calls bybass the normal authentication stuff
         if req.myfile == "automation":
             try:
-                load_all_plugins()
                 handler()
             except Exception, e:
                 html.write(str(e))
@@ -252,6 +260,10 @@ def handler(req, profiling = True):
         # Prepare output format
         output_format = html.var("output_format", "html")
         html.set_output_format(output_format)
+
+        # First initialization of the default permissions. Needs to be done before the auth_file
+        # (auth.php) ist written (it's done during showing the login page for the first time).
+        default_permissions.load()
 
         # Is the user set by the webserver? otherwise use the cookie based auth
         if not req.user or type(req.user) != str:
@@ -268,7 +280,7 @@ def handler(req, profiling = True):
                 load_language(html.var("lang", config.get_language()))
 
                 # After auth check the regular page can be shown
-                result = login.page_login()
+                result = login.page_login(plain_error)
                 if type(result) == tuple:
                     # This is the redirect to the requested page directly after successful login
                     req.user = result[0]
@@ -277,6 +289,10 @@ def handler(req, profiling = True):
                     handler = pagehandlers.get(req.myfile, page_not_found)
                 else:
                     return result
+
+        # Call userdb page hooks which are executed on a regular base to e.g. syncronize
+        # information withough explicit user triggered actions
+        userdb.hook_page()
 
         # Set all permissions, read site config, and similar stuff
         config.login(html.req.user)
@@ -289,8 +305,11 @@ def handler(req, profiling = True):
         # All plugins might have to be reloaded due to a language change
         load_all_plugins()
 
+        # Reload default permissions (maybe reload due to language change)
+        default_permissions.load()
+
         # User allowed to login at all?
-        if not config.may("use"):
+        if not config.may("general.use"):
             reason = _("You are not authorized to use Check_MK Multisite. Sorry. "
                        "You are logged in as <b>%s</b>.") % config.user_id
             if len(config.user_role_ids):
@@ -312,40 +331,52 @@ def handler(req, profiling = True):
         handler()
 
     except MKUserError, e:
-        if not fail_silently:
+        if plain_error:
+            html.write(_("User error") + ": %s\n" % e)
+        elif not fail_silently:
             html.header("Invalid User Input")
             html.show_error(str(e))
             html.footer()
 
     except MKAuthException, e:
-        if not fail_silently:
+        if plain_error:
+            html.write(_("Authentication error") + ": %s\n" % e)
+        elif not fail_silently:
             html.header(_("Permission denied"))
             html.show_error(str(e))
             html.footer()
 
     except MKUnauthenticatedException, e:
-        if not fail_silently:
+        if plain_error:
+            html.write(_("Missing authentication credentials") + ": %s\n" % e)
+        elif not fail_silently:
             html.header(_("Not authenticated"))
             html.show_error(str(e))
             html.footer()
         response_code = apache.HTTP_UNAUTHORIZED
 
     except MKConfigError, e:
-        if not fail_silently:
+        if plain_error:
+            html.write(_("Configuration error") + ": %s\n" % e)
+        elif not fail_silently:
             html.header(_("Configuration Error"))
             html.show_error(str(e))
             html.footer()
         apache.log_error(_("Configuration error: %s") % (e,), apache.APLOG_ERR)
 
     except MKGeneralException, e:
-        if not fail_silently:
+        if plain_error:
+            html.write(_("General error") + ": %s\n" % e)
+        elif not fail_silently:
             html.header(_("Error"))
             html.show_error(str(e))
             html.footer()
-        apache.log_error(_("Error: %s") % (e,), apache.APLOG_ERR)
+        # apache.log_error(_("Error: %s") % (e,), apache.APLOG_ERR)
 
     except livestatus.MKLivestatusNotFoundError, e:
-        if not fail_silently:
+        if plain_error:
+            html.write(_("Livestatus-data not found") + ": %s\n" % e)
+        elif not fail_silently:
             html.header(_("Data not found"))
             html.show_error(_("The following query produced no output:\n<pre>\n%s</pre>\n") % \
                     e.query)
@@ -353,18 +384,27 @@ def handler(req, profiling = True):
         response_code = apache.HTTP_NOT_FOUND
 
     except livestatus.MKLivestatusException, e:
-        if not fail_silently:
+        if plain_error:
+            html.write(_("Livestatus problem") + ": %s\n" % e)
+        elif not fail_silently:
             html.header(_("Livestatus problem"))
             html.show_error(_("Livestatus problem: %s") % e)
             html.footer()
         else:
             response_code = apache.HTTP_BAD_GATEWAY
 
-    except apache.SERVER_RETURN:
+    except (apache.SERVER_RETURN,
+            (apache.SERVER_RETURN, apache.HTTP_UNAUTHORIZED),
+            (apache.SERVER_RETURN, apache.HTTP_MOVED_TEMPORARILY)):
+        release_all_locks()
+        html.live = None
         raise
 
     except Exception, e:
-        if not fail_silently:
+        html.unplug()
+        if plain_error:
+            html.write(_("Internal error") + ": %s\n" % e)
+        elif not fail_silently:
             html.header(_("Internal error"))
             if config.debug:
                 html.show_error("%s: %s<pre>%s</pre>" %
@@ -381,6 +421,9 @@ def handler(req, profiling = True):
     return response_code
 
 def page_not_found():
-    html.header(_("Page not found"))
-    html.show_error(_("This page was not found. Sorry."))
+    if html.has_var("_plain_error"):
+        html.write(_("Page not found"))
+    else:
+        html.header(_("Page not found"))
+        html.show_error(_("This page was not found. Sorry."))
     html.footer()

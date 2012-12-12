@@ -164,9 +164,10 @@ bool TableServices::isAuthorized(contact *ctc, void *data)
     return is_authorized_for(ctc, svc->host_ptr, svc);
 }
 
-    TableServices::TableServices(bool by_group, bool by_hostgroup)
-    : _by_group(by_group)
-      , _by_hostgroup(by_hostgroup)
+
+TableServices::TableServices(bool by_group, bool by_hostgroup)
+  : _by_group(by_group)
+  , _by_hostgroup(by_hostgroup)
 {
     struct servicebygroup     sgref;
     struct servicebyhostgroup hgref;
@@ -193,6 +194,8 @@ void TableServices::addColumns(Table *table, string prefix, int indirect_offset,
                 "An optional display name (not used by Nagios standard web pages)", (char *)(&svc.display_name) - ref, indirect_offset));
     table->addColumn(new OffsetStringColumn(prefix + "check_command",
                 "Nagios command used for active checks", (char *)(&svc.service_check_command) - ref, indirect_offset));
+    table->addColumn(new OffsetStringServiceMacroColumn(prefix + "check_command_expanded",
+                "Nagios command used for active checks with the macros expanded", (char *)(&svc.service_check_command) - ref, indirect_offset));
     table->addColumn(new OffsetStringColumn(prefix + "event_handler",
                 "Nagios command used as event handler", (char *)(&svc.event_handler) - ref, indirect_offset));
     table->addColumn(new OffsetStringColumn(prefix + "plugin_output",
@@ -352,7 +355,7 @@ void TableServices::addColumns(Table *table, string prefix, int indirect_offset,
     table->addColumn(new CustomVarsColumn(prefix + "custom_variable_values",
                 "A list of the values of all custom variable of the service", (char *)(&svc.custom_variables) - ref, indirect_offset, CVT_VALUES));
     table->addColumn(new CustomVarsColumn(prefix + "custom_variables",
-                "A dictorionary of the custom variables", (char *)(&svc.custom_variables) - ref, indirect_offset, CVT_DICT));
+                "A dictionary of the custom variables", (char *)(&svc.custom_variables) - ref, indirect_offset, CVT_DICT));
 
     table->addColumn(new ServicegroupsColumn(prefix + "groups",
                 "A list of all service groups the service is in", (char *)(&svc.servicegroups_ptr) - ref, indirect_offset));

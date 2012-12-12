@@ -55,7 +55,6 @@ def render_about():
 sidebar_snapins["about"] = {
     "title" : _("About Check_MK"),
     "description" : _("Version information and Links to Documentation, Homepage and Download of Check_MK"),
-    "author" : "Mathias Kettner",
     "render" : render_about,
     "allowed" : [ "admin", "user", "guest" ],
 }
@@ -123,7 +122,7 @@ def render_views():
         render_topic(topic, s)
 
     links = []
-    if config.may("edit_views"):
+    if config.may("general.edit_views"):
         if config.debug:
             links.append((_("EXPORT"), "export_views.py"))
         links.append((_("EDIT"), "edit_views.py"))
@@ -132,7 +131,6 @@ def render_views():
 sidebar_snapins["views"] = {
     "title" : _("Views"),
     "description" : _("Links to all views"),
-    "author" : "Mathias Kettner",
     "render" : render_views,
     "allowed" : [ "user", "admin", "guest" ],
 }
@@ -165,7 +163,6 @@ def render_groups(what):
 sidebar_snapins["hostgroups"] = {
     "title" : _("Hostgroups"),
     "description" : _("Directs links to all host groups"),
-    "author" : "Mathias Kettner",
     "render" : lambda: render_groups("host"),
     "restart":     True,
     "allowed" : [ "user", "admin", "guest" ]
@@ -173,7 +170,6 @@ sidebar_snapins["hostgroups"] = {
 sidebar_snapins["servicegroups"] = {
     "title" : _("Servicegroups"),
     "description" : _("Direct links to all service groups"),
-    "author" : "Mathias Kettner",
     "render" : lambda: render_groups("service"),
     "restart":     True,
     "allowed" : [ "user", "admin", "guest" ]
@@ -251,7 +247,6 @@ snapin_allhosts_styles = """
 sidebar_snapins["hosts"] = {
     "title" : _("All hosts"),
     "description" : _("A summary state of each host with a link to the view showing its services"),
-    "author" : "Mathias Kettner",
     "render" : lambda: render_hosts("hosts"),
     "allowed" : [ "user", "admin", "guest" ],
     "refresh" : 60,
@@ -262,7 +257,6 @@ sidebar_snapins["hosts"] = {
 sidebar_snapins["summary_hosts"] = {
     "title" : _("Summary hosts"),
     "description" : _("A summary state of all summary hosts (summary hosts hold aggregated service states and are a feature of Check_MK)"),
-    "author" : "Mathias Kettner",
     "render" : lambda: render_hosts("summary"),
     "allowed" : [ "user", "admin", "guest" ],
     "refresh" : 60,
@@ -273,7 +267,6 @@ sidebar_snapins["summary_hosts"] = {
 sidebar_snapins["problem_hosts"] = {
     "title" : _("Problem hosts"),
     "description" : _("A summary state of all hosts that have problem, with links to problems of those hosts"),
-    "author" : "Mathias Kettner",
     "render" : lambda: render_hosts("problems"),
     "allowed" : [ "user", "admin", "guest" ],
     "refresh" : 60,
@@ -359,14 +352,13 @@ def render_hostmatrix():
 sidebar_snapins["hostmatrix"] = {
     "title"       : _("Host Matrix"),
     "description" : _("A matrix showing a colored square for each host"),
-    "author"      : "Mathias Kettner",
     "render"      : render_hostmatrix,
     "allowed"     : [ "user", "admin", "guest" ],
     "refresh"     : 10,
     "styles"      : """
 table.hostmatrix { border-spacing: 0;  }
 table.hostmatrix tr { padding: 0; border-spacing: 0; }
-table.hostmatrix a { display: block; width: 100%%; height: 100%%; line-height: 100%%; }
+table.hostmatrix a { display: block; width: 100%; height: 100%; line-height: 100%; }
 table.hostmatrix td { border: 1px solid #123a4a; padding: 0; border-spacing: 0; }
     """
 
@@ -389,7 +381,7 @@ def render_sitestatus():
         sitenames = []
         for sitename, site in config.allsites().iteritems():
             sitenames.append((sitename, site['alias']))
-        sitenames = sorted(sitenames, key=lambda k: k[1])
+        sitenames = sorted(sitenames, key=lambda k: k[1], cmp = lambda a,b: cmp(a.lower(), b.lower()))
 
         for sitename, sitealias in sitenames:
             site = config.site(sitename)
@@ -430,7 +422,6 @@ def render_sitestatus():
 sidebar_snapins["sitestatus"] = {
   "title" : _("Site status"),
   "description" : _("Connection state of each site and button for enabling and disabling the site connection"),
-  "author" : "Mathias Kettner",
   "render" : render_sitestatus,
   "allowed" : [ "user", "admin" ],
   "refresh" : 90,
@@ -517,8 +508,7 @@ def render_tactical_overview():
             (_("Hosts"),    hstdata, 'hostproblems', 'host'),
             (_("Services"), svcdata, 'svcproblems',  'service'),
             ]:
-        html.write("<tr><th><span>%s</span></th><th><span>%s</span></th><th><span>%s</span></th></tr>\n" % \
-                                     (title, _('Problems'), _('Unhandled')))
+        html.write("<tr><th>%s</th><th>%s</th><th>%s</th></tr>\n" % (title, _('Problems'), _('Unhandled')))
         html.write("<tr>")
 
         html.write('<td class=total><a target="main" href="view.py?view_name=all%ss">%d</a></td>' % (what, data[0]))
@@ -536,7 +526,6 @@ def render_tactical_overview():
 sidebar_snapins["tactical_overview"] = {
     "title" : _("Tactical Overview"),
     "description" : _("The total number of hosts and service with and without problems"),
-    "author" : "Mathias Kettner",
     "refresh" : 10,
     "render" : render_tactical_overview,
     "allowed" : [ "user", "admin", "guest" ],
@@ -549,20 +538,17 @@ table.tacticaloverview {
     * border-spacing: 5px 2px;
     */
    width: %dpx;
-   margin-top: -9px;
+   margin-top: -7px;
 }
 table.tacticaloverview th { 
     font-size: 8pt; 
+    line-height: 7pt;
     text-align: left; 
     color: #123a4a; 
     font-weight: normal; 
     padding: 0; 
     padding-top: 2px; 
     vertical-align: bottom;
-}
-table.tacticaloverview th span {
-    position: relative;
-    top: 2px;
 }
 table.tacticaloverview td { 
     width: 33.3%%; 
@@ -572,6 +558,9 @@ table.tacticaloverview td {
     padding: 0px; 
     height: 14px; 
     /* box-shadow: 1px 0px 1px #386068; */
+}
+table.tacticaloverview td.prob { 
+    box-shadow: 0px 0px 4px #ffd000;
 }
 table.tacticaloverview a { display: block; margin-right: 2px; }
 """ % snapin_width
@@ -622,7 +611,6 @@ def render_performance():
 sidebar_snapins["performance"] = {
     "title" : _("Server performance"),
     "description" : _("Live monitor of the overall performance of all monitoring servers"),
-    "author" : "Mathias Kettner",
     "refresh" : 15,
     "render" : render_performance,
     "allowed" : [ "admin", ],
@@ -747,48 +735,6 @@ speedometer_show_speed(0, 0, 0);
 """)
 
 
-def ajax_speedometer():
-    try:
-        # Try to get values from last call in order to compute
-        # driftig speedometer-needle and to reuse the scheduled
-        # check reate.
-        last_perc          = float(html.var("last_perc"))
-        scheduled_rate     = float(html.var("scheduled_rate"))
-        last_program_start = int(html.var("program_start"))
-
-        # Get the current rates and the program start time. If there
-        # are more than one site, we simply add the start times.
-        data = html.live.query_summed_stats("GET status\n"
-               "Columns: service_checks_rate host_checks_rate program_start")
-        current_rate = data[0] + data[1]
-        program_start = data[2]
-
-        # Recompute the scheduled_rate only if it is not known (first call)
-        # or if one of the sites has been restarted. The computed value cannot
-        # change during the monitoring since it just reflects the configuration.
-        # That way we save CPU resources since the computation of the
-        # scheduled checks rate needs to loop over all hosts and services.
-        if last_program_start != program_start:
-            scheduled_rate = 0.0
-            for what in [ "host", "service" ]:
-                data = html.live.query_summed_stats(
-                        "GET %ss\nStats: suminv check_interval" % what)
-                scheduled_rate += data[0] / 60.0
-
-        percentage = 100.0 * current_rate / scheduled_rate;
-        title = _("Scheduled check rate: %.1f/s, current rate: %.1f/s, that is "
-                  "%.0f%% of the scheduled rate" %
-                  (scheduled_rate, current_rate, percentage))
-
-    except Exception, e:
-        scheduled_rate = 0
-        program_start = 0
-        percentage = 0
-        last_perc = 0
-        title = _("No performance data: ") + str(e)
-
-    html.write(repr([scheduled_rate, program_start, percentage, last_perc, str(title)]))
-
 
 sidebar_snapins["speedometer"] = {
     "title" : _("Speed-O-Meter"),
@@ -796,7 +742,6 @@ sidebar_snapins["speedometer"] = {
                       "the scheduled check rate. If the Speed-O-Meter shows a speed "
                       "of 100 percent, then all checks are being executed in exactly "
                       "the rate that is configured (via check_interval)"),
-    "author" : "Mathias Kettner",
     "render" : render_speedometer,
     "allowed" : [ "admin", ],
     "styles" : """
@@ -837,7 +782,6 @@ def render_current_time():
 sidebar_snapins["time"] = {
     "title" : _("Server time"),
     "description" : _("A large clock showing the current time of the web server"),
-    "author" : "Mathias Kettner",
     "refresh" : 30,
     "render" : render_current_time,
     "allowed" : [ "user", "admin", "guest", ],
@@ -920,7 +864,6 @@ def render_nagios():
 sidebar_snapins["nagios_legacy"] = {
     "title" : _("Old Nagios GUI"),
     "description" : _("The classical sidebar of Nagios 3.2.0 with links to your local Nagios instance (no multi site support)"),
-    "author" : "Mathias Kettner",
     "render" : render_nagios,
     "allowed" : [ "user", "admin", "guest", ],
 }
@@ -967,7 +910,6 @@ def render_master_control():
 sidebar_snapins["master_control"] = {
     "title" : _("Master control"),
     "description" : _("Buttons for switching globally states such as enabling checks and notifications"),
-    "author" : "Mathias Kettner",
     "render" : render_master_control,
     "allowed" : [ "admin", ],
     "styles" : """
@@ -1000,34 +942,6 @@ div.snapin table.master_control td img.iconbutton {
 """ 
 }
 
-def ajax_switch_masterstate():
-    site = html.var("site")
-    column = html.var("switch")
-    state = int(html.var("state"))
-    commands = {
-        ( "enable_notifications",     1) : "ENABLE_NOTIFICATIONS",
-        ( "enable_notifications",     0) : "DISABLE_NOTIFICATIONS",
-        ( "execute_service_checks",   1) : "START_EXECUTING_SVC_CHECKS",
-        ( "execute_service_checks",   0) : "STOP_EXECUTING_SVC_CHECKS",
-        ( "execute_host_checks",      1) : "START_EXECUTING_HOST_CHECKS",
-        ( "execute_host_checks",      0) : "STOP_EXECUTING_HOST_CHECKS",
-        ( "process_performance_data", 1) : "ENABLE_PERFORMANCE_DATA",
-        ( "process_performance_data", 0) : "DISABLE_PERFORMANCE_DATA",
-        ( "enable_event_handlers",    1) : "ENABLE_EVENT_HANDLERS",
-        ( "enable_event_handlers",    0) : "DISABLE_EVENT_HANDLERS",
-    }
-
-    command = commands.get((column, state))
-    if command:
-        html.live.command("[%d] %s" % (int(time.time()), command), site)
-        html.live.set_only_sites([site])
-        html.live.query("GET status\nWaitTrigger: program\nWaitTimeout: 10000\nWaitCondition: %s = %d\nColumns: %s\n" % \
-               (column, state, column))
-        html.live.set_only_sites()
-        render_master_control()
-    else:
-        html.write(_("Command %s/%d not found") % (column, state))
-
 # ---------------------------------------------------------
 #   ____              _                         _
 #  | __ )  ___   ___ | | ___ __ ___   __ _ _ __| | _____
@@ -1050,7 +964,7 @@ def render_bookmarks():
     bookmarks = load_bookmarks()
     n = 0
     for title, href in bookmarks:
-        html.write("<div id=\"bookmark_%d\">" % n)
+        html.write("<div class=bookmark id=\"bookmark_%d\">" % n)
         iconbutton(_("delete"), "del_bookmark.py?num=%d" % n, "side", "updateContents", 'snapin_bookmarks', css_class = 'bookmark')
         iconbutton(_("edit"), "edit_bookmark.py?num=%d" % n, "main", css_class = 'bookmark')
         html.write(link(title, href))
@@ -1059,77 +973,23 @@ def render_bookmarks():
 
     html.write("<div class=footnotelink><a href=\"#\" onclick=\"addBookmark()\">%s</a></div>\n" % _('Add Bookmark'))
 
-def page_edit_bookmark():
-    html.header(_("Edit Bookmark"))
-    n = int(html.var("num"))
-    bookmarks = load_bookmarks()
-    if n >= len(bookmarks):
-        raise MKGeneralException(_("Unknown bookmark id: %d. This is probably a problem with reload or browser history. Please try again.") % n)
-
-    if html.var("save") and html.check_transaction():
-        title = html.var("title")
-        url = html.var("url")
-        bookmarks[n] = (title, url)
-        save_bookmarks(bookmarks)
-        html.reload_sidebar()
-
-    html.begin_form("edit_bookmark")
-    if html.var("save"):
-        title = html.var("title")
-        url = html.var("url")
-        bookmarks[n] = (title, url)
-        save_bookmarks(bookmarks)
-        html.reload_sidebar()
-    else:
-        title, url = bookmarks[n]
-        html.set_var("title", title)
-        html.set_var("url", url)
-
-    html.write("<table class=edit_bookmarks>")
-    html.write("<tr><td>%s</td><td>" % _('Title:'))
-    html.text_input("title", size = 50)
-    html.write("</td></tr><tr><td>%s:</td><td>" % _('URL:'))
-    html.text_input("url", size = 50)
-    html.write("</td></tr><tr><td></td><td>")
-    html.button("save", _("Save"))
-    html.write("</td></tr></table>\n")
-    html.hidden_field("num", str(n))
-    html.end_form()
-
-    html.footer()
-
-def ajax_del_bookmark():
-    num = int(html.var("num"))
-    bookmarks = load_bookmarks()
-    del bookmarks[num]
-    save_bookmarks(bookmarks)
-    render_bookmarks()
-
-def ajax_add_bookmark():
-    title = html.var("title")
-    href = html.var("href")
-    if title and href:
-        bookmarks = load_bookmarks()
-        # We try to remove http://hostname/some/path/check_mk from the
-        # URI. That keeps the configuration files (bookmarks) portable.
-        # Problem here: We have not access to our own URL, only to the
-        # path part. The trick: we use the Referrer-field from our
-        # request. That points to the sidebar.
-        referer = html.req.headers_in.get("Referer")
-        if referer:
-            while '/' in referer and referer.split('/')[0] == href.split('/')[0]:
-                referer = referer.split('/', 1)[1]
-                href = href.split('/', 1)[1]
-        bookmarks.append((title, href))
-        save_bookmarks(bookmarks)
-    render_bookmarks()
 
 sidebar_snapins["bookmarks"] = {
     "title" : _("Bookmarks"),
     "description" : _("A simple and yet practical snapin allowing to create bookmarks to views and other content in the main frame"),
-    "author" : "Mathias Kettner",
     "render" : render_bookmarks,
     "allowed": [ "user", "admin", "guest" ],
+    "styles" : """
+div.bookmark {
+    width: 230px;
+    max-width: 230px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    -o-text-overflow: ellipsis;
+    white-space: nowrap;
+    color: white;
+}
+"""
 }
 
 
@@ -1158,26 +1018,18 @@ def render_custom_links():
             try:
                 if type(entry[1]) == type(True):
                     idss = ids + [str(n)]
-                    if states.get(''.join(idss), entry[1] and 'on' or 'off') == 'on': # open
-                        display = "display: block; "
-                        img = "link_folder_open.gif"
-                    else:
-                        display = "display: none; "
-                        img = "link_folder.gif"
-                    html.write('<h3 onclick="toggle_folder(this, \'%s\');" ' % ''.join(idss))
-                    html.write('onmouseover="this.style.cursor=\'pointer\';" ')
-                    html.write('onmouseout="this.style.cursor=\'auto\';">')
-                    html.write('<img src="images/%s" align="center" />' % img)
-                    html.write("%s</h3>\n" % entry[0])
-                    html.write('<div style="%s" class=sublist>' % display)
+                    is_open = entry[1]
+                    id = '/'.join(idss)
+                    html.begin_foldable_container("customlinks", id, isopen=entry[1], title=entry[0])
                     render_list(idss, entry[2])
-                    html.write('</div>\n')
+                    html.end_foldable_container()
                 elif type(entry[1]) == str:
-                    if len(entry) > 2:
+                    frame = len(entry) > 3 and entry[3] or "main"
+                    if len(entry) > 2 and entry[2]:
                         html.write('<img src="images/%s">' % entry[2])
                     else:
                         html.write('<img src="images/link_link.gif">')
-                    simplelink(entry[0], entry[1])
+                    simplelink(entry[0], entry[1], frame)
                 else:
                     html.write(_("Second part of tuple must be list or string, not %s\n") % str(entry[1]))
             except Exception, e:
@@ -1188,7 +1040,6 @@ def render_custom_links():
 sidebar_snapins["custom_links"] = {
     "title" : _("Custom Links"),
     "description" : _("This snapin contains custom links which can be configured via the configuration variable <tt>custom_links</tt> in <tt>multisite.mk</tt>"),
-    "author" : "Mathias Kettner",
     "render" : render_custom_links,
     "allowed" : [ "user", "admin", "guest" ],
     "styles" : """

@@ -13,18 +13,22 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
+import net.sf.jasperreports.engine.JRDataSource;
 import net.sf.jasperreports.engine.JRDataset;
 import net.sf.jasperreports.engine.JRException;
+import net.sf.jasperreports.engine.JRValueParameter;
 import net.sf.jasperreports.engine.query.JRQueryExecuter;
+
 
 public class LivestatusQueryExecuter implements JRQueryExecuter{
 	// Connection parameters
-	private String    			jasper_query;     // Query from jasperreports incl. connection details
+	private HashMap<String, String> parameters;       // Given parameters from iReport
+	private String    			jasper_query;     // Query from iReport incl. connection details
 	private String    			livestatus_query; // Query send to livestatus
 	private String    			server;           // server name
 	private int       			server_port;      // server port
 	private int 				timeoutInMs = 10*1000;  // 10 seconds
-	private String    			fixed_appendix = "\nColumnHeaders: on\nResponseHeader: fixed16\nOutputFormat: csv\n\n";
+	private String    			fixed_appendix = "\nColumnHeaders: on\nResponseHeader: fixed16\nSeparators: 10 1 44 124\nOutputFormat: csv\n\n";
 
 	// Socket parameters
 	private Socket    			socket;           // socket to server
@@ -35,20 +39,53 @@ public class LivestatusQueryExecuter implements JRQueryExecuter{
 	
 	public static void main(String[] args){
 		try {
-			new LivestatusQueryExecuter("localhost 6557\nGET services\nColumns: host_name check_command").createDatasource();
+			//new LivestatusQueryExecuter("localhost 6561\nGET services\nColumns: host_name check_command").createDatasource();
+			String query = "localhost 6561\n"+
+			"GET statehist\n" +
+			"Columns: host_name service_description\n"+
+			"Filter: time >= 1344195720\n"+
+			"Filter: time <= 1344195776\n"+
+			"Filter: host_name = localhost\n"+
+			"Stats: sum duration_ok\n"+
+			"Stats: sum duration_warning\n"+
+			"Stats: sum duration_critical";
+						
+			JRDataSource sourci = new LivestatusQueryExecuter(query, null).createDatasource();
 		} catch (JRException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}		
 	}
 	
-	public LivestatusQueryExecuter(String query) {
-		this.jasper_query = query; 
+	@SuppressWarnings("rawtypes")
+	public LivestatusQueryExecuter(String query, Map parameters) {
+		this.jasper_query = query;
+		this.parameters = new HashMap<String,String>();
+		for ( Object key : parameters.keySet() ) {
+			if ( parameters.get(key) == null ) {
+				continue;
+			}
+			this.parameters.put(key.toString(), parameters.get(key).toString());
+		}
+		
+//		LivestatusQueryExecuterFactory.logFile(this.jasper_query);
+//		for (String key : this.parameters.keySet())
+//		{
+//			LivestatusQueryExecuterFactory.logFile("key " + key + " " + this.parameters.get(key.toString()));	
+//			String value = this.parameters.get(key);
+//			LivestatusQueryExecuterFactory.logFile(key +  " = " + value);			
+//		}
 	}
 
-	@SuppressWarnings("rawtypes")
-	public LivestatusQueryExecuter(JRDataset dataset, Map parameters) {
-		this.jasper_query = dataset.getQuery().getText(); 
+	public LivestatusQueryExecuter(JRDataset dataset, Map<String,? extends JRValueParameter> parameters) {
+		this.jasper_query = dataset.getQuery().getText();
+		this.parameters = new HashMap<String,String>();
+		for ( Object key : parameters.keySet() ) {
+			if ( parameters.get(key) == null || parameters.get(key).getValue() == null ) {
+				continue;
+			}
+			this.parameters.put(key.toString(), parameters.get(key).getValue().toString());
+		}
 	}
 
 	private void evaluateQuery() throws JRException{
@@ -58,17 +95,28 @@ public class LivestatusQueryExecuter implements JRQueryExecuter{
 				throw new JRException("LQL Query: Remove blank lines from query");			
 		}
 
-		String target_info = jasper_query.split("\n")[0];
-		livestatus_query   = jasper_query.substring(target_info.length()+1);
+		// Replace any parameters within the jasper_query
+		String mod_query = jasper_query;
+		if ( parameters != null ) {
+			for (String key : parameters.keySet())
+			{
+				String value = parameters.get(key);
+				if ( value != null ) {
+					mod_query = mod_query.replaceAll("\\$P\\{"+key+"\\}", "\"" + value + "\"");
+					mod_query = mod_query.replaceAll("\\$P!\\{"+key+"\\}", value);
+				}
+			}
+		}
+		
+		String target_info = mod_query.split("\n")[0];
+		livestatus_query   = mod_query.substring(target_info.length()+1);
 		server      = target_info.split(" ")[0];
 		server_port = Integer.parseInt(target_info.split(" ")[1]);
 	}
 
 	public boolean cancelQuery() throws JRException {
-		System.out.println("ABORT QUERY");
 		try {
 			if( socket.isConnected() ){
-				System.out.println("STOPPED !");
 				socket.close();
 				return true;
 			}
@@ -88,11 +136,6 @@ public class LivestatusQueryExecuter implements JRQueryExecuter{
 		try {
 			inteAddress = InetAddress.getByName(server);
 			socketAddress = new InetSocketAddress(inteAddress, server_port);
-			if( socket != null ){ // Close previous connections
-				sockOutput.close();
-				sockInput.close();
-				socket.close();
-			}
 			socket = new Socket();
 			socket.connect(socketAddress, timeoutInMs);
 			sockOutput = socket.getOutputStream();
@@ -102,6 +145,7 @@ public class LivestatusQueryExecuter implements JRQueryExecuter{
 			throw new JRException("Unable to connect to " + server + " " + server_port + " " + e.getMessage());
 		}
 	}
+	
 	
 	public LivestatusDatasource createDatasource() throws JRException {
 		// conduct query syntax check and determine connection parameters
@@ -117,46 +161,65 @@ public class LivestatusQueryExecuter implements JRQueryExecuter{
 			// setup socket and in/output streams
 			setupSocket();
 			
+			
 			// query the column types and their descriptions
 			String table_name = livestatus_query.split("\n")[0].split(" ")[1];
-			String desc_query = String.format("GET columns\nFilter: table = %s\nColumnHeaders: off\n\n", table_name);
+			String desc_query = String.format("GET columns\nFilter: table = %s\nColumnHeaders: off\nResponseHeader: fixed16\nOutputFormat: csv\nSeparators:  10 1 44 124\nKeepAlive: on\n\n", table_name);
+			
 			sockOutput.write(desc_query.getBytes(), 0, desc_query.getBytes().length); 
-		
+			
 			// read description information
+			String[] responseHeader = in.readLine().split("\\s");
+			int response_size = Integer.parseInt(responseHeader[responseHeader.length-1]);
+			int offset = 0;
 			String line;
 			line = in.readLine(); // Skip column headers
-			while( true ){
-				line = in.readLine();
+			offset += line.getBytes().length + 1;
+			String[] tokens;
+			while( offset < response_size ){
+				line = in.readLine();				
 				if( line == null )
 					break;
-				map_fielddesc.put(line.split(";")[1],line.split(";")[0]);
-				map_fieldtype.put(line.split(";")[1],line.split(";")[3]);
+				offset += line.getBytes().length + 1;
+				tokens = line.split("\001");
+				map_fielddesc.put(tokens[1],tokens[0]);
+				if( tokens[1].startsWith("stats_") )
+					map_fieldtype.put(tokens[1],"float");
+				else
+					map_fieldtype.put(tokens[1],tokens[3]);
 			}
 
-			// reinitialize socket, TODO: reuse the old socket instead
-			setupSocket();
-						
 			// send livestatus query to socket
 			sockOutput.write(livestatus_query.getBytes(), 0, livestatus_query.getBytes().length); 
 			sockOutput.write(fixed_appendix.getBytes(), 0, fixed_appendix.getBytes().length); 
 		
 			// check if response is valid
-			String responseHeader = in.readLine();
-			if( ! responseHeader.startsWith("200") )
-				throw new JRException("Livestatus response: \n" + responseHeader + " \n" + in.readLine());
+			responseHeader = in.readLine().split("\\s");
+			if( ! responseHeader[0].equals("200") ){
+				String error = "";
+				while(true){
+					line = in.readLine();
+					if( line == null )
+						break;
+					error.concat(line+"\n");
+				}
+				throw new JRException("Livestatus response: \n" + responseHeader + " \n" + error);
+			}
 			
 			// check if response size not exceeding 10MB
-			int response_size = Integer.parseInt(responseHeader.split(" ")[responseHeader.split(" ").length - 1]);
+			response_size = Integer.parseInt(responseHeader[responseHeader.length-1]);
 			if( response_size > 10 * 1024 * 1024 )
 				throw new JRException("Livestatus answer exceeds 10 MB. Aborting..");
-			
+		
 			// read content
+			offset = 0;
+			offset += line.getBytes().length + 1;
 			while( true ){
 				line = in.readLine();
 				if( line == null )
 					break;
 				ArrayList<String> tmp_array = new ArrayList<String>();
-				for( String field : line.split(";") ){
+				for( String field : line.split("\001") ){
 					tmp_array.add(field);
 				}
 				livestatus_data.add(tmp_array);

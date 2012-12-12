@@ -1,3 +1,5 @@
+check_mk.ini
+logstate.txt
 Debug/
 Release/
 x64/

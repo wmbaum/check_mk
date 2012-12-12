@@ -23,7 +23,7 @@
 # Boston, MA 02110-1301 USA.
 
 SHELL           = /bin/bash
-VERSION        	= 1.2.0b3
+VERSION        	= 1.2.1i4
 NAME           	= check_mk
 RPM_TOPDIR     	= rpm.topdir
 RPM_BUILDROOT  	= rpm.buildroot
@@ -54,7 +54,7 @@ help:
 	@echo "make headers                   --> create/update fileheades"
 	@echo "make healspaces                --> remove trailing spaces in code"
 
-dist: mk-livestatus
+dist: mk-livestatus mk-eventd
 	@echo "--------------------------------------------------------------------------"
 	@echo -n "Checking permissions... with find -not -perm -444..." && [ -z "$$(find -not -perm -444)" ] && echo OK
 	@echo "Making $(DISTNAME)"
@@ -62,6 +62,7 @@ dist: mk-livestatus
 	mkdir -p $(DISTNAME)
 	tar czf $(DISTNAME)/share.tar.gz $(TAROPTS) check_mk_templates.cfg
 	tar czf $(DISTNAME)/checks.tar.gz $(TAROPTS) -C checks $$(cd checks ; ls)
+	tar czf $(DISTNAME)/notifications.tar.gz $(TAROPTS) -C notifications $$(cd notifications ; ls)
 	tar czf $(DISTNAME)/checkman.tar.gz $(TAROPTS) -C checkman $$(cd checkman ; ls)
 	tar czf $(DISTNAME)/web.tar.gz $(TAROPTS) -C web htdocs plugins
 	tar czf $(DISTNAME)/livestatus.tar.gz $(TAROPTS) -C livestatus  $$(cd livestatus ; echo $(LIVESTATUS_SOURCES) )
@@ -87,6 +88,11 @@ dist: mk-livestatus
 	@echo "   FINISHED. "
 	@echo "=============================================================================="
 
+mk-eventd:
+	tar -c $(TAROPTS) --exclude=.f12 \
+	    --transform 's,^mkeventd,mkeventd-$(VERSION),' \
+	    -zf mkeventd-$(VERSION).tar.gz mkeventd
+
 mk-livestatus:
 	if [ ! -e livestatus/configure ] ; then \
 		cd livestatus && aclocal && autoheader && automake -a && autoconf ; \
@@ -104,6 +110,7 @@ version:
 	[ "$$(head -c 12 /etc/issue)" = "Ubuntu 10.10" \
           -o "$$(head -c 12 /etc/issue)" = "Ubuntu 11.04" \
           -o "$$(head -c 12 /etc/issue)" = "Ubuntu 11.10" \
+          -o "$$(head -c 12 /etc/issue)" = "Ubuntu 12.04" \
           -o "$$(head -c 20 /etc/issue)" = "Debian GNU/Linux 6.0" ] \
           || { echo 'You are not on the reference system!' ; exit 1; }
 	@newversion=$$(dialog --stdout --inputbox "New Version:" 0 0 "$(VERSION)") ; \
@@ -112,13 +119,15 @@ version:
 setversion:
 	sed -ri 's/^(VERSION[[:space:]]*= *).*/\1'"$(NEW_VERSION)/" Makefile ; \
 	for agent in agents/* ; do \
-	    if [ "$$agent" != agents/windows -a "$$agent" != agents/plugins ] ; then \
+	    if [ "$$agent" != agents/windows -a "$$agent" != agents/plugins -a "$$agent" != agents/hpux ] ; then \
 	        sed -i 's/echo Version: [0-9.a-z]*/'"echo Version: $(NEW_VERSION)/g" $$agent; \
 	    fi ; \
 	done ; \
+        sed -i 's/say "Version: .*"/say "Version: $(NEW_VERSION)"/' agents/check_mk_agent.openvms
 	sed -i 's/#define CHECK_MK_VERSION .*/#define CHECK_MK_VERSION "'$(NEW_VERSION)'"/' agents/windows/check_mk_agent.cc ; \
 	sed -i 's/!define CHECK_MK_VERSION .*/!define CHECK_MK_VERSION "'$(NEW_VERSION)'"/' agents/windows/installer.nsi ; \
 	sed -i 's/^AC_INIT.*/AC_INIT([MK Livestatus], ['"$(NEW_VERSION)"'], [mk@mathias-kettner.de])/' livestatus/configure.ac ; \
+	sed -i 's/^VERSION=".*/VERSION="$(NEW_VERSION)"/' mkeventd/bin/mkeventd ; \
 	sed -i 's/^VERSION=.*/VERSION='"$(NEW_VERSION)"'/' scripts/setup.sh ; \
 	echo 'check-mk_$(NEW_VERSION)-1_all.deb net optional' > debian/files ; \
 	cd agents/windows ; rm *.exe ; make ; cd ../.. ; \
@@ -179,11 +188,14 @@ deb-agent: $(NAME)-agent-$(VERSION)-1.noarch.rpm $(NAME)-agent-logwatch-$(VERSIO
 
 
 clean:
-	rm -rf dist.tmp rpm.topdir *.rpm *.deb *.exe mk-livestatus-*.tar.gz $(NAME)-*.tar.gz *~ counters autochecks precompiled cache
+	rm -rf dist.tmp rpm.topdir *.rpm *.deb *.exe \
+	       mkeventd-*.tar.gz mk-livestatus-*.tar.gz \
+	       $(NAME)-*.tar.gz *~ counters autochecks \
+	       precompiled cache
 	find -name "*~" | xargs rm -f
 
 mrproper:
-	git clean -xfd .bugs
+	git clean -xfd -e .bugs 2>/dev/null || git clean -xfd
 
 check:
 	@set -e ; for checkfile in *.HS ; do \
@@ -197,7 +209,7 @@ check:
 
 healspaces:
 	@echo "Removing trailing spaces from code lines..."
-	@sed -ri 's/[ 	]+$$//g' checkman/* modules/* checks/* $$(find -name Makefile) \
+	@sed -ri 's/[ 	]+$$//g' checkman/* modules/* checks/* notifications/* $$(find -name Makefile) \
           livestatus/src/*{cc,c,h} web/htdocs/*.{py,css} web/htdocs/js/*.js web/plugins/*/*.py \
           doc/helpers/* $(find -type f pnp-templates/*.php)
 

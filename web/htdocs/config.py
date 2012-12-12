@@ -47,18 +47,58 @@ except NameError:
 
 user = None
 user_id = None
+builtin_role_ids = [ "user", "admin", "guest" ] # hard coded in various permissions
 user_role_ids = []
 
 # Base directory of dynamic configuration
 config_dir = defaults.var_dir + "/web"
 
-# Detect if we are running on OMD
+# Detect modification in configuration
+modification_timestamps = []
+
+# Detect if we are running on OMD, make sure that
+# omd_site and omd_root are always available.
 try:
     defaults.omd_site
 except:
     defaults.omd_site = None
     defaults.omd_root = None
 
+# Global table of available permissions. Plugins may add their own
+# permissions by calling declare_permission()
+permissions_by_name  = {}
+permissions_by_order = []
+permission_sections  = {}
+
+# Constants for BI
+ALL_HOSTS = '(.*)'
+HOST_STATE = ('__HOST_STATE__',)
+HIDDEN = ('__HIDDEN__',)
+class FOREACH_HOST: pass
+class FOREACH_CHILD: pass
+class FOREACH_PARENT: pass
+class FOREACH_SERVICE: pass
+class REMAINING: pass
+
+# Has to be declared here once since the functions can be assigned in
+# bi.py and also in multisite.mk. "Double" declarations are no problem
+# here since this is a dict (List objects have problems with duplicate
+# definitions).
+aggregation_functions = {}
+
+
+#   .----------------------------------------------------------------------.
+#   |             _____                 _   _                              |
+#   |            |  ___|   _ _ __   ___| |_(_) ___  _ __  ___              |
+#   |            | |_ | | | | '_ \ / __| __| |/ _ \| '_ \/ __|             |
+#   |            |  _|| |_| | | | | (__| |_| | (_) | | | \__ \             |
+#   |            |_|   \__,_|_| |_|\___|\__|_|\___/|_| |_|___/             |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   |  Helper functions for config parsing, login, etc.                    |
+#   '----------------------------------------------------------------------'
+
+# Read in a multisite.d/*.mk file
 def include(filename):
     if not filename.startswith("/"):
         filename = defaults.default_config_dir + "/" + filename
@@ -72,43 +112,19 @@ def include(filename):
         modification_timestamps.append(lm)
     except Exception, e:
         global user_id
-        global roles
         user_id = "nobody"
-        roles = {}
-        raise MKConfigError("Cannot read configuration file %s: %s:" % (filename, e))
+        raise MKConfigError(_("Cannot read configuration file %s: %s:") % (filename, e))
 
-modification_timestamps = []
-
+# Load multisite.mk and all files in multisite.d/. This will happen
+# for *each* HTTP request.
 def load_config():
-    # reset settings which can be changed at runtime to
-    # default values. Otherwise they stick to their changed
-    # value - within the Apache process that has answered
-    # the query, if that variable is not explicitely defined
-    # in multisite.mk
-    global debug
-    debug = False
-    global profile
-    profile = False
-    global auth_type
-    auth_type = 'basic'
-
-    # Reset values that can be appended to. Otherwise
-    # those lists will get longer for each web page called while
-    # using the same Python interpreter (i.e. Apache process). 
-    # Remember: the module config.py is only loaded once per process
-    # and is being reused in later sessions.
-    global aggregations
-    aggregations = []
-
     global modification_timestamps
     modification_timestamps = []
 
-    global wato_host_tags
-    wato_host_tags = []
+    # Set default values for all user-changable configuration settings
+    load_default_values(globals())
 
-    global wato_aux_tags
-    wato_aux_tags = []
-
+    # First load main file
     include("multisite.mk")
 
     # Load also recursively all files below multisite.d
@@ -134,123 +150,29 @@ def load_config():
 #
 # -------------------------------------------------------------------
 
-builtin_role_ids = [ "user", "admin", "guest" ] # hard coded in various permissions
-roles = {} # User supplied roles
-
-# define default values for all settings
-debug             = False
-users             = []
-admin_users       = []
-guest_users       = []
-default_user_role = "user"
-
-# New style, used by WATO
-multisite_users = {}
-
-# Global table of available permissions. Plugins may add their own
-# permissions
-permissions_by_name  = {}
-permissions_by_order = []
-permission_sections  = {}
-
 def declare_permission(name, title, description, defaults):
     perm = { "name" : name, "title" : title, "description" : description, "defaults" : defaults }
 
     # Detect if this permission has already been declared before
     # The dict value is replaced automatically but the list value
     # to be replaced -> INPLACE!
-    if perm in permissions_by_order:
-        permissions_by_order[permissions_by_order.index(perm)] = perm
-    else:
+    # FIXME: permissions_by_order is bad. Remove this and add a "sort" 
+    # attribute to the permissions_by_name dict. This would be much cleaner.
+    replaced = False
+    for index, test_perm in enumerate(permissions_by_order):
+        if test_perm['name'] == perm['name']:
+            permissions_by_order[index] = perm
+            replaced = True
+
+    if not replaced:
         permissions_by_order.append(perm)
 
     permissions_by_name[name] = perm
 
-def declare_permission_section(name, title):
-    permission_sections[name] = title
-
-declare_permission("use",
-     _("Use Multisite at all"),
-     _("Users without this permission are not let in at all"),
-     [ "admin", "user", "guest" ])
-
-declare_permission("edit_permissions",
-     _("Configure permissions"),
-     _("Configure, which user role has which permissions"),
-     [ "admin" ])
-
-declare_permission("see_all",
-     _("See all Nagios objects"),
-     _("See all objects regardless of contacts and contact groups. If combined with 'perform commands' then commands may be done on all objects."),
-     [ "admin", "guest" ])
-
-declare_permission("edit_views",
-     _("Edit views"),
-     _("Create own views and customize builtin views"),
-     [ "admin", "user" ])
-
-declare_permission("publish_views",
-     _("Publish views"),
-     _("Make views visible and usable for other users"),
-     [ "admin", "user" ])
-
-declare_permission("force_views",
-     _("Modify builtin views"),
-     _("Make own published views override builtin views for all users"),
-     [ "admin" ])
-
-declare_permission("view_option_columns",
-     _("Change view display columns"),
-     _("Interactively change the number of columns being displayed by a view (does not edit or customize the view)"),
-     [ "admin", "user", "guest" ])
-
-declare_permission("view_option_refresh",
-     _("Change view display refresh"),
-     _("Interactively change the automatic browser reload of a view being displayed (does not edit or customize the view)"),
-     [ "admin", "user" ])
-
-declare_permission("painter_options",
-     _("Change column display options"),
-     _("Some of the display columns offer options for customizing their output. "
-     "For example time stamp columns can be displayed absolute, relative or "
-     "in a mixed style. This permission allows the user to modify display options"),
-     [ "admin", "user", "guest" ])
-
-declare_permission("act",
-     _("Perform commands"),
-     _("Allows users to perform Nagios commands. If no further permissions are granted, actions can only be done on objects one is a contact for"),
-     [ "admin", "user" ])
-
-
-declare_permission("see_sidebar",
-     _("Use Check_MK sidebar"),
-     _("Without this permission the Check_MK sidebar will be invisible"),
-     [ "admin", "user", "guest" ])
-
-declare_permission("configure_sidebar",
-     _("Configure sidebar"),
-     _("This allows the user to add, move and remove sidebar snapins."),
-     [ "admin", "user" ])
-
-
-declare_permission('edit_profile',
-    _('Edit the user profile'),
-    _('Permits the user to change the user profile settings.'),
-    [ 'admin', 'user' ]
-)
-
-declare_permission('change_password',
-    _('Edit the user password'),
-    _('Permits the user to change the password.'),
-    [ 'admin', 'user' ]
-)
-
-declare_permission('logout',
-    _('Logout'),
-    _('Permits the user to logout.'),
-    [ 'admin', 'user', 'guest' ]
-)
-
+def declare_permission_section(name, title, prio = 0):
+    # Prio can be a number which is used for sorting. Higher numbers will
+    # be listed first, e.g. in the edit dialogs
+    permission_sections[name] = (prio, title)
 
 # Compute permissions for HTTP user and set in
 # global variables. Also store user.
@@ -295,10 +217,10 @@ def login(u):
 
     # Make sure, admin can restore permissions in any case!
     if user_id in admin_users:
-        user_permissions["use"] = True        # use Multisite
-        user_permissions["wato.use"] = True   # enter WATO
-        user_permissions["wato.edit"] = True  # make changes in WATO...
-        user_permissions["wato.users"] = True # ... with access to user management
+        user_permissions["general.use"] = True # use Multisite
+        user_permissions["wato.use"]    = True # enter WATO
+        user_permissions["wato.edit"]   = True # make changes in WATO...
+        user_permissions["wato.users"]  = True # ... with access to user management
 
     # Prepare users' own configuration directory
     global user_confdir
@@ -312,6 +234,9 @@ def get_language(default = None):
     if default == None:
         default = default_language
     return user and user.get('language', default) or default
+
+def hide_language(lang):
+    return lang in hide_languages
 
 def roles_of_user(user):
     # Make sure, builtin roles are present, even if not modified
@@ -358,6 +283,11 @@ def may_with_roles(some_role_ids, pname):
         role = roles[role_id]
 
         he_may = role.get("permissions", {}).get(pname)
+        # Handle compatibility with permissions without "general." that
+        # users might have saved in their own custom roles.
+        if he_may == None and pname.startswith("general."):
+            he_may = role.get("permissions", {}).get(pname[8:])
+
         if he_may == None: # not explicitely listed -> take defaults
             if "basedon" in role:
                 base_role_id = role["basedon"]
@@ -389,6 +319,9 @@ def need_permission(pname):
                               "then please ask you administrator to provide you with "
                               "the following permission: '<b>%s</b>'.") % perm["title"])
 
+def permission_exists(pname):
+    return pname in permissions_by_name
+
 def get_role_permissions():
     role_permissions = {}
     # Loop all permissions
@@ -404,6 +337,22 @@ def get_role_permissions():
                 role_permissions[role_id].append(perm['name'])
     return role_permissions
 
+
+# Helper functions
+def load_user_file(name, deflt):
+    path = user_confdir + "/" + name + ".mk"
+    try:
+        return eval(file(path).read())
+    except:
+        return deflt
+
+def save_user_file(name, content):
+    path = user_confdir + "/" + name + ".mk"
+    try:
+        write_settings_file(path, content)
+    except Exception, e:
+        raise MKConfigError(_("Cannot save %s options for user <b>%s</b> into <b>%s</b>: %s") % \
+                (name, user, path, e))
 
 # -------------------------------------------------------------------
 #    ____  _ _
@@ -441,7 +390,7 @@ def site(name):
 def site_is_local(name):
     s = sites.get(name, {})
     sock = s.get("socket")
-    return not sock or sock.startswith("unix:")
+    return not sock or sock == "unix:" + defaults.livestatus_unix_socket
 
 def is_multisite():
     if len(sites) > 1:
@@ -459,185 +408,203 @@ def read_site_config():
 def save_site_config():
     save_user_file("siteconfig", user_siteconf)
 
-#    ____  _     _      _
-#   / ___|(_) __| | ___| |__   __ _ _ __
-#   \___ \| |/ _` |/ _ \ '_ \ / _` | '__|
-#    ___) | | (_| |  __/ |_) | (_| | |
-#   |____/|_|\__,_|\___|_.__/ \__,_|_|
-#
 
-sidebar = \
-[('tactical_overview', 'open'),
- ('search',            'open'),
- ('views',             'open'),
- ('bookmarks',         'open'),
- ('admin',             'open'),
- ('master_control',    'closed')]
+# This function is used for loading default values
+# into *global* variables. We need this here, since
+# we need to re-initialize these values every time
+# that we read multisite.mk (because of mod_python
+# makes those persist during HTTP requests).
+def load_default_values(into):
+    #    ____       _           
+    #   |  _ \ ___ | | ___  ___ 
+    #   | |_) / _ \| |/ _ \/ __|
+    #   |  _ < (_) | |  __/\__ \
+    #   |_| \_\___/|_|\___||___/
+    #                           
+    into["roles"] = {} # User supplied roles
+    
+    # define default values for all settings
+    into["debug"]             = False
+    into["profile"]           = False
+    into["users"]             = []
+    into["admin_users"]       = []
+    into["guest_users"]       = []
+    into["default_user_role"] = "user"
+    
+    # New style, used by WATO
+    into["multisite_users"] = {}
+    
+    #    ____  _     _      _
+    #   / ___|(_) __| | ___| |__   __ _ _ __
+    #   \___ \| |/ _` |/ _ \ '_ \ / _` | '__|
+    #    ___) | | (_| |  __/ |_) | (_| | |
+    #   |____/|_|\__,_|\___|_.__/ \__,_|_|
+    #
+    
+    into["sidebar"] = \
+    [('tactical_overview', 'open'),
+     ('search',            'open'),
+     ('views',             'open'),
+     ('bookmarks',         'open'),
+     ('admin',             'open'),
+     ('master_control',    'closed')]
+    
+    #    _     _           _ _
+    #   | |   (_)_ __ ___ (_) |_ ___
+    #   | |   | | '_ ` _ \| | __/ __|
+    #   | |___| | | | | | | | |_\__ \
+    #   |_____|_|_| |_| |_|_|\__|___/
+    #
+    
+    into["soft_query_limit"] = 1000
+    into["hard_query_limit"] = 5000
+    
+    #    ____                        _
+    #   / ___|  ___  _   _ _ __   __| |___
+    #   \___ \ / _ \| | | | '_ \ / _` / __|
+    #    ___) | (_) | |_| | | | | (_| \__ \
+    #   |____/ \___/ \__,_|_| |_|\__,_|___/
+    #
+    
+    into["sound_url"] = "sounds/"
+    into["enable_sounds"] = False
+    into["sounds"] = [
+     ( "down",     "down.wav" ),
+     ( "critical", "critical.wav" ),
+     ( "unknown",  "unknown.wav" ),
+     ( "warning",  "warning.wav" ),
+    # ( None,       "ok.wav" ), 
+    ]
+    
+    
+    #   __     ___                             _   _
+    #   \ \   / (_) _____      __   ___  _ __ | |_(_) ___  _ __  ___
+    #    \ \ / /| |/ _ \ \ /\ / /  / _ \| '_ \| __| |/ _ \| '_ \/ __|
+    #     \ V / | |  __/\ V  V /  | (_) | |_) | |_| | (_) | | | \__ \
+    #      \_/  |_|\___| \_/\_/    \___/| .__/ \__|_|\___/|_| |_|___/
+    #                                   |_|
+    
+    into["view_option_refreshes"] = [ 30, 60, 90, 0 ]
+    into["view_option_columns"]   = [ 1, 2, 3, 4, 5, 6, 8 ]
+    
+    # MISC
+    into["doculink_urlformat"] = "http://mathias-kettner.de/checkmk_%s.html";
+    
+    
+    #   ____          _                    _     _       _
+    #  / ___|   _ ___| |_ ___  _ __ ___   | |   (_)_ __ | | _____
+    # | |  | | | / __| __/ _ \| '_ ` _ \  | |   | | '_ \| |/ / __|
+    # | |__| |_| \__ \ || (_) | | | | | | | |___| | | | |   <\__ \
+    #  \____\__,_|___/\__\___/|_| |_| |_| |_____|_|_| |_|_|\_\___/
+    #
+    
+    into["custom_links"] = {}
+    
+    #  __     __         _
+    #  \ \   / /_ _ _ __(_) ___  _   _ ___
+    #   \ \ / / _` | '__| |/ _ \| | | / __|
+    #    \ V / (_| | |  | | (_) | |_| \__ \
+    #     \_/ \__,_|_|  |_|\___/ \__,_|___/
+    #
+    
+    into["debug_livestatus_queries"] = False
+    
+    # Show livestatus errors in multi site setup if some sites are
+    # not reachable.
+    into["show_livestatus_errors"] = True
+    
+    # Set this to a list in order to globally control which views are
+    # being displayed in the sidebar snapin "Views"
+    into["visible_views"] = None
+    
+    # Set this list in order to actively hide certain views
+    into["hidden_views"] = None
+    
+    # Custom user stylesheet to load (resides in htdocs/)
+    into["custom_style_sheet"] = None
+    
+    # URL for start page in main frame (welcome page)
+    into["start_url"] = "dashboard.py"
+    
+    # Page heading for main frame set
+    into["page_heading"] = "Check_MK %s" 
+    
+    # Timeout for rescheduling of host- and servicechecks
+    into["reschedule_timeout"] = 10.0
+    
+    # Number of columsn in "Filter" form
+    into["filter_columns"] = 2
+    
+    # Default language for l10n
+    into["default_language"] = None
 
-#    _     _           _ _
-#   | |   (_)_ __ ___ (_) |_ ___
-#   | |   | | '_ ` _ \| | __/ __|
-#   | |___| | | | | | | | |_\__ \
-#   |_____|_|_| |_| |_|_|\__|___/
-#
+    # Hide these languages from user selection
+    into['hide_languages'] = []
+    
+    # Default timestamp format to be used in multisite
+    into["default_ts_format"] = 'mixed'
+    
+    # Default authentication type. Can be changed to e.g. "cookie" for
+    # using the cookie auth
+    into["auth_type"] = 'basic'
+    
+    # Show only most used buttons, set to None if you want
+    # always all buttons to be shown
+    into["context_buttons_to_show"] = 5
+    
+    # Buffering of HTML output stream
+    into["buffered_http_stream"] = True
+    
+    #     ____ ___
+    #    | __ )_ _|
+    #    |  _ \| |
+    #    | |_) | |
+    #    |____/___|
+    #
+    into["aggregation_rules"] = {}
+    into["aggregations"] = []
+    into["host_aggregations"] = []
+    into['bi_compile_log'] = None
+    into['bi_precompile_on_demand'] = False
 
-soft_query_limit = 1000
-hard_query_limit = 5000
+    #    __        ___  _____ ___
+    #    \ \      / / \|_   _/ _ \
+    #     \ \ /\ / / _ \ | || | | |
+    #      \ V  V / ___ \| || |_| |
+    #       \_/\_/_/   \_\_| \___/
+    #
 
-declare_permission("ignore_soft_limit",
-     "Ignore soft query limit",
-     "Allows to ignore the soft query limit imposed upon the number of datasets returned by a query",
-     [ "admin", "user" ])
+    into["wato_enabled"] = True
+    into["wato_host_tags"] = []
+    into["wato_aux_tags"] = []
+    into["wato_hide_filenames"] = True
+    into["wato_hide_hosttags"] = False
+    into["wato_hide_varnames"] = True
+    into["wato_max_snapshots"] = 50
+    into["wato_num_hostspecs"] = 12
+    into["wato_num_itemspecs"] = 15
+    into["wato_activation_method"] = 'restart'
+    into["wato_write_nagvis_auth"] = False
+    into["wato_hidden_users"] = []
 
-declare_permission("ignore_hard_limit",
-     "Ignore hard query limit",
-     "Allows to ignore the hard query limit imposed upon the number of datasets returned by a query",
-     [ "admin" ])
+    #     _   _               ____  ____
+    #    | | | |___  ___ _ __|  _ \| __ )
+    #    | | | / __|/ _ \ '__| | | |  _ \
+    #    | |_| \__ \  __/ |  | |_| | |_) |
+    #     \___/|___/\___|_|  |____/|____/
+    #
 
-#    ____                        _
-#   / ___|  ___  _   _ _ __   __| |___
-#   \___ \ / _ \| | | | '_ \ / _` / __|
-#    ___) | (_) | |_| | | | | (_| \__ \
-#   |____/ \___/ \__,_|_| |_|\__,_|___/
-#
+    into["user_connectors"]      = ['htpasswd']
+    into["ldap_connection"]      = {}
+    into["ldap_userspec"]        = {}
+    into["ldap_groupspec"]       = {}
+    into["ldap_active_plugins"]  = {'email': {}, 'alias': {}, 'auth_expire': {}}
+    into["ldap_cache_livetime"]  = 300
+    into["default_user_profile"] = {
+        'roles': ['user'],
+    }
 
-sound_url = "sounds/"
-enable_sounds = False
-sounds = [
- ( "down",     "down.wav" ),
- ( "critical", "critical.wav" ),
- ( "unknown",  "unknown.wav" ),
- ( "warning",  "warning.wav" ),
-# ( None,       "ok.wav" ), 
-]
-
-
-#   __     ___                             _   _
-#   \ \   / (_) _____      __   ___  _ __ | |_(_) ___  _ __  ___
-#    \ \ / /| |/ _ \ \ /\ / /  / _ \| '_ \| __| |/ _ \| '_ \/ __|
-#     \ V / | |  __/\ V  V /  | (_) | |_) | |_| | (_) | | | \__ \
-#      \_/  |_|\___| \_/\_/    \___/| .__/ \__|_|\___/|_| |_|___/
-#                                   |_|
-
-view_option_refreshes = [ 30, 60, 90, 0 ]
-view_option_columns   = [ 1, 2, 3, 4, 5, 6, 8 ]
-
-
-# MISC
-doculink_urlformat = "http://mathias-kettner.de/checkmk_%s.html";
-
-# Helper functions
-def load_user_file(name, deflt):
-    path = user_confdir + "/" + name + ".mk"
-    try:
-        return eval(file(path).read())
-    except:
-        return deflt
-
-def save_user_file(name, content):
-    path = user_confdir + "/" + name + ".mk"
-    try:
-        write_settings_file(path, content)
-    except Exception, e:
-        raise MKConfigError("Cannot save %s options for user <b>%s</b> into <b>%s</b>: %s" % \
-                (name, user, path, e))
-
-
-#   ____          _                    _     _       _
-#  / ___|   _ ___| |_ ___  _ __ ___   | |   (_)_ __ | | _____
-# | |  | | | / __| __/ _ \| '_ ` _ \  | |   | | '_ \| |/ / __|
-# | |__| |_| \__ \ || (_) | | | | | | | |___| | | | |   <\__ \
-#  \____\__,_|___/\__\___/|_| |_| |_| |_____|_|_| |_|_|\_\___/
-#
-
-custom_links = {}
-
-#  __     __         _
-#  \ \   / /_ _ _ __(_) ___  _   _ ___
-#   \ \ / / _` | '__| |/ _ \| | | / __|
-#    \ V / (_| | |  | | (_) | |_| \__ \
-#     \_/ \__,_|_|  |_|\___/ \__,_|___/
-#
-
-debug_livestatus_queries = False
-
-# Show livestatus errors in multi site setup if some sites are
-# not reachable.
-show_livestatus_errors = True
-
-# Set this to a list in order to globally control which views are
-# being displayed in the sidebar snapin "Views"
-visible_views = None
-# Set this list in order to actively hide certain views
-hidden_views = None
-
-# Custom user stylesheet to load (resides in htdocs/)
-custom_style_sheet = None
-
-# URL for start page in main frame (welcome page)
-start_url = "dashboard.py"
-
-# Page heading for main frame set
-page_heading = "Check_MK %s" 
-
-# Timeout for rescheduling of host- and servicechecks
-reschedule_timeout = 10.0
-
-# Number of columsn in "Filter" form
-filter_columns = 2
-
-# Default language for l10n
-default_language = None
-
-# Default timestamp format to be used in multisite
-default_ts_format = 'mixed'
-
-# Default authentication type. Can be changed to e.g. "cookie" for
-# using the cookie auth
-auth_type = 'basic'
-
-# Show only most used buttons, set to None if you want
-# always all buttons to be shown
-context_buttons_to_show = 5
-
-# Buffering of HTML output stream
-buffered_http_stream = True
-
-#    __        ___  _____ ___
-#    \ \      / / \|_   _/ _ \
-#     \ \ /\ / / _ \ | || | | |
-#      \ V  V / ___ \| || |_| |
-#       \_/\_/_/   \_\_| \___/
-#
-
-wato_enabled = True
-wato_host_tags = []
-wato_aux_tags = []
-wato_hide_filenames = True
-wato_hide_hosttags = False
-wato_hide_varnames = False
-wato_max_snapshots = 50
-wato_num_hostspecs = 12
-wato_num_itemspecs = 15
-wato_activation_method = 'restart'
-wato_write_nagvis_auth = False
-wato_hidden_users = []
-
-
-#     ____ ___
-#    | __ )_ _|
-#    |  _ \| |
-#    | |_) | |
-#    |____/___|
-#
-
-ALL_HOSTS = '(.*)'
-HOST_STATE = ('__HOST_STATE__',)
-HIDDEN = ('__HIDDEN__',)
-class FOREACH_HOST: pass
-class FOREACH_SERVICE: pass
-class REMAINING: pass
-aggregation_rules = {}
-aggregations = []
-aggregation_functions = {}
+# Make sure, we have all values set right now - until
+# the configuration will be loaded
+load_default_values(globals())
 

@@ -41,6 +41,7 @@
 
 #include "nagios.h"
 #include "livestatus.h"
+#include "downtime.h"
 #include "store.h"
 #include "logger.h"
 #include "config.h"
@@ -50,6 +51,7 @@
 #include "data_encoding.h"
 #include "waittriggers.h"
 #include "livechecking.h"
+
 
 #ifndef AF_LOCAL
 #define   AF_LOCAL AF_UNIX
@@ -65,12 +67,15 @@
 
 NEB_API_VERSION(CURRENT_NEB_API_VERSION)
 extern int event_broker_options;
+extern int enable_environment_macros;
 extern char *log_file;
 
 int g_idle_timeout_msec = 300 * 1000; /* maximum idle time for connection in keep alive state */
 int g_query_timeout_msec = 10 * 1000;      /* maximum time for reading a query */
 
-unsigned g_num_clientthreads = 10;     /* allow 10 concurrent connections per default */
+int g_num_clientthreads = 10;     /* allow 10 concurrent connections per default */
+int g_num_queued_connections = 0;     /* current number of queued connections (for statistics) */
+int g_num_active_connections = 0;     /* current number of active connections (for statistics) */
 size_t g_thread_stack_size = 65536; /* stack size of threads */
 
 #define false 0
@@ -99,6 +104,10 @@ int g_data_encoding = ENCODING_UTF8;
 /* simple statistics data for TableStatus */
 extern struct host *host_list;
 extern struct service *service_list;
+extern scheduled_downtime *scheduled_downtime_list;
+extern int log_initial_states;
+
+
 int g_num_hosts;
 int g_num_services;
 
@@ -116,7 +125,7 @@ void count_hosts()
 void count_services()
 {
     g_num_services = 0;
-    service *s = (service *)(service *)(service *)(service *)(service *)(service *)(service *)(service *)(service *)service_list;
+    service *s = (service *)service_list;
     while (s) {
         g_num_services ++;
         s = s->next;
@@ -162,6 +171,7 @@ void livestatus_cleanup_after_fork()
     }
 }
 
+
 void *main_thread(void *data __attribute__ ((__unused__)))
 {
     g_thread_pid = getpid();
@@ -187,13 +197,13 @@ void *main_thread(void *data __attribute__ ((__unused__)))
             if (0 < fcntl(cc, F_SETFD, FD_CLOEXEC))
                 logger(LG_INFO, "Cannot set FD_CLOEXEC on client socket: %s", strerror(errno));
             queue_add_connection(cc); // closes fd
+            g_num_queued_connections++;
             g_counters[COUNTER_CONNECTIONS]++;
         }
     }
     logger(LG_INFO, "Socket thread has terminated");
     return voidp;
 }
-
 
 void *client_thread(void *data __attribute__ ((__unused__)))
 {
@@ -202,6 +212,8 @@ void *client_thread(void *data __attribute__ ((__unused__)))
 
     while (!g_should_terminate) {
         int cc = queue_pop_connection();
+        g_num_queued_connections--;
+        g_num_active_connections++;
         if (cc >= 0) {
             if (g_debug_level >= 2)
                 logger(LG_INFO, "Accepted client connection on fd %d", cc);
@@ -218,6 +230,7 @@ void *client_thread(void *data __attribute__ ((__unused__)))
             }
             close(cc);
         }
+        g_num_active_connections--;
     }
     delete_outputbuffer(output_buffer);
     delete_inputbuffer(input_buffer);
@@ -399,13 +412,13 @@ int broker_downtime(int event_type __attribute__ ((__unused__)), void *data)
 
 int broker_log(int event_type __attribute__ ((__unused__)), void *data __attribute__ ((__unused__)))
 {
+
     g_counters[COUNTER_NEB_CALLBACKS]++;
     g_counters[COUNTER_LOG_MESSAGES]++;
     pthread_cond_broadcast(&g_wait_cond[WT_ALL]);
     pthread_cond_broadcast(&g_wait_cond[WT_LOG]);
     return 0;
 }
-
 
 int broker_command(int event_type __attribute__ ((__unused__)), void *data)
 {
@@ -434,13 +447,74 @@ int broker_program(int event_type __attribute__ ((__unused__)), void *data __att
     return 0;
 }
 
+char* get_downtime_comment(char* host_name, char* svc_desc)
+{
+	char* comment;
+	int matches = 0;
+	scheduled_downtime* dt_list = scheduled_downtime_list;
+	while (dt_list != NULL) {
+		if (dt_list->type == HOST_DOWNTIME) {
+			if (strcmp(dt_list->host_name, host_name) == 0) {
+				matches++;
+				comment = dt_list->comment;
+			}
+		}
+		if (svc_desc != NULL && dt_list->type == SERVICE_DOWNTIME) {
+			if( strcmp(dt_list->host_name, host_name) == 0
+					&& strcmp(dt_list->service_description, svc_desc) == 0) {
+				matches++;
+				comment = dt_list->comment;
+			}
+		}
+		dt_list = dt_list->next;
+	}
+	return matches == 0 ? "No comment" : matches > 1 ? "Multiple Downtime Comments" : comment;
+}
+
+void livestatus_log_initial_states(){
+	// Log DOWNTIME hosts
+	host *h = (host *)host_list;
+	char buffer[8192];
+
+	while (h) {
+		if (h->scheduled_downtime_depth > 0) {
+			sprintf(buffer,"HOST DOWNTIME ALERT: %s;STARTED;%s", h->name, get_downtime_comment(h->name, NULL));
+			write_to_all_logs(buffer, LG_INFO);
+
+		}
+		h = h->next;
+	}
+	// Log DOWNTIME services
+	service *s = (service *)service_list;
+	while (s) {
+		if (s->scheduled_downtime_depth > 0) {
+			sprintf(buffer,"SERVICE DOWNTIME ALERT: %s;%s;STARTED;%s", s->host_name, s->description,
+					get_downtime_comment(s->host_name, s->description));
+			write_to_all_logs(buffer, LG_INFO);
+		}
+		s = s->next;
+	}
+	// Log TIMERPERIODS
+	log_timeperiods_cache();
+}
+
+
 int broker_event(int event_type __attribute__ ((__unused__)), void *data)
 {
-    g_counters[COUNTER_NEB_CALLBACKS]++;
-    struct nebstruct_timed_event_struct *ts = (struct nebstruct_timed_event_struct *)data;
+	g_counters[COUNTER_NEB_CALLBACKS]++;
+	struct nebstruct_timed_event_struct *ts = (struct nebstruct_timed_event_struct *)data;
+    if( ts->event_type == EVENT_LOG_ROTATION){
+    	if( g_thread_running == 1 ){
+    		livestatus_log_initial_states();
+        } else if (log_initial_states == 1)
+        	write_to_all_logs("logging intitial states", LG_INFO);
+    }
+
     update_timeperiods_cache(ts->timestamp.tv_sec);
     return 0;
 }
+
+
 
 int broker_process(int event_type __attribute__ ((__unused__)), void *data)
 {
@@ -452,8 +526,6 @@ int broker_process(int event_type __attribute__ ((__unused__)), void *data)
     }
     return 0;
 }
-
-
 
 
 int verify_event_broker_options()
@@ -506,7 +578,6 @@ int verify_event_broker_options()
 
     return errors == 0;
 }
-
 
 void register_callbacks()
 {
@@ -731,7 +802,10 @@ int nebmodule_init(int flags __attribute__ ((__unused__)), char *args, void *han
         return 1;
     }
     else if (g_debug_level > 0)
-        logger(LG_INFO, "Your event_broker_options are sufficient for livestatus.");
+        logger(LG_INFO, "Your event_broker_options are sufficient for livestatus..");
+
+    if (enable_environment_macros == 1)
+        logger(LG_INFO, "Warning: environment_macros are enabled. This might decrease the overall nagios performance");
 
     store_init();
     register_callbacks();

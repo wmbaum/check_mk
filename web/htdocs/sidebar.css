@@ -84,8 +84,7 @@ body.side {
     height: 500px;
     overflow: hidden;
     color: #000000;
-    padding-top: 60px;
-    padding-bottom: 5px;
+    padding-top: 55px;
 }
 
 /* The footer of the sidebar */
@@ -137,7 +136,8 @@ div.snapin div.head {
     width: 260px;
     text-align: center;
     color: #fff;
-    padding-top: 8px;
+    height: 26px;
+    line-height: 29px;
 }
 
 div.snapin div.head b {
@@ -147,39 +147,39 @@ div.snapin div.head b {
 
 div.snapin div.head.open {
     background-image: url("images/snapin_header.png");
-    height: 17px;
 }
 
 div.snapin div.head.closed {
     background-image: url("images/snapin_closed.png");
-    height: 23px;
 }
 
 /* close button on header */
 div.snapin div.closesnapin {
     float: right;
-    margin-right: 10px;
-    margin-top:   2px;
+    margin-right: 12px;
+    margin-top:   11px;
+    line-height: 0px;
+    height: 8px;
+    width:8px;
+    padding:0;
 }
 
 div.snapin div.closesnapin img {
     width: 8px;
     height: 8px;
-    position: relative;
-    top: 1px;
 }
+
 div.snapin div.minisnapin {
     float: left;
-    margin-top: 2px;
     margin-left: 13px;
-    width: 0px;
-    height: 0px;
+    margin-top:  11px;
+    line-height: 0px;
+    height: 8px;
 }
+
 div.snapin div.minisnapin img {
     width: 8px;
     height: 8px;
-    position: relative;
-    top: 1px;
 }
 
 
@@ -198,8 +198,8 @@ div.snapin div.foot {
     background-image: url("images/snapin_footer.png");
     background-repeat: no-repeat;
     width: 260px;
-    height: 10px;
-    line-height: 10px;
+    height: 5px;
+    line-height: 5px;
 }
 
 /*
@@ -266,7 +266,7 @@ div.snapin div.footnote {
 /* Style for exceptions displayed in snapins */
 div.snapin div.snapinexception {
     background-color: #f88;
-    -moz-border-radius: 4px;
+    border-radius: 4px;
     padding: 3px;
     border: 1px solid #f00;
     width: 220px;
@@ -289,18 +289,25 @@ div.snapin div.footnotelink {
 }
 
 div.snapin div.footnotelink a {
-    border: 1px solid #ddd;
+    background-color: #497e95;
+    border-width: 1px;
+    border-style: solid;
+    border-color: #86a9b8 #22404d #22414d #86a9b8;
+    box-shadow: 0 0 1.5px #000;
     font-size: 7pt;
-    -moz-border-radius: 4px;
-    padding: 1px 4px;
+    border-radius: 5px;
+    padding: 2px 6px;
     margin-left: 5px;
 }
 
 div.snapin div.footnotelink a:hover {
-    background-image: url("images/form_background.png");
-    background-repeat: repeat;
+    background-color: #6da1b8;
     text-decoration: none;
-    border: 1px solid #fff;
+}
+div.snapin div.footnotelink a:active {
+    border-color:  #22414d #86a9b8 #86a9b8 #22404d;
+    background-color: #3b6678;
+    box-shadow: inset 0 0 0.5px #444444;
 }
 
 /* Small iconbutton (e.g. at bookmarks) */
@@ -314,6 +321,7 @@ div.snapin img.iconbutton {
 div.snapin img.iconbutton.bookmark {
     width:  16px;
     height: 16px;
+    margin: 0px -1px;
 }
 
 /* state bullets at problem host or all hosts snapin */
@@ -325,6 +333,17 @@ div.statebullet {
     border: 1px solid #123a4a;
     float: left;
     box-shadow: 0px 0px 1px #123a4a;
+}
+
+div#snapinDragIndicator {
+  height:            2px;
+  line-height:       1px;
+  font-size:         1px;
+  width:             249px;
+  background-color:  #fff;
+  margin:            0px 0px 0px 10px;
+  border-radius:     3px;
+  box-shadow:        0px 0px 5px #ffffff;
 }
 
 
@@ -342,8 +361,8 @@ div.statebullet {
 
 div.add_snapin div.snapinadder {
     padding: 8px 2px 14px 2px;
-    background-color: #9bc;
-    -moz-border-radius: 8px;
+    background-color: #478;
+    border-radius: 5px;
     border-bottom: 1px solid #9ab;
     border-right: 1px solid #89a;
     height: 220px;
@@ -351,9 +370,20 @@ div.add_snapin div.snapinadder {
     margin-right: 10px;
     margin-bottom: 10px;
     float: left;
+    box-shadow: 1px 1px 5px #000;
+    border-style: solid;
+    border-width: 1px;
+    border-color: #9bc #245 #245 #9bc;
 }
+div.add_snapin div.snapinadder:hover {
+    background-color: #69a;
+    box-shadow: 0px 0px 10px #fff;
+    border-color: #fff; /* #9bc #9bc #fff; */
+    position: relative;
+}
+
 div.add_snapin div.snapinadder div.description {
-    color: #369;
+    color: #fff;
     padding: 10px;
 }
 div.add_snapin div.snapin_preview div.clickshield {

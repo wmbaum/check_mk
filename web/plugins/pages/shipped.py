@@ -26,6 +26,7 @@
 
 # Import modules that contain the page functions
 
+import config
 import main
 import logwatch
 import views
@@ -34,20 +35,22 @@ import actions
 import weblib
 import dashboard
 import login
+import help
 
 # map URLs to page rendering functions
 
 pagehandlers.update({
    "index"                    : main.page_index,
-   "main"                     : main.page_main,
    "login"                    : login.page_login,
    "logout"                   : login.page_logout,
+   "ajax_switch_help"         : help.ajax_switch_help,
    "switch_site"              : main.ajax_switch_site,
    "edit_views"               : views.page_edit_views,
    "edit_view"                : views.page_edit_view,
    "get_edit_column"          : views.ajax_get_edit_column,
    "count_context_button"     : views.ajax_count_button,
    "export_views"             : views.ajax_export,
+   "ajax_set_viewoption"      : views.ajax_set_viewoption, 
    "view"                     : views.page_view,
    "logwatch"                 : logwatch.page_show,
    "side"                     : sidebar.page_side,

@@ -97,7 +97,7 @@ def paint_reschedule(what, row, tags, custom_vars):
         txt         = _('Reschedule an immediate check of this %s') % _(what)
 
         if what == 'service':
-            servicedesc = row['service_description']
+            servicedesc = row['service_description'].replace("\\","\\\\")
             wait_svc = servicedesc
 
             # Use Check_MK service for cmk based services
@@ -193,7 +193,7 @@ def pnp_icon(row, what):
         url = pnp_url(row, what)
     else:
         url = ""
-    return '<a href="%s" onmouseover="displayHoverMenu(event, get_url_sync(\'%s\'))" ' \
+    return '<a href="%s" onmouseover="displayHoverMenu(event, pnp_hover_contents(\'%s\'))" ' \
            'onmouseout="hoverHide()"><img class=icon src="images/icon_pnp.png"></a>' % \
                                                         (url, pnp_popup_url(row, what))
 
@@ -250,7 +250,7 @@ def logwatch_url(sitename, notes_url):
 
     master_url = ''
     if config.is_multisite():
-        master_url = '&master_url=' + defaults.checkmk_web_uri + '/'
+        master_url = '&master_url=' + defaults.url_prefix + 'check_mk/'
 
     return site["url_prefix"] + notes_url[i:] + master_url
 
@@ -363,8 +363,11 @@ multisite_icons.append({
 
 def paint_flapping(what, row, tags, custom_vars):
     if row[what + "_is_flapping"]:
-        return '<img class=icon title="%s" src="images/icon_flapping.gif">' % \
-                                          _('This %s is flapping') % what
+        if what == "host":
+            title = _("This host is flapping")
+        else:
+            title = _("This service is flapping")
+        return '<img class=icon title="%s" src="images/icon_flapping.gif">' % title
 
 multisite_icons.append({
     'columns':         [ 'is_flapping' ],
@@ -447,9 +450,12 @@ multisite_icons.append({
 #   |           |___/ |___/          |___/                                 |
 #   +----------------------------------------------------------------------+
 
+# Link to aggregations of the host/service
+# When precompile on demand is enabled, this icon is displayed for all hosts/services
+# otherwise only for the hosts/services which are part of aggregations.
 def paint_aggregations(what, row, tags, custom_vars):
-    # Link to aggregations
-    if bi.is_part_of_aggregation(what, row["site"], row["host_name"],
+    if config.bi_precompile_on_demand \
+       or bi.is_part_of_aggregation(what, row["site"], row["host_name"],
                                  row.get("service_description")):
          return link_to_view('<img class=icon src="images/icon_aggr.gif" title="%s">' %
                   _('Aggregations containing this %s') % what, row, 'aggr_' + what)

@@ -66,7 +66,7 @@ else
 fi
 
 echo '<<<check_mk>>>'
-echo Version: 1.2.0b3
+echo Version: 1.2.1i4
 echo AgentOS: freebsd
 
 
@@ -82,7 +82,17 @@ osver="$(uname -r)"
 echo '<<<df>>>'
 # no special zfs handling so far, the ZFS.pools plugin has been tested to
 # work on FreeBSD
-df -kTP -t ufs | egrep -v '(Filesystem|devfs|procfs|fdescfs|basejail)'
+if df -T > /dev/null ; then
+    df -kTP -t ufs | egrep -v '(Filesystem|devfs|procfs|fdescfs|basejail)'
+else
+    df -kP -t ufs | egrep -v '(Filesystem|devfs|procfs|fdescfs|basejail)' | awk '{ print $1,"ufs",$2,$3,$4,$5,$6 }'
+fi
+
+# Filesystem usage for ZFS
+if type zfs > /dev/null 2>&1 ; then
+    echo '<<<zfsget>>>'
+    zfs get -Hp name,quota,used,avail,mountpoint,type
+fi
 
 # Check NFS mounts by accessing them with stat -f (System
 # call statfs()). If this lasts more then 2 seconds we
@@ -124,6 +134,7 @@ if [ -x /usr/local/bin/muse ]
 	echo '<<<mem>>>'
 # 					yes, i don't know sed well.
 	muse -k 2>/dev/null | sed 's/Total/MemTotal/' | sed 's/Free/MemFree/'
+        swapinfo -k 1K | tail -n 1 | awk '{ print "SwapTotal: "$2" kB\nSwapFree: "$4" kB" }'
 fi
 
 
@@ -154,11 +165,11 @@ echo `date +%s` - `sysctl -n kern.boottime | cut -d' ' -f 4,7 | tr ',' '.' | tr 
 
 
 # Multipathing is supported in FreeBSD by now
-# see "gmultipath" or 
 # http://www.mywushublog.com/2010/06/freebsd-and-multipath/
-# it's queried using "gmultipath status" and seems to the 2nd-most 
-# straightforward multipath implementation since AIX
-
+if kldstat -v | grep g_multipath > /dev/null ; then
+    echo '<<<freebsd_multipath>>>'
+    gmultipath status | grep -v ^Name
+fi
 
 
 # Soft-RAID
@@ -184,8 +195,7 @@ if [ "$(echo $osver | cut -f1 -d\. )" -gt "8" ]; then
     netstat -inb | egrep -v '(^Name|lo|plip)' | grep Link | awk '{print $1" "$8" "$5" "$6" "$7" 0 0 0 0 "$11" "$9" "$10" 0 0 0 0 0"}'
 else 
     # pad output for freebsd 7 and before
-    netstat -inb | egrep -v '(^Name|lo|plip)' | grep Link | awk '{print $1" "$7"
-"$5" "$6" 0 0 0 0 0 "$10" "$8" "$9" 0 0 "$11" 0 0"}'
+    netstat -inb | egrep -v '(^Name|lo|plip)' | grep Link | awk '{print $1" "$7" "$5" "$6" 0 0 0 0 0 "$10" "$8" "$9" 0 0 "$11" 0 0"}'
 fi
 
 
@@ -254,6 +264,11 @@ fi
 #  done
 #fi
 
+# Number of TCP connections in the various states
+echo '<<<tcp_conn_stats>>>'
+netstat -na | awk ' /^tcp/ { c[$6]++; } END { for (x in c) { print x, c[x]; } }'
+
+
 # Postfix mailqueue monitoring
 #
 # Only handle mailq when postfix user is present. The mailq command is also
@@ -269,6 +284,12 @@ fi
 if which mailq >/dev/null 2>&1 && getent passwd postfix >/dev/null 2>&1; then
   echo '<<<postfix_mailq>>>'
   mailq | tail -n 6
+fi
+
+# check zpool status
+if [ -x /sbin/zpool ]; then
+   echo "<<<zpool_status>>>"
+   /sbin/zpool status -x
 fi
 
 

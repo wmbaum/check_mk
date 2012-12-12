@@ -45,11 +45,11 @@ Boston, MA 02110-1301 USA.
 
 /* Tables in WATO are not size to 100% per default */
 .wato table.data {
-    box-shadow: 0 0 3px #334488;
     width: auto;
 }
+
 .wato table.data th {
-    -moz-border-radius: 0px;
+    border-radius: 0px;
     background-color: #508aa1;
     background-color: #73a1b4;
 }
@@ -58,7 +58,7 @@ Boston, MA 02110-1301 USA.
 
 .wato th.left {
     border-left-style: none;
-    -moz-border-radius: 4px 0px 0px 0px;
+    border-radius: 4px 0px 0px 0px;
 }
 .wato table.data td {
     /* border-style: dashed; */
@@ -71,7 +71,7 @@ Boston, MA 02110-1301 USA.
 
 .wato th.right {
     border-right-style: none;
-    -moz-border-radius: 0px 4px 0px 0px;
+    border-radius: 0px 4px 0px 0px;
 }
 .wato td.right {
     text-align: right;
@@ -84,9 +84,6 @@ Boston, MA 02110-1301 USA.
     margin-left: 0px;
 }
 
-.wato table.form td {
-    /* border-style: dashed; */
-}
 
 .wato table.form td.legend {
     width: 300px;
@@ -98,10 +95,7 @@ Boston, MA 02110-1301 USA.
     font-size: 9pt;
     font-weight: normal;
 }
-1* Foldable sections in host properties */
-.wato table.form td.title {
-    /* border-style: none none solid none; */
-}
+/* Foldable sections in host properties */
 
 .wato table.form td.title i {
     font-weight: normal;
@@ -115,20 +109,6 @@ Boston, MA 02110-1301 USA.
     /* color: #eee; */
 }
 
-.wato table.form td.content {
-    /* border-left-style: solid; */
-    /* width: 494px; */
-}
-
-.wato table.form tr.top td,
-.wato table.form tr.top td,
-.wato table.form tr.top td.checkbox {
-    /* border-top-style: none; */
-}
-
-.wato table.form.nomargin td.checkbox {
-    /* border-top-style: none; */
-}
 
 
 .wato table.form td.checkbox {
@@ -137,9 +117,6 @@ Boston, MA 02110-1301 USA.
     /* padding-top: 7px; */
     /* vertical-align: top; */
     text-align: center;
-    /* border-width: 1px; */
-    /* border-style: solid none solid none; */
-    /* border-color: #2f5f73 */
 }
 
 .wato form.new_rule {
@@ -149,7 +126,7 @@ Boston, MA 02110-1301 USA.
 .wato div.sitestatus {
     border-style: solid;
     border-width: 1px;
-    -moz-border-radius: 3px;
+    border-radius: 3px;
     vertical-align: middle;
     text-align: center;
     padding: 0px 10px;
@@ -157,43 +134,36 @@ Boston, MA 02110-1301 USA.
     font-weight: bold;
 }
 
-.wato table.auditlog {
-    background-image: url("images/form_background.png");
-    background-repeat: repeat;
-    border-collapse: collapse;
-    margin-top: 3px;
-    margin-bottom: 1em;
-    width: 100%;
-}
-
-.wato table.pending {
-    background-color: #fff;
-}
-
-.wato table.auditlog td {
-    border: 1px solid #fff;
-    padding: 2px 6px;
-}
-
 .wato table.auditlog td.nobreak {
     white-space: nowrap;
 }
 
-.wato .pending td {
-    border: 1px solid #444;
-    padding: 2px 6px;
+.wato table.auditlog img {
+    width: 14px;
+    height: 14px;
+    margin: 0 5px 0 0;
+    padding: 0;
+    border-style: none;
+    float: left;
 }
 
-.wato table.auditlog.pending td {
-    border-color: #f80;
+.wato table.foreignchanges {
+    border-spacing: 3px;
+    margin-left: 20px;
+    margin-top: 5px;
+    margin-bottom: 5px;
 }
-.wato table.auditlog.pending tr.even0 {
-    background-color: #fda;
+.wato table.foreignchanges td {
+    padding: 2px 8px;
+    background-color: #ff0;
+    margin: 2px;
 }
 
-.wato table.auditlog.pending tr.odd0 {
-    background-color: #fc8;
+.wato img.foreignchanges {
+    float: left;
+    margin-right: 10px;
 }
+
 
 .wato td.dns {
     color: #666;
@@ -203,28 +173,26 @@ Boston, MA 02110-1301 USA.
     color: #f00;
 }
 
+.wato td.error {
+    color: #f00;
+}
+
 .wato td.takeall {
     /* width: 100%; */
 }
 
 .wato div.inherited {
-    color: #000;
-    font-weight: bold;
+    color: #444;
+}
+.wato div.inherited a {
+    color: #444;
+}
+.wato div.inherited b {
+    color: black;
+    font-weight: normal;
 }
 .wato td.inherited {
     color: #666;
-}
-.wato div.inherited h3 {
-    margin: 0px;
-    padding: 0px;
-    font-size: 8pt;
-    color: #468;
-}
-.wato div.inherited h3 a {
-    color: #468;
-}
-.wato h3 {
-    margin-bottom: 2px;
 }
 
 /* host validation error */
@@ -248,22 +216,24 @@ table.validationerror img {
 }
 
 .wato table.data tr.data td.bulksearch {
-    text-align right;
+    text-align: right;
     padding-right: 0px;
+    white-space: nowrap;
 }
 
 .wato td.bulksearch input[type=text] {
-    width: 142px;
+    width: 150px;
     margin-right: 5px;
 }
 
 
 /* Path to current folder at top of screen */
 .wato div.folderpath {
+    margin-top: -5px;
     margin-bottom: 8px;
     height: 30px;
     position: relative;
-    left: 3px;
+    left: 4px;
 }
 
 .wato div.folderpath ul {
@@ -316,6 +286,7 @@ table.validationerror img {
     position: relative;
     right: -6px;
     z-index: 200;
+    height: 17px;
 }
 
 .wato div.folderpath li:hover select {
@@ -382,31 +353,38 @@ table.validationerror img {
 
 .wato div.floatfolder .autherr {
     position: absolute;
-    top: 20px;
-    right: 62px;
+    top: 28px;
+    right: 19px;
+}
+
+.wato div.floatfolder div.infos img {
+    width: 14px;
+    height: 14px;
+    position: relative;
+    top: -1px;
 }
 
 .wato div.floatfolder .edit {
     position: absolute;
-    top:20px;
-    right:54px;
+    top: 20px;
+    right: 47px;
 }
 
 .wato div.floatfolder .move {
     position: absolute;
-    top:20px;
-    right:32px;
+    top: 20px;
+    right: 25px;
 }
 
 .wato div.floatfolder .delete {
     position: absolute;
-    top:20px;
-    right:10px;
+    top: 20px;
+    right: 3px;
 }
 
 .wato div.floatfolder .infos {
     position: absolute;
-    bottom: 29px;
+    bottom: 23px;
     left: 20px;
     color: #bde;
 }
@@ -447,7 +425,7 @@ table.validationerror img {
     width: intrinsic;
 
     -webkit-border-radius: 5px;
-    -moz-border-radius: 5px;
+    border-radius: 5px;
     border-radius: 5px;
     border: 1px solid #fff;
 }
@@ -459,6 +437,7 @@ table.validationerror img {
 .wato div.move_dialog span {
     display: block;
     margin-bottom: 2px;
+    color: white;
 }
 
 .wato div.hoverarea {
@@ -487,15 +466,15 @@ table.validationerror img {
 .wato div.info {
     margin-top: 10px;
     margin-bottom: 10px;
-    padding: 5px 8px;
-    -moz-border-radius: 3px;
-    background-image: url("images/form_background.png");
-    background-repeat: repeat;
+    padding-left: 1px;
+    color: white;
 }
 
 /* Controls for the audit log paged mechanism */
 .wato div.paged_controls {
     float: right;
+    position: relative;
+    top: 3px;
 }
 
 /* Special styles for configuration and rule editor */
@@ -506,14 +485,14 @@ table.validationerror img {
     background-image: url("images/form_background.png");
     background-repeat: repeat;
     margin-top: 10px;
-    -moz-border-radius: 4px;
+    border-radius: 4px;
     position: relative;
     top: 0px;
     left: 0px;
 }
 
 .wato div.rule div.nr {
-    -moz-border-radius: 10px;
+    border-radius: 10px;
     border: 1px solid white;
     background-color: #fcd340;
     color: black;
@@ -537,7 +516,8 @@ table.validationerror img {
     width: 20px;
     height: 20px;
 }
-.wato table.ruleeditor img {
+.wato table.ruleeditor img,
+.wato img.ruleyesno {
     width: 22px;
     height: 22px;
     position: relative;
@@ -566,7 +546,7 @@ table.validationerror img {
     border: 1px solid white;
     background-color: #a7bec3;
     padding: 5px;
-    -moz-border-radius: 4px;
+    border-radius: 4px;
     height: 90px;
 }
 
@@ -613,16 +593,19 @@ table.validationerror img {
 /*    vertical-align: top; */
 }
 
+/* Special styling for Timeperiods editor */ 
 .wato table.timeperiod td.name {
-    width: 200px;
+    width: 195px;
 }
-.wato table.timeperiod td {
-    white-space: nowrap;
+
+form#form_timeperiod td.vlof_content input.text:first-child {
+    margin-right: 10px;
+    width: 189px;
 }
-.wato input.timeperioddate {
-    width: 7ex;
-    font-family: monospace;
+form#form_timeperiod td.vlof_content {
+    background-image: none;
 }
+
 
 /* Value editor */
 .wato table.data.globalvars td {
@@ -640,36 +623,54 @@ table.validationerror img {
     height: 16px;
 }
 
-/* configuration overview */
-.wato table.configmodules {
-    empty-cells: show;
-    border-spacing: 8px;
-    margin-left: -8px;
-}
-.wato table.configmodules td {
-    background-image: url("images/form_background.png");
-    background-repeat: repeat;
-    padding: 6px;
-    -moz-border-radius: 5px;
-}
-.wato table.configmodules td.text {
-    width: 49%;
-}
-.wato table.configmodules td.icon {
-    width: 1%; 
-}
-.wato table.configmodules td.text a {
-    color: #246;
-    font-weight: bold;
-}
-.wato table.configmodules td.text a:hover {
-    color: #579;
+/* main menu */
+.wato div.mainmenu {
+    display: table-cell;
+    margin-bottom: 10px;
 }
 
-.wato table.configmodules td.text i {
-    color: black;
-    font-size: 8pt;
+.wato div.mainmenu a {
+    width: 317px;
+    height: 76px;
+    display: block;
+    background-image: url("images/wato_mainmenu_button_lo.png");
+    background-repeat: no-repeat;
+    float: left;
+    position: relative;
+    margin: 0px -1px -1px 0px;
+    left: -2px;
+    text-decoration: none;
 }
+.wato div.mainmenu a:hover {
+    background-image: url("images/wato_mainmenu_button_hi.png");
+}
+.wato div.mainmenu a:active {
+    background-image: url("images/wato_mainmenu_button_clicked.png");
+}
+
+.wato div.mainmenu div {
+    text-decoration: none; 
+    color: white;
+}
+.wato div.mainmenu img {
+    position: absolute;
+    top: 13px;
+    left: 13px;
+}
+.wato div.mainmenu div.title {
+    font-weight: bold;
+    position: absolute;
+    left: 72px;
+    top: 14px;
+}
+.wato div.mainmenu div.subtitle {
+    position: absolute;
+    left: 72px;
+    top: 32px;
+    width: 237px;
+    overflow: hidden;
+}
+
 
 /* Special styles for roles editor (permissions) */
 .wato table.form table.permissions {
@@ -678,30 +679,122 @@ table.validationerror img {
     width: 100%;
 }
 .wato table.form table.permissions td {
-    border-top: 1px dotted white;
+    /* border-top: 1px dotted white; */
     padding-top: 2px;
-    padding-bottom: 8px;
 }
-.wato table.form table.permissions td.left {
-}
-.wato table.form table.permissions td.right {
-    text-align: right;
-    vertical-align: top;
-}
-.wato table.form table.permissions td.right select {
+.wato table.form table.permissions td.select {
     width: 120px;
 }
+.wato table.form table.permissions td.descr {
+    vertical-align: middle;
+}
+.wato table.form table.permissions select {
+    width: 110px;
+}
 
-/* Table in page "Rulesets" */
-.wato table.data.rulesets {
-    width: 849px;
+/* page "Rulesets" */
+.wato td.rulesets {
+    padding-left: 0px;
 }
-.wato table.data.rulesets td.title {
-    width: 430px;
+.wato .rulesets table.nform > tbody > tr > td.container {
+    height: auto;
 }
-.wato table.data.rulesets td.varname {
-    width: 300px;
+div.rulesets table.nform tr.bottom td {
+    height: 5px;
 }
+
+.wato .rulesets div.ruleset {
+    float: left;
+    margin-left: 10px;
+    margin-right: 10px;
+}
+
+.wato .rulesets div.ruleset div.text {
+    width: 276px;
+    padding-right: 3px;
+    overflow: hidden;
+    float: left;
+}
+.wato .rulesets div.ruleset div {
+    height: 16px;
+}
+
+.wato .rulesets div.ruleset a {
+    text-decoration: none;
+    color: black;
+    white-space: nowrap;
+    margin-right: 3px;
+}
+.wato .rulesets div.ruleset a:hover {
+    text-decoration: underline;
+}
+
+.wato .rulesets div.ruleset .dots {
+    overflow: hidden;
+}
+
+.wato .rulesets div.ruleset div.rulecount {
+    width: 16px;
+    float: left;
+    text-align: right;
+}
+
+.wato .rulesets div.ruleset a.nonzero {
+    /* font-weight: bold; */
+}
+.wato .rulesets div.ruleset a.zero {
+}
+
+.wato .rulesets div.ruleset div.rulecount.nonzero {
+    /* font-weight: bold; */
+}
+
+.wato .rulesets div.ruleset div.rulecount.zero {
+    /* color: #444; */
+}
+
+/* Page edit_ruleset */
+div.varname {
+    color: white;
+    font-family: monospace, sans-serif;
+}
+
+/* page "global settings*/
+.wato div.globalvars a {
+    text-decoration: none;
+    color: black;
+}
+.wato div.globalvars a:hover {
+    text-decoration: underline;
+}
+
+.wato div.globalvars td.simple a.modified, .wato div.globalvars a.modified table {
+    border-radius: 5px 5px 5px 5px;
+    box-shadow: 3px 3px 5px #A2BECD inset;
+    margin-left: -5px;
+    padding: 0 5px;
+}
+
+.wato div.globalvars td.content img.iconbutton {
+    width: 60px;
+    height: 16px;
+}
+
+.wato div.globalvars td.legend {
+    padding-top: 0px;
+}
+
+.wato div.globalvars td.legend {
+    width: 350px;
+}
+
+.wato div.globalvars td.legend div.title {
+    max-width: 350px;
+}
+
+/*.wato div.globalvars td {
+    height: 20px;
+}*/
 
 /* Table in page "Global variables" */
 .wato table.data.globalvars {
@@ -712,6 +805,16 @@ table.validationerror img {
 }
 .wato table.data.globalvars td.varname {
     width: 300px;
+}
+
+/* activation */
+.wato table.data div.act_success {
+}
+
+.wato table.data div.act_success img {
+    width: 18px;
+    height: 18px;
+    vertical-align: middle;
 }
 
 /* Replication */
@@ -753,6 +856,7 @@ table.validationerror img {
     background-repeat: repeat;
     width: 50%;
     border: 1px solid #000;
+    color: black;
 }
 
 .wato table.progress th {
@@ -866,6 +970,7 @@ table.validationerror img {
 
 .wato div.error pre div.err {
     background-color: yellow;
+    color: #000;
     font-weight: bold;
     width: 100%;
     margin: 0;
@@ -888,4 +993,13 @@ table.logwatch span.match {
     border-radius: 4px;
     background-color: #fff;
     padding: 0 2px 2px 2px;
+}
+
+table.multisite_conn_method td {
+    padding: 0px;
+    height: 22px;
+    vertical-align: top; 
+}
+table.multisite_conn_method td input {
+    height: 18px;
 }

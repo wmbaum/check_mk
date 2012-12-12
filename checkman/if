@@ -84,7 +84,7 @@ parameters (dict): Due to its complexity, this check now uses a dictionary as
                    time range are - to a low degree - represented in the average. If you configure
                    an average, then the traffic levels are applied to the averaged values.
 
-                   {"state"} - the expected operstatus of the interface (as string or list of strings. If this
+                   {"state"} - the expected operational status of the interface (as string or list of strings. If this
                    is {None} then the state is not checked. Possible values for the
                    state are {"1"}(up), {"2"}(down), {"3"}(testing), {"4"}(unknown),
                    {"5"}(dormant), {"6"}(notPresent) and {"7"}(lowerLayerDown). The default is to
@@ -96,6 +96,11 @@ parameters (dict): Due to its complexity, this check now uses a dictionary as
                    {"speed"} - the expected port speed as an integer of the bits per second (not
                    the bytes!). If you set this to {None}, then the port speed is not checked.
                    The default is to remember and enforce the port speed found during inventory.
+
+                   {"unit"} - the measurement unit which can be set to "bit" or "byte".
+                   Depending on this choice the limits set in the {"traffic"} parameter are regarded
+                   as bits or bytes, too. When this parameter is set to "bit" any traffic related plugin output 
+                   is reported in bits instead of bytes(default).
 
 [configuration]
 if_inventory_porttypes (list of strings): List of interface types the inventory should create checks for.

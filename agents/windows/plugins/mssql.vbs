@@ -27,11 +27,27 @@ Dim WMI, prop, instId, instVersion, instIds, instName
 Set instIds = CreateObject("Scripting.Dictionary")
 
 ' Loop all found local MSSQL server instances
+' Try different trees to handle different versions of MSSQL
+On Error Resume Next
+' MSSQL >= 10
 Set WMI = GetObject("WINMGMTS:\\.\root\Microsoft\SqlServer\ComputerManagement10")
+If Err.Number <> 0 Then
+    Err.Clear()
+    
+    ' MSSQL < 10
+    Set WMI = GetObject("WINMGMTS:\\.\root\Microsoft\SqlServer\ComputerManagement")
+    If Err.Number <> 0 Then
+        wscript.echo "Error: " & Err.Number & " " & Err.Description
+        Err.Clear()
+        wscript.quit()
+    End If
+End If
+On Error Goto 0 
+
 For Each prop In WMI.ExecQuery("SELECT * FROM SqlServiceAdvancedProperty WHERE " & _
                                "SQLServiceType = 1 AND PropertyName = 'VERSION'")
     
-    instId      = prop.ServiceName
+    instId      = Replace(prop.ServiceName, "$", "_")
     instVersion = prop.PropertyStrValue
     
     WScript.echo "<<<mssql_versions>>>"
@@ -61,20 +77,36 @@ CONN.Properties("Integrated Security").Value = "SSPI"
 ' Loop all found server instances and connect to them
 ' In my tests only the connect using the "named instance" string worked
 For Each instId In instIds.Keys
-    instName = Split(instId, "$")(1)
-    CONN.Properties("Data Source").Value = hostname & "\" & instName
+    If InStr(instId, "_") <> 0 Then
+        instName = Split(instId, "_")(1)
+    Else
+        instName = instId
+    End If
+
+    ' In case of instance name "MSSQLSERVER" always use (local) as connect string
+    If instName = "MSSQLSERVER" Then
+        CONN.Properties("Data Source").Value = "(local)"
+    Else
+        CONN.Properties("Data Source").Value = hostname & "\" & instName
+    End If
+
     CONN.Open
     
     ' Get counter data for the whole instance
-    RS.Open "SELECT counter_name, object_name, cntr_value FROM sys.dm_os_performance_counters " & _
+    RS.Open "SELECT counter_name, object_name, instance_name, cntr_value " & _
+            "FROM sys.dm_os_performance_counters " & _
             "WHERE object_name NOT LIKE '%Deprecated%'", CONN
     wscript.echo "<<<mssql_counters>>>"
-    Dim objectName, counterName, value
+    Dim objectName, counterName, instanceName, value
     Do While NOT RS.Eof
-        objectName  = Replace(Trim(RS("object_name")), " ", "_")
-        counterName = Replace(Trim(RS("counter_name")), " ", "_")
-        value       = Trim(RS("cntr_value"))
-        wscript.echo objectName & " " & counterName & " " & value
+        objectName   = Replace(Replace(Trim(RS("object_name")), " ", "_"), "$", "_")
+        counterName  = LCase(Replace(Trim(RS("counter_name")), " ", "_"))
+        instanceName = Replace(Trim(RS("instance_name")), " ", "_")
+        If instanceName = "" Then
+            instanceName = "None"
+        End If
+        value        = Trim(RS("cntr_value"))
+        wscript.echo objectName & " " & counterName & " " & instanceName & " " & value
         RS.MoveNext
     Loop
     RS.Close
@@ -95,7 +127,7 @@ For Each instId In instIds.Keys
     Dim i, dbSize, unallocated, reserved, data, indexSize, unused
     For Each dbName in dbNames.Keys
         ' Switch to other database and then ask for stats
-        RS.Open "USE " & dbName, CONN
+        RS.Open "USE [" & dbName & "]", CONN
         ' sp_spaceused is a stored procedure which returns two selects
         ' which need to be looped
         RS.Open "EXEC sp_spaceused", CONN
@@ -125,7 +157,7 @@ For Each instId In instIds.Keys
             Set RS = RS.NextRecordset
             i = i + 1
         Loop
-        wscript.echo instId & " " & dbName & " " & dbSize & " " & unallocated & " " & reserved & " " & _
+        wscript.echo instId & " " & Replace(dbName, " ", "_") & " " & dbSize & " " & unallocated & " " & reserved & " " & _
                      data & " " & indexSize & " " & unused
         Set RS = CreateObject("ADODB.Recordset")
     Next
@@ -135,13 +167,13 @@ For Each instId In instIds.Keys
     Dim lastBackupDate
     wscript.echo "<<<mssql_backup>>>"
     For Each dbName in dbNames.Keys
-        RS.open "SELECT DATEDIFF(s, '19700101', MAX(backup_finish_date)) AS last_backup_date " & _
+        RS.open "SELECT CONVERT(VARCHAR, DATEADD(s, DATEDIFF(s, '19700101', MAX(backup_finish_date)), '19700101'), 120) AS last_backup_date " & _
                 "FROM msdb.dbo.backupset " & _
                 "WHERE database_name = '" & dbName & "'", CONN
         Do While Not RS.Eof
             lastBackupDate = Trim(RS("last_backup_date"))
             If lastBackupDate <> "" Then
-                wscript.echo instId & " " & dbName  & " " & lastBackupDate
+                wscript.echo instId & " " & Replace(dbName, " ", "_") & " " & lastBackupDate
             End If
             RS.MoveNext
         Loop

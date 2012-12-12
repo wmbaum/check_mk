@@ -39,12 +39,16 @@ def load_plugins():
     global loaded_with_language
     if loaded_with_language == current_language:
         return
-    loaded_with_language = current_language
 
     # Load all snapins
     global sidebar_snapins
     sidebar_snapins = {}
     load_web_plugins("sidebar", globals())
+
+    # This must be set after plugin loading to make broken plugins raise
+    # exceptions all the time and not only the first time (when the plugins
+    # are loaded).
+    loaded_with_language = current_language
 
     # Declare permissions: each snapin creates one permission
     config.declare_permission_section("sidesnap", _("Sidebar snapins"))
@@ -55,7 +59,7 @@ def load_plugins():
             snapin["allowed"])
 
 # Helper functions to be used by snapins
-def link(text, target):
+def link(text, target, frame="main"):
     # Convert relative links into absolute links. We have three kinds
     # of possible links and we change only [3]
     # [1] protocol://hostname/url/link.py
@@ -63,13 +67,14 @@ def link(text, target):
     # [3] relative.py
     if not (":" in target[:10]) and target[0] != '/':
         target = defaults.url_prefix + "check_mk/" + target
-    return "<a target=\"main\" class=link href=\"%s\">%s</a>" % (target, htmllib.attrencode(text))
+    return '<a onfocus="if (this.blur) this.blur();" target="%s" ' \
+           'class=link href="%s">%s</a>' % (frame, target, htmllib.attrencode(text))
 
-def simplelink(text, target):
-    html.write(link(text, target) + "<br>\n")
+def simplelink(text, target, frame="main"):
+    html.write(link(text, target, frame) + "<br>\n")
 
-def bulletlink(text, target):
-    html.write("<li class=sidebar>" + link(text, target) + "</li>\n")
+def bulletlink(text, target, frame="main"):
+    html.write("<li class=sidebar>" + link(text, target, frame) + "</li>\n")
 
 def iconlink(text, target, icon):
     linktext = '<img class=iconlink src="images/icon_%s.png">%s' % \
@@ -114,7 +119,7 @@ def load_user_config():
     return [ entry for entry in user_config if entry[1] != "off" and config.may("sidesnap." + entry[0])]
 
 def save_user_config(user_config):
-    if config.may("configure_sidebar"):
+    if config.may("general.configure_sidebar"):
         config.save_user_file("sidebar", user_config)
 
 def sidebar_head():
@@ -126,14 +131,14 @@ def sidebar_head():
 
 def sidebar_foot():
     html.write('<div id="side_footer">')
-    if config.may("configure_sidebar"):
+    if config.may("general.configure_sidebar"):
         html.icon_button("sidebar_add_snapin.py", _("Add snapin to the sidebar"), "sidebar_addsnapin", 
                          target="main")
-    if config.may("edit_profile") or config.may("change_password"):
+    if config.may("general.edit_profile") or config.may("general.change_password"):
         html.icon_button("user_profile.py", _("Edit your personal settings, change your password"), "sidebar_settings",
                          target="main")
         # html.write('<li><a class=profile target="main" href="user_profile.py" title="%s"></a></li>' % _('Edit user profile'))
-    if config.may("logout"):
+    if config.may("general.logout"):
         html.icon_button("logout.py", _("Log out"), "sidebar_logout", target="_top")
         # html.write('<li><a class=logout target="_top" href="logout.py" title="%s"></a></li>' % _('Logout'))
     html.write('</ul>')
@@ -142,10 +147,10 @@ def sidebar_foot():
 
 # Standalone sidebar
 def page_side():
-    if not config.may("see_sidebar"):
+    if not config.may("general.see_sidebar"):
         return
     html.html_head(_("Check_MK Sidebar"), javascripts=["sidebar"], stylesheets=["sidebar", "status"])
-    html.write('<body class="side" onload="initScrollPos()" onunload="storeScrollPos()">\n')
+    html.write('<body class="side" onload="initScrollPos(); setSidebarHeight();" onunload="storeScrollPos()">\n')
     html.write('<div id="check_mk_sidebar">\n')
 
     views.load_views()
@@ -179,6 +184,7 @@ def page_side():
     html.write("restart_snapins = %r;\n" % restart_snapins)
     html.write("sidebar_scheduler();\n")
     html.write("window.onresize = function() { setSidebarHeight(); }\n")
+    # html.write("window.onload = function() { setSidebarHeight(); }\n")
     html.write("</script>\n")
 
     # html.write("</div>\n")
@@ -204,7 +210,7 @@ def render_snapin(name, state):
     html.write('<div class="head %s" ' % headclass)
 
     # If the user may modify the sidebar then add code for dragging the snapin
-    if config.may("configure_sidebar"):
+    if config.may("general.configure_sidebar"):
         html.write("onmouseover=\"document.body.style.cursor='move';\" "
                    "onmouseout=\"document.body.style.cursor='';\" "
                    "onmousedown=\"snapinStartDrag(event)\" onmouseup=\"snapinStopDrag(event)\">")
@@ -218,7 +224,7 @@ def render_snapin(name, state):
                "side", "toggle_sidebar_snapin(this, '%s')" % toggle_url, 'snapin_'+name)
     html.write('</div>')
 
-    if config.may("configure_sidebar"):
+    if config.may("general.configure_sidebar"):
         # Button for closing (removing) a snapin
         html.write('<div class="closesnapin">')
         iconbutton("closesnapin", "sidebar_openclose.py?name=%s&state=off" % name, 
@@ -288,7 +294,7 @@ def ajax_snapin():
         snapin_exception(e)
 
 def move_snapin():
-    if not config.may("configure_sidebar"):
+    if not config.may("general.configure_sidebar"):
         return
 
     snapname_to_move = html.var("name")
@@ -318,7 +324,7 @@ def move_snapin():
     save_user_config(new_config)
 
 def page_add_snapin():
-    if not config.may("configure_sidebar"):
+    if not config.may("general.configure_sidebar"):
         raise MKGeneralException(_("You are not allowed to change the sidebar."))
 
     html.header(_("Available snapins"), stylesheets=["pages", "sidebar", "status"])
@@ -345,9 +351,9 @@ def page_add_snapin():
         description = snapin.get("description", "")
         transid = html.fresh_transid()
         url = 'sidebar_add_snapin.py?name=%s&_transid=%s&pos=top' % (name, transid)
-        html.write('<div class=snapinadder onmouseover="this.style.background=\'#cde\'; this.style.cursor=\'pointer\';" '
-                'onmouseout="this.style.background=\'#9bc\' "'
-                'onmousedown="window.location.href=\'%s\';return false;">' % url)
+        html.write('<div class=snapinadder '
+                   'onmouseover="this.style.cursor=\'pointer\';" '
+                   'onmousedown="window.location.href=\'%s\'; return false;">' % url)
 
         html.write("<div class=snapin_preview>")
         html.write("<div class=clickshield></div>")
@@ -360,4 +366,166 @@ def page_add_snapin():
     html.write("</div>\n")
     html.footer()
 
-load_plugins()
+
+def ajax_speedometer():
+    try:
+        # Try to get values from last call in order to compute
+        # driftig speedometer-needle and to reuse the scheduled
+        # check reate.
+        last_perc          = float(html.var("last_perc"))
+        scheduled_rate     = float(html.var("scheduled_rate"))
+        last_program_start = int(html.var("program_start"))
+
+        # Get the current rates and the program start time. If there
+        # are more than one site, we simply add the start times.
+        data = html.live.query_summed_stats("GET status\n"
+               "Columns: service_checks_rate host_checks_rate program_start")
+        current_rate = data[0] + data[1]
+        program_start = data[2]
+
+        # Recompute the scheduled_rate only if it is not known (first call)
+        # or if one of the sites has been restarted. The computed value cannot
+        # change during the monitoring since it just reflects the configuration.
+        # That way we save CPU resources since the computation of the
+        # scheduled checks rate needs to loop over all hosts and services.
+        if last_program_start != program_start:
+            scheduled_rate = 0.0
+
+            # First get data of all active checks
+            for what in [ "host", "service" ]:
+                data = html.live.query_summed_stats(
+                        "GET %ss\nStats: suminv check_interval\n"
+                        "Filter: active_checks_enabled = 1" % what)
+
+                scheduled_rate += data[0] / 60.0
+
+            # HACK:
+            # The Check_MK passive checks are always added to Nagios with
+            # a check interval of 1 minute. If one chancges the check interval
+            # of the Check_MK service, the intervals of the passive services
+            # change in fact. But this change is not added to the nagios config
+            # of these objects. Workaround here: Get interval of Check_MK service
+            # and add it as interval to the cmk passive checks
+            intervals = html.live.query_table(
+                "GET services\n"
+                "Columns: host_name check_interval\n"
+                "Filter: description = Check_MK")
+
+            num_svcs = dict(html.live.query_table(
+                "GET services\n"
+                "Columns:host_name\n"
+                "Stats: check_command ~ ^check_mk-"))
+
+            for line in intervals:
+                host_name, check_interval = line
+                num_services = num_svcs.get(host_name, 0)
+
+                file('/tmp/3', 'a').write('%s %d %0.2f\n' % (host_name, num_services, 1.0 / (check_interval / 60.0) * num_services))
+                scheduled_rate += 1.0 / ((check_interval / 60.0) * num_services)
+
+        percentage = 100.0 * current_rate / scheduled_rate;
+        title = _("Scheduled check rate: %.1f/s, current rate: %.1f/s, that is "
+                  "%.0f%% of the scheduled rate" %
+                  (scheduled_rate, current_rate, percentage))
+
+    except Exception, e:
+        scheduled_rate = 0
+        program_start = 0
+        percentage = 0
+        last_perc = 0
+        title = _("No performance data: ") + str(e)
+
+    html.write(repr([scheduled_rate, program_start, percentage, last_perc, str(title)]))
+
+def ajax_switch_masterstate():
+    site = html.var("site")
+    column = html.var("switch")
+    state = int(html.var("state"))
+    commands = {
+        ( "enable_notifications",     1) : "ENABLE_NOTIFICATIONS",
+        ( "enable_notifications",     0) : "DISABLE_NOTIFICATIONS",
+        ( "execute_service_checks",   1) : "START_EXECUTING_SVC_CHECKS",
+        ( "execute_service_checks",   0) : "STOP_EXECUTING_SVC_CHECKS",
+        ( "execute_host_checks",      1) : "START_EXECUTING_HOST_CHECKS",
+        ( "execute_host_checks",      0) : "STOP_EXECUTING_HOST_CHECKS",
+        ( "process_performance_data", 1) : "ENABLE_PERFORMANCE_DATA",
+        ( "process_performance_data", 0) : "DISABLE_PERFORMANCE_DATA",
+        ( "enable_event_handlers",    1) : "ENABLE_EVENT_HANDLERS",
+        ( "enable_event_handlers",    0) : "DISABLE_EVENT_HANDLERS",
+    }
+
+    command = commands.get((column, state))
+    if command:
+        html.live.command("[%d] %s" % (int(time.time()), command), site)
+        html.live.set_only_sites([site])
+        html.live.query("GET status\nWaitTrigger: program\nWaitTimeout: 10000\nWaitCondition: %s = %d\nColumns: %s\n" % \
+               (column, state, column))
+        html.live.set_only_sites()
+        render_master_control()
+    else:
+        html.write(_("Command %s/%d not found") % (column, state))
+
+def ajax_del_bookmark():
+    num = int(html.var("num"))
+    bookmarks = load_bookmarks()
+    del bookmarks[num]
+    save_bookmarks(bookmarks)
+    render_bookmarks()
+
+def ajax_add_bookmark():
+    title = html.var("title")
+    href = html.var("href")
+    if title and href:
+        bookmarks = load_bookmarks()
+        # We try to remove http://hostname/some/path/check_mk from the
+        # URI. That keeps the configuration files (bookmarks) portable.
+        # Problem here: We have not access to our own URL, only to the
+        # path part. The trick: we use the Referrer-field from our
+        # request. That points to the sidebar.
+        referer = html.req.headers_in.get("Referer")
+        if referer:
+            while '/' in referer and referer.split('/')[0] == href.split('/')[0]:
+                referer = referer.split('/', 1)[1]
+                href = href.split('/', 1)[1]
+        bookmarks.append((title, href))
+        save_bookmarks(bookmarks)
+    render_bookmarks()
+
+def page_edit_bookmark():
+    html.header(_("Edit Bookmark"))
+    n = int(html.var("num"))
+    bookmarks = load_bookmarks()
+    if n >= len(bookmarks):
+        raise MKGeneralException(_("Unknown bookmark id: %d. This is probably a problem with reload or browser history. Please try again.") % n)
+
+    if html.var("save") and html.check_transaction():
+        title = html.var("title")
+        url = html.var("url")
+        bookmarks[n] = (title, url)
+        save_bookmarks(bookmarks)
+        html.reload_sidebar()
+
+    html.begin_form("edit_bookmark")
+    if html.var("save"):
+        title = html.var("title")
+        url = html.var("url")
+        bookmarks[n] = (title, url)
+        save_bookmarks(bookmarks)
+        html.reload_sidebar()
+    else:
+        title, url = bookmarks[n]
+        html.set_var("title", title)
+        html.set_var("url", url)
+
+    html.write("<table class=edit_bookmarks>")
+    html.write("<tr><td>%s</td><td>" % _('Title:'))
+    html.text_input("title", size = 50)
+    html.write("</td></tr><tr><td>%s:</td><td>" % _('URL'))
+    html.text_input("url", size = 50)
+    html.write("</td></tr><tr><td></td><td>")
+    html.button("save", _("Save"))
+    html.write("</td></tr></table>\n")
+    html.hidden_field("num", str(n))
+    html.end_form()
+
+    html.footer()

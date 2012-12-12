@@ -26,6 +26,10 @@
 // general function
 // ----------------------------------------------------------------------------
 
+// Make JS understand Python source code
+var True = true;
+var False = false;
+
 // Some browsers don't support indexOf on arrays. This implements the
 // missing method
 if (!Array.prototype.indexOf)
@@ -49,6 +53,17 @@ if (!Array.prototype.indexOf)
     }
     return -1;
   };
+}
+
+// The nextSibling attribute points also to "text nodes" which might
+// be created by spaces or even newlines in the HTML code and not to
+// the next painted dom object.
+// This works around the problem and really returns the next object.
+function real_next_sibling(o) {
+    var n = o.nextSibling;
+    while (n.nodeType != 1)
+      n = n.nextSibling;
+    return n;
 }
 
 var classRegexes = {};
@@ -159,7 +174,7 @@ function get_url_sync(url) {
 
     AJAX.open("GET", url, false);
     AJAX.send(null);
-    return AJAX.responseText;
+    return AJAX.responseText; 
 }
 
 
@@ -257,8 +272,16 @@ function getUrlParam(name) {
 function makeuri(addvars) {
     var tmp = window.location.href.split('?');
     var base = tmp[0];
-    tmp = tmp[1].split('#');
-    tmp = tmp[0].split('&');
+    if(tmp.length > 1) {
+        // Remove maybe existing anchors
+        tmp = tmp[1].split('#');
+        // Split to array of param-strings (key=val)
+        tmp = tmp[0].split('&');
+    } else {
+        // Uri has no parameters
+        tmp = [];
+    }
+
     var len = tmp.length;
     var params = [];
     var pair = null;
@@ -266,7 +289,9 @@ function makeuri(addvars) {
     // Skip unwanted parmas
     for(var i = 0; i < tmp.length; i++) {
         pair = tmp[i].split('=');
-        if(pair[0][0] == '_')
+        if(pair[0][0] == '_') // Skip _<vars>
+            continue;
+        if(addvars.hasOwnProperty(pair[0])) // Skip vars present in addvars
             continue;
         params.push(tmp[i]);
     }
@@ -283,58 +308,60 @@ function makeuri(addvars) {
 // GUI styling
 // ----------------------------------------------------------------------------
 
-function filter_activation(oid)
+function update_headinfo(text)
 {
-    var selectobject = document.getElementById(oid);
-    if (!selectobject) {
-        alert("Could not find element " + oid + "!");
-        return;
+    oDiv = document.getElementById("headinfo");
+    if (oDiv) {
+        oDiv.innerHTML = text;
     }
-    var usage = selectobject.value;
-    var oTd = selectobject.parentNode.parentNode.childNodes[2];
-    var pTd = selectobject.parentNode;
-    pTd.setAttribute("className", "usage" + usage);
-    pTd.setAttribute("class",     "usage" + usage);
-    oTd.setAttribute("class",     "widget" + usage);
-    oTd.setAttribute("className", "widget" + usage);
+}
 
-    var disabled = usage != "hard" && usage != "show";
-    for (var i in oTd.childNodes) {
-        oNode = oTd.childNodes[i];
-        if (oNode.tagName == "INPUT" || oNode.tagName == "SELECT") {
-            oNode.disabled = disabled;
+function toggle_input_fields(container, type, disable) {
+    var fields = container.getElementsByTagName(type);
+    for(var a = 0; a < fields.length; a++) {
+        fields[a].disabled = disable;
+    }
+}
+
+function toggle_other_filters(fname, disable_others) {
+    for(var i = 0; i < g_filter_groups[fname].length; i++) {
+        var other_fname = g_filter_groups[fname][i];
+        var oSelect = document.getElementById('filter_' + other_fname);
+
+        // When the filter is active, disable the other filters and vice versa
+
+        // Disable the "filter mode" dropdown
+        oSelect.disabled = disable_others;
+
+        // Now dig into the filter and rename all input fields.
+        // If disabled add an "_disabled" to the end of the var
+        // If enabled remve "_disabled" from the end of the var
+        var oFloatFilter = real_next_sibling(oSelect);
+        if (oFloatFilter) {
+            toggle_input_fields(oFloatFilter, 'input', disable_others);
+            toggle_input_fields(oFloatFilter, 'select', disable_others);
+            oFloatFilter = null;
         }
-    }
 
-    p = null;
-    oTd = null;
-    selectobject = null;
+        oSelect = null;
+    }
 }
 
-function toggle_tab(linkobject, oid)
+function filter_activation(oSelect)
 {
-    var table = document.getElementById(oid);
-    if (table.style.display == "none") {
-        table.style.display = "";
-        linkobject.setAttribute("className", "left open");
-        linkobject.setAttribute("class", "left open");
-    }
-    else {
-        table.style.display = "none";
-        linkobject.setAttribute("className", "left closed");
-        linkobject.setAttribute("class", "left closed");
-    }
-    table = null;
-}
+    var usage = oSelect.value;
+    var fname = oSelect.id.replace('filter_', '');
 
-function hover_tab(linkobject)
-{
-    linkobject.style.backgroundImage = "url(images/metanav_button_hi.png)";
-}
+    // Disable/Enable other filters which conflict with this filter
+    toggle_other_filters(fname, usage != 'off');
 
-function unhover_tab(linkobject)
-{
-    linkobject.style.backgroundImage = "url(images/metanav_button.png)";
+    // Make the current filter visible/invisible
+    var oDiv = oSelect.parentNode;
+    oDiv.setAttribute("className", "filtersetting " + usage);
+    oDiv.setAttribute("class", "filtersetting " + usage);
+
+    oDiv = null;
+    oSelect = null;
 }
 
 // ----------------------------------------------------------------------------
@@ -407,6 +434,23 @@ function render_pnp_graphs(container, site, host, service, pnpview, base_url, pn
                  'with_link': with_link, 'view':     pnpview};
     get_url(pnp_url + 'index.php/json?&host=' + encodeURIComponent(host) + '&srv=' + encodeURIComponent(service) + '&source=0&view=' + pnpview,
         pnp_response_handler, data, pnp_error_response_handler);
+}
+
+// Renders contents for the PNP hover menus
+function pnp_hover_contents(url) {
+    var c = get_url_sync(url);
+    // It is possible that, if using multisite based authentication, pnp sends a 302 redirect
+    // to the login page which is transparently followed by XmlHttpRequest. There is no chance
+    // to catch the redirect. So we try to check the response content. If it does not contain
+    // the expected code, simply display an error message.
+    if(c.indexOf('/image?') === -1) {
+        // Error! unexpected response
+        c = '<div style="background-color:#BA2C2C;width:350px;padding:5px"> '
+          + 'ERROR: Received an unexpected response '
+          + 'while trying to display the PNP-Graphs. Maybe there is a problem with the '
+          + 'authentication.</div>';
+    }
+    return c;
 }
 
 // ----------------------------------------------------------------------------
@@ -525,7 +569,7 @@ function column_swap_ids(o1, o2) {
     o2 = null;
 }
 
-function add_view_column_handler(id, code) {
+function add_view_column_handler(oContainer, code) {
     // Can not simply add the new code to the innerHTML code of the target
     // container. So first creating a temporary container and fetch the
     // just created DOM node of the editor fields to add it to the real
@@ -534,7 +578,6 @@ function add_view_column_handler(id, code) {
     tmpContainer.innerHTML = code;
     var oNewEditor = tmpContainer.lastChild;
 
-    var oContainer = document.getElementById('ed_'+id).firstChild;
     oContainer.appendChild(oNewEditor);
     tmpContainer = null;
 
@@ -543,10 +586,12 @@ function add_view_column_handler(id, code) {
     oContainer = null;
 }
 
-function add_view_column(id, datasourcename, prefix) {
+function add_view_column(oButton, datasourcename, prefix) {
+    oTd = oButton.parentNode;
+    oContainer = oTd.firstChild;
     get_url('get_edit_column.py?ds=' + datasourcename + '&pre=' + prefix
-          + '&num=' + (document.getElementById('ed_'+id).firstChild.childNodes.length + 1),
-            add_view_column_handler, id);
+          + '&num=' + (oContainer.childNodes.length + 1),
+            add_view_column_handler, oContainer);
 }
 
 function delete_view_column(oImg) {
@@ -665,6 +710,21 @@ function toggleRefreshButton(s, enable) {
     o = null;
 }
 
+function toggleRefreshFooter(s) {
+    var o = document.getElementById('foot_refresh');
+    var o2 = document.getElementById('foot_refresh_time');
+    if(o) {
+        if(s == 0) {
+            o.style.display = 'none';
+        } else {
+            o.style.display = 'inline-block';
+            if(o2) {
+                o2.innerHTML = s;
+            }
+        }
+    }
+    o = null;
+}
 
 // When called with one or more parameters parameters it reschedules the
 // timer to the given interval. If the parameter is 0 the reload is stopped.
@@ -680,6 +740,7 @@ function setReload(secs, url) {
     }
 
     toggleRefreshButton(secs, true);
+    toggleRefreshFooter(secs);
 
     if (secs !== 0) {
         gReloadTime  = secs;
@@ -688,7 +749,10 @@ function setReload(secs, url) {
 }
 
 function startReloadTimer(url) {
-    gReloadTimer = setTimeout("handleReload('" + url + "')", Math.ceil(parseFloat(gReloadTime) * 1000));
+    if (gReloadTimer)
+        clearTimeout(gReloadTimer);
+    if (gReloadTime)
+        gReloadTimer = setTimeout("handleReload('" + url + "')", Math.ceil(parseFloat(gReloadTime) * 1000));
 }
 
 function updateHeaderTime() {
@@ -746,19 +810,32 @@ function handleReload(url) {
     // FiXME: Nicht mehr die ganze Seite neu laden, wenn es ein DIV "data_container" gibt.
     // In dem Fall wird die aktuelle URL aus "window.location.href" geholt, für den Refresh
     // modifiziert, der Inhalt neu geholt und in das DIV geschrieben.
-    if(!document.getElementById('data_container') || url !== '') {
+    if (!document.getElementById('data_container') || url !== '') {
         if (url === '')
             window.location.reload(false);
         else
             window.location.href = url;
-    } else {
-        // Enforce specific display_options to get only the content data
+    } 
+    else {
+        // Enforce specific display_options to get only the content data.
+        // All options in "opts" will be forced. Existing upper-case options will be switched.
         var display_options = getUrlParam('display_options');
-        var opts = [ 'h', 't', 'b', 'f', 'c', 'o', 'd', 'e', 'r', 'w' ];
-        for(var i = 0; i < opts.length; i++) {
-            if(display_options.indexOf(opts[i].toUpperCase()) > -1)
+        // Removed 'w' to reflect original rengering mechanism during reload
+        // For example show the "Your query produced more than 1000 results." message
+        // in views even during reload.
+        var opts = [ 'h', 't', 'b', 'f', 'c', 'o', 'd', 'e', 'r' ];
+        for (var i = 0; i < opts.length; i++) {
+            if (display_options.indexOf(opts[i].toUpperCase()) > -1)
                 display_options = display_options.replace(opts[i].toUpperCase(), opts[i]);
             else
+                display_options += opts[i];
+        }
+        opts = null;
+
+        // Add optional display_options if not defined in original display_options
+        var opts = [ 'w' ];
+        for (var i = 0; i < opts.length; i++) {
+            if (display_options.indexOf(opts[i].toUpperCase()) == -1)
                 display_options += opts[i];
         }
         opts = null;
@@ -802,7 +879,9 @@ function folding_step(oImg, state, step) {
         else
             step = 8;
 
-    oImg.src = "images/tree_" + step + "0.png";
+    // Relace XX.png at the end of the image with the
+    // current rotating angle
+    oImg.src = oImg.src.substr(0, oImg.src.length - 6) + step + "0.png";
 
     if(state == 1) {
         if(step == 9) {
@@ -821,14 +900,53 @@ function folding_step(oImg, state, step) {
     setTimeout(function() { folding_step(oImg, state, step); }, fold_steps[step]);
 }
 
+/* Check if an element has a certain css class. */
+function has_class(o, cn) {
+    var parts = o.className.split(' ');
+    for (x=0; x<parts.length; x++) {
+        if (parts[x] == cn)
+            return true;
+    }
+    return false;
+}
+
+function remove_class(o, cn) {
+    var parts = o.className.split(' ');
+    var new_parts = Array();
+    for (x=0; x<parts.length; x++) {
+        if (parts[x] != cn) 
+            new_parts.push(parts[x]);
+    }
+    o.className = new_parts.join(" ");
+}
+
+function add_class(o, cn) {
+    if (!has_class(o, cn))
+        o.className += " " + cn;
+}
+
+function change_class(o, a, b) {
+    remove_class(o, a);
+    add_class(o, b);
+}
+
+
 function toggle_tree_state(tree, name, oContainer) {
     var state;
-    if(oContainer.style.display == 'none') {
-        oContainer.style.display = '';
+    if (has_class(oContainer, 'closed')) {
+        change_class(oContainer, 'closed', 'open');
         state = 'on';
+        if (oContainer.tagName == 'TR') { // handle in-table toggling
+            while (oContainer = oContainer.nextSibling)
+                change_class(oContainer, 'closed', 'open');
+        }
     } else {
-        oContainer.style.display = 'none';
+        change_class(oContainer, 'open', 'closed');
         state = 'off';
+        if (oContainer.tagName == 'TR') { // handle in-table toggling
+            while (oContainer = oContainer.nextSibling)
+                change_class(oContainer, 'open', 'closed');
+        }
     }
     get_url('tree_openclose.py?tree=' + escape(tree) + '&name=' + escape(name) + '&state=' + state);
     oContainer = null;
@@ -836,12 +954,20 @@ function toggle_tree_state(tree, name, oContainer) {
 
 
 function toggle_foldable_container(treename, id) {
-    var oImg = document.getElementById('treeimg.' + treename + '.' + id);
-    var oBox = document.getElementById('tree.' + treename + '.' + id);
-    toggle_tree_state(treename, id, oBox);
-    toggle_folding(oImg, oBox.style.display != "none");
-    oImg = null;
-    oBox = null;
+    // Check, if we fold a NG-Norm
+    var oNform = document.getElementById('nform.' + treename + '.' + id);
+    if (oNform) {
+        var oTr = oNform.parentNode.nextSibling;
+        toggle_tree_state(treename, id, oTr);
+    }
+    else {
+        var oImg = document.getElementById('treeimg.' + treename + '.' + id);
+        var oBox = document.getElementById('tree.' + treename + '.' + id);
+        toggle_tree_state(treename, id, oBox);
+        toggle_folding(oImg, !has_class(oBox, "closed"));
+        oImg = null;
+        oBox = null;
+    }
 }
 
 /*
@@ -858,157 +984,34 @@ function toggle_foldable_container(treename, id) {
 // Holds the row numbers of all selected rows
 var g_selected_rows = [];
 
-//
-function rgbToHsv(r, g, b) {
-    var r = (r / 255),
-        g = (g / 255),
-        b = (b / 255);
-
-    var min = Math.min(Math.min(r, g), b),
-        max = Math.max(Math.max(r, g), b),
-        delta = max - min;
-
-    var value = max, saturation, hue;
-
-    // Hue
-    if (max == min) {
-        hue = 0;
-    } else if (max == r) {
-        hue = (60 * ((g-b) / (max-min))) % 360;
-    } else if (max == g) {
-        hue = 60 * ((b-r) / (max-min)) + 120;
-    } else if (max == b) {
-        hue = 60 * ((r-g) / (max-min)) + 240;
-    }
-
-    if (hue < 0)
-        hue += 360;
-
-    // Saturation
-    if (max == 0) {
-        saturation = 0;
-    } else {
-        saturation = 1 - (min/max);
-    }
-    return [Math.round(hue), Math.round(saturation * 100), Math.round(value * 100)];
-}
-
-function hsvToRgb(h,s,v) {
-
-    var s = s / 100,
-        v = v / 100;
-
-    var hi = Math.floor((h/60) % 6);
-    var f = (h / 60) - hi;
-    var p = v * (1 - s);
-    var q = v * (1 - f * s);
-    var t = v * (1 - (1 - f) * s);
-
-    var rgb = [];
-
-    switch (hi) {
-        case 0: rgb = [v,t,p];break;
-        case 1: rgb = [q,v,p];break;
-        case 2: rgb = [p,v,t];break;
-        case 3: rgb = [p,q,v];break;
-        case 4: rgb = [t,p,v];break;
-        case 5: rgb = [v,p,q];break;
-    }
-
-    var r = Math.min(255, Math.round(rgb[0]*256)),
-        g = Math.min(255, Math.round(rgb[1]*256)),
-        b = Math.min(255, Math.round(rgb[2]*256));
-
-    return [r,g,b];
-}
-
-function lightenColor(color, val) {
-    if(color == 'transparent' || color == 'rgba(0, 0, 0, 0)')
-        return color;
-
-    if(color.charAt(0) === 'r') {
-        var parts = color.substring(color.indexOf('(')+1, color.indexOf(')')).split(',', 3);
-        var r = parseInt(parts[0]);
-        var g = parseInt(parts[1]);
-        var b = parseInt(parts[2]);
-    } else if(color.charAt(0) === '#' && color.length == 7) {
-        var r = parseInt(color.substring(1, 3), 16);
-        var g = parseInt(color.substring(3, 5), 16);
-        var b = parseInt(color.substring(5, 7), 16);
-    } else if(color.charAt(0) === '#' && color.length == 4) {
-        var r = parseInt(color.substring(1, 2) + color.substring(1, 2), 16);
-        var g = parseInt(color.substring(2, 3) + color.substring(2, 3), 16);
-        var b = parseInt(color.substring(3, 4) + color.substring(3, 4), 16);
-    } else {
-        alert('Invalid color definition: ' + color);
-        return color;
-    }
-
-    var hsv = rgbToHsv(r, g, b);
-    hsv[2] -= val;
-    var rgb = hsvToRgb(hsv[0], hsv[1], hsv[2]);
-
-    r = rgb[0];
-    g = rgb[1];
-    b = rgb[2];
-
-    code  = r < 16 ? "0"+r.toString(16) : r.toString(16);
-    code += g < 16 ? "0"+g.toString(16) : g.toString(16);
-    code += b < 16 ? "0"+b.toString(16) : b.toString(16);
-
-    return "#" + code.toUpperCase();
-}
-
-function real_style(obj, attr, ieAttr) {
-    var st;
-    if(document.defaultView && document.defaultView.getComputedStyle) {
-        st = document.defaultView.getComputedStyle(obj, null).getPropertyValue(attr);
-    } else {
-        st = obj.currentStyle[ieAttr];
-    }
-
-    if(typeof(st) == 'undefined') {
-        st = 'transparent';
-    }
-
-    // If elem is a TD and has no background find the backround of the parent
-    // e.g. the TR and then set this color as background for the TD
-    // But only do this when the TR is not in the highlight scope
-    if(obj.tagName == 'TD'
-       && obj.parentNode.row_num === undefined
-       && (st == 'transparent' || st == 'rgba(0, 0, 0, 0)'))
-        st = real_style(obj.parentNode, attr, ieAttr);
-
-    return st;
-}
-
-function find_checkbox(elem) {
-    // Find the checkbox of this element to gather the number of cells
+function find_checkbox(oTd) {
+    // Find the checkbox of this oTdent to gather the number of cells
     // to highlight after the checkbox
     // 1. Go up to the row
     // 2. search backwards for the next checkbox
     // 3. loop the number of columns to highlight
-    var childs = elem.parentNode.childNodes;
+    var allTds = oTd.parentNode.childNodes;
     var found = false;
     var checkbox = null;
-    for(var a = childs.length - 1; a >= 0 && checkbox === null; a--) {
+    for(var a = allTds.length - 1; a >= 0 && checkbox === null; a--) {
         if(found === false) {
-            if(childs[a] == elem) {
+            if(allTds[a] == oTd) { /* that's me */
                 found = true;
             }
-            continue;
+            else 
+                continue;
         }
 
         // Found the clicked column, now walking the cells backward from the
         // current cell searching for the next checkbox
-        var elems = childs[a].childNodes;
-        for(var x = 0; x < elems.length; x++) {
-            if(elems[x].tagName === 'INPUT' && elems[x].type == 'checkbox') {
-                checkbox = elems[x];
+        var oTds = allTds[a].childNodes;
+        for(var x = 0; x < oTds.length; x++) {
+            if(oTds[x].tagName === 'INPUT' && oTds[x].type == 'checkbox') {
+                checkbox = oTds[x];
                 break;
             }
         }
-        elems = null;
+        oTds = null;
     }
     return checkbox;
 }
@@ -1025,23 +1028,23 @@ function highlight_row(elem, on) {
 }
 
 function highlight_elem(elem, on) {
-    // Find all elements below "elem" with a defined background-color and change it
-    var bg_color = real_style(elem, 'background-color', 'backgroundColor');
-    if (bg_color == 'white')
-        bg_color = "#ffffff";
+    if (on)
+        add_class(elem, "checkbox_hover");
+    else
+        remove_class(elem, "checkbox_hover");
+}
 
-    if(on) {
-        elem['hover_orig_bg'] = bg_color;
-        elem.style.backgroundColor = lightenColor(elem['hover_orig_bg'], -20);
-    } else {
-        elem.style.backgroundColor = elem['hover_orig_bg'];
-        elem['hover_orig_bg'] = undefined;
+function update_row_selection_information() {
+    var count = g_selected_rows.length;
+    var oDiv = document.getElementById("headinfo");
+    if (oDiv) {
+        var current_text = oDiv.innerHTML;
+        if (current_text.indexOf('/') != -1) {
+            var parts = current_text.split('/');
+            current_text = parts[1];
+        }
+        oDiv.innerHTML = count + "/" + current_text;
     }
-
-    var childs = elem.childNodes;
-    for(var i = 0; i < childs.length; i++)
-        if(childs[i].tagName !== undefined && childs[i].tagName !== 'OPTION')
-            highlight_elem(childs[i], on);
 }
 
 function select_all_rows(elems, only_failed) {
@@ -1055,6 +1058,7 @@ function select_all_rows(elems, only_failed) {
                 g_selected_rows.push(elems[i].name);
         }
     }
+    update_row_selection_information();
 }
 
 function remove_selected_rows(elems) {
@@ -1065,6 +1069,7 @@ function remove_selected_rows(elems) {
             g_selected_rows.splice(row_pos, 1);
         row_pos = null;
     }
+    update_row_selection_information();
 }
 
 function toggle_box(e, elem) {
@@ -1074,6 +1079,7 @@ function toggle_box(e, elem) {
     } else {
         g_selected_rows.push(elem.name);
     }
+    update_row_selection_information();
 }
 
 function toggle_row(e, elem) {
@@ -1109,6 +1115,7 @@ function toggle_row(e, elem) {
         checkbox.checked = true;
         g_selected_rows.push(checkbox.name);
     }
+    update_row_selection_information();
 
     if(e.stopPropagation)
         e.stopPropagation();
@@ -1177,13 +1184,15 @@ function toggle_group_rows(checkbox) {
     if(group_start === null)
         group_start = 0;
     if(group_end === null)
-        group_end = rows.length - 1;
+        group_end = rows.length;
 
     // Found the group start and end row of the checkbox!
     var group_rows = [];
-    for(var a = group_start; a < group_end; a++)
-        if(rows[a].tagName === 'TR')
+    for(var a = group_start; a < group_end; a++) {
+        if(rows[a].tagName === 'TR') {
             group_rows.push(rows[a]);
+        }
+    }
     toggle_all_rows(group_rows);
     group_rows = null;
 
@@ -1207,7 +1216,7 @@ function toggle_all_rows(obj) {
             all_selected = false;
         else
             none_selected = false;
-        if (checkboxes[i].classList.contains('failed'))
+        if (checkboxes[i].classList && checkboxes[i].classList.contains('failed'))
             some_failed = true;
     }
 
@@ -1259,9 +1268,12 @@ function get_all_checkboxes(container) {
         for(var i = 0; i < container.length; i++) {
             var childs = container[i].getElementsByTagName('input');
 
-            for(var a = 0; a < childs.length; a++)
-                if(childs[a].type == 'checkbox')
+            for(var a = 0; a < childs.length; a++) {
+                if(childs[a].type == 'checkbox') {
                     checkboxes.push(childs[a]);
+                }
+            }
+
 
             childs = null;
         }
@@ -1313,6 +1325,8 @@ function table_init_rowselect(oTable) {
         });
     }
     childs = null;
+
+    update_row_selection_information();
 }
 
 function init_rowselect() {
@@ -1451,7 +1465,7 @@ function list_of_strings_extend(oInput, j) {
        one exceeding empty element. */
 
     var oDiv = oInput.parentNode;
-    while (!oDiv.parentNode.classList.contains("listofstrings"))
+    while (oDiv.parentNode.classList && !oDiv.parentNode.classList.contains("listofstrings"))
         oDiv = oDiv.parentNode;
     var oContainer = oDiv.parentNode;
 
@@ -1488,17 +1502,20 @@ function valuespec_listof_add(varprefix, magic) {
   var htmlcode = oPrototype.innerHTML;
   htmlcode = replace_all(htmlcode, magic, strcount);
   var oTable = document.getElementById(varprefix + "_table");
-  if (count == 0) {  // first: no <tbody> present!
-      oTable.innerHTML = "<tbody><tr>" + htmlcode + "</tr></tbody>";
-      valuespec_listof_fixarrows(oTable.childNodes[0]);
+
+  var oTbody = oTable.childNodes[0];
+  if(oTbody == undefined) { // no row -> no <tbody> present!
+      oTbody = document.createElement('tbody');
+      oTable.appendChild(oTbody);
   }
-  else {
-      var oTbody = oTable.childNodes[0];
-      var oTr = document.createElement("tr")
-      oTr.innerHTML = htmlcode;
-      oTbody.appendChild(oTr);
-      valuespec_listof_fixarrows(oTbody);
-  }
+
+  // Hack for IE. innerHTML does not work on tbody/tr correctly.
+  var container = document.createElement('div');
+  container.innerHTML = '<table><tbody><tr>' + htmlcode + '</tr></tbody></tr>';
+  var oTr = container.childNodes[0].childNodes[0].childNodes[0] // TR
+  oTbody.appendChild(oTr);
+
+  valuespec_listof_fixarrows(oTbody);
 }
 
 // When deleting we do not fix up indices but simply
@@ -1520,6 +1537,7 @@ function valuespec_listof_delete(oA, varprefix, nr) {
 function valuespec_listof_move(oA, varprefix, nr, where) {
     var oTr = oA.parentNode.parentNode; // TR to move
     var oTbody = oTr.parentNode;
+    var oTable = oTbody.parentNode;
 
     if (where == "up")  {
         var sib = oTr.previousSibling;
@@ -1539,29 +1557,180 @@ function valuespec_listof_move(oA, varprefix, nr, where) {
 
 
 function valuespec_listof_fixarrows(oTbody) {
-    for (var i in oTbody.childNodes) {
-        var oTd = oTbody.childNodes[i].childNodes[0]; /* TD with buttons */
+    if(!oTbody || typeof(oTbody.rows) == undefined) {
+        return;
+    }
+
+    for(var i = 0, row; row = oTbody.rows[i]; i++) {
+        if(row.cells.length == 0)
+            continue;
+        var oTd = row.cells[0]; /* TD with buttons */
+        if(row.cells[0].childNodes.length == 0)
+            continue;
         var oIndex = oTd.childNodes[0];
         oIndex.value = "" + (parseInt(i) + 1);
-        var oUpTrans = oTd.childNodes[2];
-        var oUp      = oTd.childNodes[3];
-        if (i == 0) {
-            oUpTrans.style.display = "";
-            oUp.style.display = "none";
-        }
-        else {
-            oUpTrans.style.display = "none";
-            oUp.style.display = "";
-        }
-        var oDownTrans = oTd.childNodes[4];
-        var oDown      = oTd.childNodes[5];
-        if (i >= oTbody.childNodes.length - 1) {
-            oDownTrans.style.display = "";
-            oDown.style.display = "none";
-        }
-        else {
-            oDownTrans.style.display = "none";
-            oDown.style.display = "";
+        if (oTd.childNodes.length > 4) { /* movable */
+            var oUpTrans = oTd.childNodes[2];
+            var oUp      = oTd.childNodes[3];
+            if (i == 0) {
+                oUpTrans.style.display = "";
+                oUp.style.display = "none";
+            }
+            else {
+                oUpTrans.style.display = "none";
+                oUp.style.display = "";
+            }
+            var oDownTrans = oTd.childNodes[4];
+            var oDown      = oTd.childNodes[5];
+            if (i >= oTbody.rows.length - 1) {
+                oDownTrans.style.display = "";
+                oDown.style.display = "none";
+            }
+            else {
+                oDownTrans.style.display = "none";
+                oDown.style.display = "";
+            }
         }
     }
+}
+
+function vs_passwordspec_randomize(img) {
+    password = "";
+    while (password.length < 8) {
+        a = parseInt(Math.random() * 128);
+        if ((a >= 97 && a <= 122) ||
+            (a >= 65 && a <= 90) ||
+            (a >= 48 && a <= 57))  {
+            c = String.fromCharCode(a);
+            password += c;
+        }
+    }
+    var oInput = img.previousElementSibling;
+    if (oInput.tagName != "INPUT")
+        oInput = oInput.firstChild; // in complain mode
+    oInput.value = password;
+}
+
+
+
+function help_enable() {
+    var aHelp = document.getElementById('helpbutton');
+    aHelp.style.display = "inline-block";
+}
+
+function help_toggle() {
+    var aHelp = document.getElementById('helpbutton');
+    if (aHelp.className == "active") {
+        aHelp.className = "passive";
+        help_switch(false);
+    }
+    else {
+        aHelp.className = "active";
+        help_switch(true);
+    }
+}
+
+function help_switch(how) {
+    // recursive scan for all div class=help elements
+    var helpdivs = document.getElementsByClassName('help');
+    for (var i=0; i<helpdivs.length; i++) {
+        helpdivs[i].style.display = how ? "block" : "none";
+    }
+    get_url("ajax_switch_help.py?enabled=" + (how ? "yes" : ""));
+}
+
+/* Switch filter, commands and painter options */
+function view_toggle_form(oButton, idForm) {
+    var oForm = document.getElementById(idForm);
+    if (oForm.style.display == "none") {
+        var display = "";
+        var down = "down";
+    }
+    else {
+        var display = "none";
+        var down = "up";
+    }
+
+    // Close all other view forms
+    var alldivs = document.getElementsByClassName('view_form');
+    for (var i=0; i<alldivs.length; i++) {
+        if (alldivs[i] != oForm) {
+            alldivs[i].style.display = "none";
+        }
+    }
+    oForm.style.display = display;
+
+    // Make all other buttons inactive
+    var allbuttons = document.getElementsByClassName('togglebutton');
+    for (var i=0; i<allbuttons.length; i++) {
+        var b = allbuttons[i];
+        if (b != oButton && !has_class(b, "empth")) {
+            remove_class(b, "down") 
+            add_class(b, "up") 
+        }
+    }
+    remove_class(oButton, "down");
+    remove_class(oButton, "up");
+    add_class(oButton, down);
+}
+
+// used for refresh und num_columns
+function view_dial_option(oDiv, viewname, option, choices) {
+    var new_choice = choices[0]; // in case not contained in choices
+    for (var c=0; c<choices.length; c++) {
+        choice = choices[c];
+        val = choice[0];
+        title = choice[1];
+        if (has_class(oDiv, "val_" + val)) {
+            var new_choice = choices[(c+1) % choices.length];
+            change_class(oDiv, "val_" + val, "val_" + new_choice[0]);
+            break; 
+        }
+    }
+
+    // Start animation
+    step = 0;
+    speed = 10;
+    for (var way = 0; way <= 10; way +=1) { 
+        step += speed;
+        setTimeout("turn_dial('" + option + "', '', " + way + ")", step);
+    }
+    for (var way = -10; way <= 0; way +=1) { 
+        step += speed;
+        setTimeout("turn_dial('" + option + "', '" + new_choice[1] + "', " + way + ")", step);
+    }
+    
+    get_url_sync("ajax_set_viewoption.py?view_name=" + viewname + 
+            "&option=" + option + "&value=" + new_choice[0]);
+    if (option == "refresh")
+        setReload(new_choice[0]);
+    handleReload('');
+}
+// way ranges from -10 to 10 means centered (normal place)
+function turn_dial(option, text, way) {
+    var oDiv = document.getElementById("optiondial_" + option).firstChild;
+    if (text && oDiv.innerHTML != text)
+        oDiv.innerHTML = text;
+    oDiv.style.top = (way * 1.3) + "px";
+}
+
+/* Switch number of view columns, refresh and checkboxes. If the
+   choices are missing, we do a binary toggle. */
+gColumnSwitchTimeout = null;
+function view_switch_option(oDiv, viewname, option, choices) {
+    if (has_class(oDiv, "down")) {
+        new_value = false;
+        change_class(oDiv, "down", "up");
+    }
+    else {
+        new_value = true;
+        change_class(oDiv, "up", "down");
+    }
+    new_choice = [ new_value, '' ];
+
+    get_url_sync("ajax_set_viewoption.py?view_name=" + viewname + 
+            "&option=" + option + "&value=" + new_choice[0]);
+    if (option == "refresh")
+        setReload(new_choice[0]);
+    handleReload('');
 }

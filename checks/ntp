@@ -24,7 +24,7 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
-ntp_default_levels = (10, 20.0, 50.0) # stratum, ms offset
+ntp_default_levels = (10, 200.0, 500.0) # stratum, ms offset
 
 # Example output from agent:
 # <<<ntp>>>
@@ -105,7 +105,7 @@ def check_ntp_server_state(line, params):
 
     maxstratum, warn, crit = params
     if abs(offset) >= crit:
-        return (2, "critical offset " + infotext, offset, jitter)
+        return (2, "critical offset" + " " + infotext, offset, jitter)
     elif state in [ "falsetick" ]:
         return (2, infotext, offset, jitter)
     elif stratum >= maxstratum:
@@ -119,7 +119,7 @@ def check_ntp_server_state(line, params):
     #     return (3, "response due since %d secs%s" % (when - poll, infotext), offset, jitter)
 
     elif abs(offset) >= warn:
-        return (1, "offset too high" + infotext, offset, jitter)
+        return (1, "offset too high" + " " + infotext, offset, jitter)
     else:
         return (0, infotext, offset, jitter)
 
@@ -153,4 +153,7 @@ def check_ntp_summary(item, params, info):
     return (2, "CRIT - found %d peers, but none is suitable" % len(info))
 
 check_info['ntp']       = (check_ntp,         "NTP Peer %s", 1, inventory_ntp)
+checkgroup_of['ntp'] = 'ntp_time'
+
 check_info['ntp.time']  = (check_ntp_summary, "NTP Time",    1, inventory_ntp_summary)
+checkgroup_of['ntp.time'] = 'ntp_time'

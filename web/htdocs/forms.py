@@ -25,6 +25,7 @@
 # Boston, MA 02110-1301 USA.
 
 from lib import *
+import htmllib
 
 # A input function with the same call syntax as htmllib.textinput()
 def input(valuespec, varprefix, defvalue):
@@ -40,7 +41,7 @@ def get_input(valuespec, varprefix):
     return value
 
 
-def edit_dictionary(entries, value, focus=None, hover_help=True, validate=None, buttontext = None):
+def edit_dictionary(entries, value, focus=None, hover_help=True, validate=None, buttontext = None, title = None):
     new_value = value.copy()
     if html.var("filled_in") == "form" and html.check_transaction():
         messages = []
@@ -66,17 +67,11 @@ def edit_dictionary(entries, value, focus=None, hover_help=True, validate=None, 
             return new_value
 
     html.begin_form("form")
-    html.write("<table class=form>\n")
+    header(title and title or _("Properties"))
     first = True
     for name, vs in entries:
-
-        html.write("<tr><td ")
-        if vs.help() and hover_help:
-            html.write('title="%s" ' % vs.help().replace('"', "&quot;"))
-        html.write("class=legend>%s" % (vs.title() or "")) 
-        if vs.help() and not hover_help:
-            html.write("<br><i>%s</i>" % vs.help())
-        html.write("</td><td class=content>")
+        section(vs.title())
+        html.help(vs.help())
         if name in value:
             v = value[name]
         else:
@@ -85,13 +80,96 @@ def edit_dictionary(entries, value, focus=None, hover_help=True, validate=None, 
         if (not focus and first) or (name == focus):
             vs.set_focus(name)
             first = False 
-    html.write("<tr><td class=buttons colspan=2>")
+
+    end()
     if buttontext == None:
         buttontext = _("Save")
     html.button("save", buttontext)
-    html.write("</td></tr>\n")
-    html.write("</table>\n")
     html.hidden_fields()
     html.end_form()
 
+# New functions for painting forms
+
+twofivesix = "".join(map(chr, range(0,256)))
+def strip_bad_chars(x):
+    s = "".join([c for c in x if c > ' ' and c < 'z'])
+
+    if type(x) == unicode:
+        return s.translate({
+            ord(u"'"): None,
+            ord(u"&"): None,
+            ord(u";"): None,
+            ord(u"<"): None,
+            ord(u">"): None,
+            ord(u"\""): None,
+        })
+    else:
+        return s.translate(twofivesix, "'&;<>\"")
+
+def header(title, isopen = True, table_id = "", narrow = False):
+    global g_header_open
+    global g_section_open
+    global g_section_isopen
+    try:
+        if g_header_open:
+            end()
+    except:
+        pass
+
+    if table_id:
+        table_id = ' id="%s"' % table_id
+    else:
+        table_id = ''
+    html.write('<table %s class="nform%s">' % (table_id, narrow and " narrow" or ""))
+    fold_id = strip_bad_chars(title)
+    g_section_isopen = html.begin_foldable_container(
+            html.form_name and html.form_name or "nform", fold_id, isopen, title, indent="nform")
+    html.write('<tr class="top %s"><td colspan=2></td></tr>' % (g_section_isopen and "open" or "closed"))
+    g_header_open = True
+    g_section_open = False
+
+# container without legend and content
+def container():
+    global g_section_open
+    if g_section_open:
+        html.write('</td></tr>')
+    html.write('<tr class="%s"><td colspan=2 class=container>' % 
+         (g_section_isopen and "open" or "closed"))
+    g_section_open = True
+
+def section(title = None, checkbox = None, id = "", simple=False, hide = False):
+    global g_section_open
+    if g_section_open:
+        html.write('</td></tr>')
+    if id:
+        id = ' id="%s"' % id
+    html.write('<tr class="%s"%s%s><td class="legend%s">' %
+            (g_section_isopen and "open" or "closed", id,
+             hide and ' style="display:none;"' or '',
+             simple and " simple" or ""))
+    if title:
+        html.write('<div class="title%s">%s<span class="dots">%s</span></div>' % 
+                  (checkbox and " withcheckbox" or "", title, "."*100))
+    if checkbox:
+        html.write('<div class=checkbox>')
+        if type(checkbox) == str:
+            html.write(checkbox)
+        else:
+            name, inactive, attrname = checkbox
+            html.checkbox(name, inactive, onclick = 'wato_toggle_attribute(this, \'%s\')' % attrname)
+        html.write('</div>')
+
+    html.write('</td>')
+    html.write('<td class="content%s">' % (simple and " simple" or ""))
+    g_section_open = True
+
+def end():
+    global g_header_open
+    g_header_open = False
+    if g_section_open:
+        html.write('</td></tr>')
+    html.end_foldable_container()
+    html.write('<tr class="bottom %s"><td colspan=2></td></tr>' 
+            % (g_section_isopen and "open" or "closed"))
+    html.write('</table>')
 

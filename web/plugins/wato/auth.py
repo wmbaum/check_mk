@@ -59,17 +59,17 @@
 
 g_auth_base_dir = defaults.var_dir + '/wato/auth'
 
-def parse_php(data, lvl = 1):
+def format_php(data, lvl = 1):
     s = ''
     if isinstance(data, tuple) or isinstance(data, list):
         s += 'array(\n'
         for item in data:
-            s += '    ' * lvl + parse_php(item, lvl + 1) + ',\n'
+            s += '    ' * lvl + format_php(item, lvl + 1) + ',\n'
         s += '    ' * (lvl - 1) + ')'
     elif isinstance(data, dict):
         s += 'array(\n'
         for key, val in data.iteritems():
-            s += '    ' * lvl + parse_php(key, lvl + 1) + ' => ' + parse_php(val, lvl + 1) + ',\n'
+            s += '    ' * lvl + format_php(key, lvl + 1) + ' => ' + format_php(val, lvl + 1) + ',\n'
         s += '    ' * (lvl - 1) + ')'
     elif isinstance(data, str):
         s += '\'%s\'' % data.replace('\'', '\\\'')
@@ -181,7 +181,7 @@ function may($username, $need_permission) {
 }
 
 ?>
-''' % (parse_php(users), parse_php(role_permissions), parse_php(folder_permissions)))
+''' % (format_php(users), format_php(role_permissions), format_php(folder_permissions)))
 
 def create_auth_file(users):
     make_nagios_directory(g_auth_base_dir)
@@ -189,4 +189,6 @@ def create_auth_file(users):
 
 api.register_hook('users-saved',      create_auth_file)
 api.register_hook('roles-saved',      lambda x: create_auth_file(load_users()))
+# TODO: optimize: This hook does not use the list of the collected
+# hosts. And collicting the hosts is a lengthy operation.
 api.register_hook('activate-changes', lambda x: create_auth_file(load_users()))

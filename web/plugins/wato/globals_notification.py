@@ -35,7 +35,7 @@ register_configvar(group,
         title = _("Debug notifications"),
         help = _("When notification debugging is on, then in the notification logfile "
                  "in <tt>%s</tt> additional information will be logged." %
-                  defaults.var_dir + "/notify/notify.log"),
+                  (defaults.var_dir + "/notify/notify.log")),
         choices = [
             ( 0, _("No logging")),
             ( 1, _("One line per notification")),
@@ -47,7 +47,7 @@ register_configvar(group,
     "notification_mail_command",
     TextUnicode(
         title = _("Email command line used for notifications"),
-        help = _ ("This command will be executed whenever a notification should be done. "
+        help = _("This command will be executed whenever a notification should be done. "
                  "The command will receive the notification text body on standard input. "
                  "The macro <tt>$SUBJECT$</tt> will be replaced by a text configured "
                  "with "
@@ -67,7 +67,7 @@ register_configvar(group,
     "notification_host_subject",
     TextUnicode(
         title = _("Email subject to use for host notifications"),
-        help = _ ("This template will be used as <tt>$SUBJECT$</tt> in email notifications "
+        help = _("This template will be used as <tt>$SUBJECT$</tt> in email notifications "
                   "that deal with host alerts. The variable <tt>$SUBJECT$</tt> will then "
                   "be available in <a href=\"%s\"><tt>notification_common_body</tt></a>." % (
                  "wato.py?mode=edit_configvar&varname=notification_common_body",
@@ -79,7 +79,7 @@ register_configvar(group,
     "notification_service_subject",
     TextUnicode(
         title = _("Email subject to use for service notifications"),
-        help = _ ("This template will be used as <tt>$SUBJECT$</tt> in email notifications "
+        help = _("This template will be used as <tt>$SUBJECT$</tt> in email notifications "
                   "that deal with service alerts. The variable <tt>$SUBJECT$</tt> will then "
                   "be available in <a href=\"%s\"><tt>notification_common_body</tt></a>." % (
                  "wato.py?mode=edit_configvar&varname=notification_common_body",
@@ -92,12 +92,13 @@ register_configvar(group,
     "notification_common_body",
     TextAreaUnicode(
         title = _("Email body to use for both host and service notifications"),
-        help = _ ("This template will be used as email body when sending notifications. "
+        help = _("This template will be used as email body when sending notifications. "
                   "Appended to it will be a specific body for either host or service "
                   "notifications configured in two extra parameters. "
                   "The following macros are available in all templates:<br><br>"
                   "<tt><b>$CONTACTNAME$</b></tt>: login name of the contact person, "
                   "<tt><b>$CONTACTEMAIL$</b></tt>: email address of the contact person, "
+                  "<tt><b>$CONTACTPAGER$</b></tt>: pager address of the contact person, "
                   "<tt><b>$NOTIFICATIONTYPE$</b></tt>: one of PROBLEM, RECOVERY, ACKNOWLEDGEMENT, FLAPPINGSTART, FLAPPINGSTOP, FLAPPINGDISABLED, DOWNTIMESTART, DOWNTIMEEND, or DOWNTIMECANCELLED, "
                   "<tt><b>$HOSTNAME$</b></tt>: the name of the host, "
                   "<tt><b>$HOSTALIAS$</b></tt>: the alias of the host, "
@@ -114,7 +115,11 @@ register_configvar(group,
                   "<tt><b>$SERVICEOUTPUT$</b></tt>: the output of the check command , "
                   "<tt><b>$LONGSERVICEOUTPUT$</b></tt>: the long output of the check command, "
                   "<tt><b>$SERVICEPERFDATA$</b></tt>: the performance data of the check, "
-                  "<tt><b>$SERVICECHECKCOMMAND$</b></tt>: the name of the service check command"
+                  "<tt><b>$SERVICECHECKCOMMAND$</b></tt>: the name of the service check command, "
+                  "<tt><b>HOSTPROBLEMID</b></tt>: a unique ID of the host problem this notification is about, " 
+                  "<tt><b>SERVICEPROBLEMID</b></tt>: the same for service problems, " 
+                  "<tt><b>HOSTNOTIFICATIONNUMBER</b></tt>: the number of notification of this host problem (begins with 1), " 
+                  "<tt><b>SERVICENOTIFICATIONNUMBER</b></tt>: same for service problems, "
                   "<br><br>"
                   "<tt><b>$MONITORING_HOST$</b></tt>: the host name of the monitoring server "
                   "<tt><b>$OMD_ROOT$</b></tt>: the home directory of the OMD site (only on OMD) "
@@ -128,7 +133,7 @@ register_configvar(group,
     "notification_host_body",
     TextAreaUnicode(
         title = _("Email body to use for host notifications"),
-        help = _ ("This template will be appended to the <a href=\"%s\"><tt>"
+        help = _("This template will be appended to the <a href=\"%s\"><tt>"
                   "notification_common_body</tt></a> when host notifications are sent." %
                   "wato.py?mode=edit_configvar&varname=notification_common_body"
                  ),
@@ -139,7 +144,7 @@ register_configvar(group,
     "notification_service_body",
     TextAreaUnicode(
         title = _("Email body to use for service notifications"),
-        help = _ ("This template will be appended to the <a href=\"%s\"><tt>"
+        help = _("This template will be appended to the <a href=\"%s\"><tt>"
                   "notification_common_body</tt></a> when service notifications are sent." %
                   "wato.py?mode=edit_configvar&varname=notification_common_body"
                  ),

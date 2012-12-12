@@ -738,7 +738,14 @@ def do_check(hostname, ipaddress, only_check_types = None):
         close_checkresult_file()
 
     run_time = time.time() - start_time
-    output += "execution time %.1f sec|execution_time=%.3f\n" % (run_time, run_time)
+    if check_mk_perfdata_with_times:
+        times = os.times()
+        output += "execution time %.1f sec|execution_time=%.3f user_time=%.3f "\
+                  "system_time=%.3f children_user_time=%.3f children_system_time=%.3f\n" %\
+                (run_time, run_time, times[0], times[1], times[2], times[3])
+    else:
+        output += "execution time %.1f sec|execution_time=%.3f\n" % (run_time, run_time)
+
     sys.stdout.write(output)
     sys.exit(status)
 
@@ -823,6 +830,17 @@ def do_all_checks_on_host(hostname, ipaddress, only_check_types = None):
     for checkname, item, params, description, info in check_table:
         if only_check_types != None and checkname not in only_check_types:
             continue
+
+        # Skip checks that are not in their check period
+        period = check_period_of(hostname, description)
+        if period and not check_timeperiod(period):
+            if opt_debug:
+                sys.stderr.write("Skipping service %s: currently not in timeperiod %s.\n" % 
+                        (description, period))
+            continue
+        elif period and opt_debug:
+            sys.stderr.write("Service %s: timeperiod %s is currently active.\n" % 
+                    (description, period))
 
         # In case of a precompiled check table info is the aggrated
         # service name. In the non-precompiled version there are the dependencies
@@ -1107,12 +1125,13 @@ def get_regex(pattern):
 # Names of texts usually output by checks
 nagios_state_names = ["OK", "WARN", "CRIT", "UNKNOWN"]
 
-# int() function that return 0 for empty strings
+# int() function that return 0 for strings the
+# cannot be converted to a number
 def saveint(i):
-    if i == '':
-        return 0
-    else:
+    try:
         return int(i)
+    except:
+        return 0
 
 def savefloat(f):
     try:
@@ -1122,23 +1141,27 @@ def savefloat(f):
 
 # Takes bytes as integer and returns a string which represents the bytes in a
 # more human readable form scaled to GB/MB/KB
-def get_bytes_human_readable(b, base=1024.0, bytefrac=True):
+# The unit parameter simply changes the returned string, but does not interfere 
+# with any calcluations
+def get_bytes_human_readable(b, base=1024.0, bytefrac=True, unit="B"):
     # Handle negative bytes correctly
     prefix = ''
     if b < 0:
         prefix = '-'
         b *= -1
 
-    if b >= base * base * base:
-        return '%s%.2fGB' % (prefix, b / base / base / base)
-    if b >= base * base:
-        return '%s%.2fMB' % (prefix, b / base / base)
+    if b >= base * base * base * base:
+        return '%s%.2fT%s' % (prefix, b / base / base / base / base, unit)
+    elif b >= base * base * base:
+        return '%s%.2fG%s' % (prefix, b / base / base / base, unit) 
+    elif b >= base * base:
+        return '%s%.2fM%s' % (prefix, b / base / base, unit) 
     elif b >= base:
-        return '%s%.2fKB' % (prefix, b / base)
+        return '%s%.2fk%s' % (prefix, b / base, unit) 
     elif bytefrac:
-        return '%s%.2fB' % (prefix, b)
+        return '%s%.2f%s' % (prefix, b, unit)
     else: # Omit byte fractions
-        return '%s%.0fB' % (prefix, b)
+        return '%s%.0f%s' % (prefix, b, unit)
 
 # Similar to get_bytes_human_readable, but optimized for file
 # sizes
@@ -1198,3 +1221,23 @@ def get_age_human_readable(secs):
 # in command definitions as $ARG1$)
 def quote_shell_string(s):
     return "'" + s.replace("'", "'\"'\"'") + "'"
+
+
+# Check if a timeperiod is currently active. We have no other way than
+# doing a Livestatus query. This is not really nice, but if you have a better
+# idea, please tell me...
+g_inactive_timerperiods = None
+def check_timeperiod(timeperiod):
+    global g_inactive_timerperiods
+    # Let exceptions happen, they will be handled upstream.
+    if g_inactive_timerperiods == None:
+        import socket
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.connect(livestatus_unix_socket)
+        # We just get the currently inactive timeperiods. All others
+        # (also non-existing) are considered to be active
+        s.send("GET timeperiods\nColumns:name\nFilter: in = 0\n")
+        s.shutdown(socket.SHUT_WR)
+        g_inactive_timerperiods = s.recv(10000000).splitlines()
+    return timeperiod not in g_inactive_timerperiods
+

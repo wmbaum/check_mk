@@ -34,13 +34,13 @@ class MKGeneralException(Exception):
     def __init__(self, reason):
         self.reason = reason
     def __str__(self):
-        return str(self.reason)
+        return self.reason
 
 class MKAuthException(Exception):
     def __init__(self, reason):
         self.reason = reason
     def __str__(self):
-        return str(self.reason)
+        return self.reason
 
 class MKUnauthenticatedException(MKGeneralException):
     pass
@@ -63,6 +63,8 @@ class MKInternalError(Exception):
 # and make it writable for the group
 def make_nagios_directory(path):
     if not os.path.exists(path):
+        parent_dir, lastpart = path.rstrip('/').rsplit('/', 1)
+        make_nagios_directory(parent_dir)
         try:
             os.mkdir(path)
             gid = grp.getgrnam(defaults.www_group).gr_gid
@@ -88,7 +90,7 @@ def make_nagios_directories(name):
             # be happy if someone already created the path
             if e.errno != errno.EEXIST:
                 raise
-        if tail == curdir:           # xxx/newdir/. exists if xxx/newdir exists
+        if tail == ".":           # xxx/newdir/. exists if xxx/newdir exists
             return
     make_nagios_directory(name)
 
@@ -140,8 +142,13 @@ def load_web_plugins(forwhat, globalvars):
                 fns = os.listdir(local_plugins_path)
                 fns.sort()
                 for fn in fns:
+                    file_path = local_plugins_path + "/" + fn
                     if fn.endswith(".py"):
-                        execfile(local_plugins_path + "/" + fn, globalvars)
+                        execfile(file_path, globalvars)
+                    elif fn.endswith(".pyc"):
+                        code_bytes = file(file_path).read()[8:]
+                        code = marshal.loads(code_bytes)
+                        exec code in globalvars
 
 def get_language_dirs():
     dirs = [ defaults.locale_dir ]
@@ -193,7 +200,7 @@ def load_language(lang):
         except IOError, e:
             # Fallback to non localized multisite
             # I'd prefer to fallback to multisite default language but can not import config module here
-            __builtin__.current_language = config.default_language
+            __builtin__.current_language = None
     else:
         # Replace the _() function to disable i18n again
         __builtin__._ = lambda x: x
@@ -238,7 +245,7 @@ def aquire_lock(path):
     g_locked_paths.append(path)
 
 def release_all_locks():
-    global g_aquired_locks
+    global g_aquired_locks, g_locked_paths
     for fd in g_aquired_locks:
         os.close(fd)
     g_aquired_locks = []

@@ -82,7 +82,9 @@
 //http://www.two-sdg.demon.co.uk/curbralan/code/dirent/dirent.html
 
 
-
+#include <sys/stat.h> // stat()
+//#include <time.h> // gettimeofday()
+#include "gettimeofday.h"
 
 //  .----------------------------------------------------------------------.
 //  |       ____            _                 _   _                        |
@@ -95,7 +97,7 @@
 //  | Declarations of macrosk, structs and function prototypes             |
 //  '----------------------------------------------------------------------'
 
-#define CHECK_MK_VERSION "1.2.0b3"
+#define CHECK_MK_VERSION "1.2.1i4"
 #define CHECK_MK_AGENT_PORT 6556
 #define SERVICE_NAME "Check_MK_Agent"
 #define KiloByte 1024
@@ -113,6 +115,7 @@
 #define SECTION_LOCAL        0x00000400
 #define SECTION_MRPE         0x00000800 
 #define SECTION_FILEINFO     0x00001000  
+#define SECTION_LOGFILES     0x00002000  
 
 // Limits for static global arrays
 #define MAX_EVENTLOGS               128
@@ -157,6 +160,9 @@ void output(SOCKET &out, const char *format, ...);
 char *ipv4_to_text(uint32_t ip);
 void output_data(SOCKET &out);
 double file_time(const FILETIME *filetime);
+void open_crash_log();
+void close_crash_log();
+void crash_log(const char *format, ...);
 
 //  .----------------------------------------------------------------------.
 //  |                    ____ _       _           _                        |
@@ -170,6 +176,7 @@ double file_time(const FILETIME *filetime);
 //  '----------------------------------------------------------------------'
 
 bool verbose_mode = false;
+bool g_crash_debug = false;
 bool do_tcp = false;
 bool should_terminate = false;
 char g_hostname[256];
@@ -201,6 +208,10 @@ char     g_current_directory[256];
 char     g_plugins_dir[256];
 char     g_local_dir[256];
 char     g_config_file[256];
+char     g_crash_log[256];
+char     g_connection_log[256];
+char     g_success_log[256];
+char     g_logwatch_statefile[256];
 
 // Configuration of eventlog monitoring (see config parser)
 int num_eventlog_configs = 0;
@@ -224,6 +235,11 @@ char *g_execute_suffixes[MAX_EXECUTE_SUFFIXES];
 // Array of file patterns for fileinfo
 unsigned g_num_fileinfo_paths = 0;
 char *g_fileinfo_path[MAX_FILEINFO_ENTRIES];
+
+// Pointer to open crash log file, if crash_debug = on
+FILE *g_connectionlog_file = 0;
+struct timeval g_crashlog_start;
+bool g_found_crash = false;
 
 //  .----------------------------------------------------------------------.
 //  |                  _   _      _                                        |
@@ -286,6 +302,19 @@ char *llu_to_string(unsigned long long value)
     	value = value / 10;
     }
     return write;
+}
+
+unsigned long long string_to_llu(char *s)
+{
+    unsigned long long value = 0;
+    unsigned long long mult = 1;
+    char *e = s + strlen(s);
+    while (e > s) {
+        --e;
+        value += mult * (*e - '0');
+        mult *= 10;
+    }
+    return value;
 }
 
 
@@ -363,6 +392,7 @@ void char_replace(char what, char into, char *in)
 
 void section_systemtime(SOCKET &out)
 {
+    crash_log("<<<systemtime>>>");
     output(out, "<<<systemtime>>>\n");
     output(out, "%.0f\n", current_time());
 }
@@ -378,6 +408,7 @@ void section_systemtime(SOCKET &out)
 
 void section_uptime(SOCKET &out)
 {
+    crash_log("<<<uptime>>>");
     output(out, "<<<uptime>>>\n");
     static LARGE_INTEGER Frequency,Ticks;
     QueryPerformanceFrequency (&Frequency);
@@ -448,6 +479,7 @@ void df_output_mountpoints(SOCKET &out, char *volid)
 
 void section_df(SOCKET &out)
 {
+    crash_log("<<<df>>>");
     output(out, "<<<df>>>\n");
     TCHAR buffer[4096];
     DWORD len = GetLogicalDriveStrings(sizeof(buffer), buffer);
@@ -495,6 +527,7 @@ void section_df(SOCKET &out)
 
 void section_ps(SOCKET &out)
 {
+    crash_log("<<<ps>>>");
     output(out, "<<<ps>>>\n");
     HANDLE hProcessSnap;
     PROCESSENTRY32 pe32;
@@ -562,6 +595,7 @@ const char *service_start_type(SC_HANDLE scm, LPCTSTR service_name)
 
 void section_services(SOCKET &out)
 {
+    crash_log("<<<services>>>");
     output(out, "<<<services>>>\n");
     SC_HANDLE scm = OpenSCManager(0, 0, SC_MANAGER_CONNECT | SC_MANAGER_ENUMERATE_SERVICE);
     if (scm != INVALID_HANDLE_VALUE) {
@@ -655,6 +689,7 @@ void outputCounterValue(SOCKET &out, PERF_COUNTER_DEFINITION *counterPtr, PERF_C
 
 void dump_performance_counters(SOCKET &out, unsigned counter_base_number, const char *countername)
 {
+    crash_log("<<<winperf_%s>>>", countername);
     output(out, "<<<winperf_%s>>>\n", countername);
     output(out, "%.2f %u\n", current_time(), counter_base_number);
 
@@ -680,7 +715,7 @@ void dump_performance_counters(SOCKET &out, unsigned counter_base_number, const 
 	    // Der Puffer war zu klein. Toll. Also den Puffer größer machen
 	    // und das ganze nochmal probieren.
 	    size += DEFAULT_BUFFER_SIZE;
-	    debug("Buffer for RegQueryValueEx too small. Resizing...");
+	    verbose("Buffer for RegQueryValueEx too small. Resizing...");
 	    delete [] data;
 	    data = new BYTE [size];
 	} else {
@@ -689,6 +724,7 @@ void dump_performance_counters(SOCKET &out, unsigned counter_base_number, const 
 	    return;
 	}
     }
+    crash_log(" - read performance data, buffer size %d", size);
 
     PERF_DATA_BLOCK *dataBlockPtr = (PERF_DATA_BLOCK *)data;
 
@@ -900,6 +936,7 @@ bool output_eventlog_entry(SOCKET &out, char *dllpath, EVENTLOGRECORD *event, ch
 	// it's correct for all windows versions
 	dll =  LoadLibrary(dll_realpath);
 	if (!dll) {
+            crash_log("     --> failed to load %s", dll_realpath);
 	    return false;
 	}
     }
@@ -907,11 +944,13 @@ bool output_eventlog_entry(SOCKET &out, char *dllpath, EVENTLOGRECORD *event, ch
 	dll = NULL;
 
     WCHAR wmsgbuffer[2048];
+    DWORD dwFlags = FORMAT_MESSAGE_ARGUMENT_ARRAY | FORMAT_MESSAGE_FROM_SYSTEM;
+    if (dll)
+        dwFlags |= FORMAT_MESSAGE_FROM_HMODULE;
+
     DWORD len = FormatMessageW(
     // DWORD len = FormatMessage(
-	FORMAT_MESSAGE_ARGUMENT_ARRAY |
-	FORMAT_MESSAGE_FROM_HMODULE |
-	FORMAT_MESSAGE_FROM_SYSTEM,
+        dwFlags,
 	dll,
 	event->EventID,
 	0, // accept any language
@@ -992,6 +1031,7 @@ void process_eventlog_entries(SOCKET &out, const char *logname, char *buffer,
     EVENTLOGRECORD *event = (EVENTLOGRECORD *)buffer;
     while (bytesread > 0)
     {
+        crash_log("     - record %d: process_eventlog_entries bytesread %d, event->Length %d", *record_number, bytesread, event->Length); 
 	*record_number = event->RecordNumber;
 
 	char type_char;
@@ -1067,6 +1107,7 @@ void process_eventlog_entries(SOCKET &out, const char *logname, char *buffer,
 	        memset(dllpath, 0, sizeof(dllpath));
 		if (ERROR_SUCCESS == RegQueryValueEx(key, "EventMessageFile", NULL, NULL, dllpath, &size))
 		{
+                    crash_log("     - record %d: DLLs to load: %s", *record_number, dllpath);
 		    // Answer may contain more than one DLL. They are separated
 		    // by semicola. Not knowing which one is the correct one, I have to try
 		    // all...
@@ -1081,13 +1122,20 @@ void process_eventlog_entries(SOCKET &out, const char *logname, char *buffer,
 		}
 		RegCloseKey(key);
 	    }
+            else {
+                crash_log("     - record %d: no DLLs listed in registry", *record_number);
+            }
+
 	    // No text conversion succeeded. Output without text anyway
-	    if (!success)
-	       output_eventlog_entry(out, NULL, event, type_char, logname, source_name, strings);
+	    if (!success) {
+                crash_log("     - record %d: translation failed", *record_number);
+                output_eventlog_entry(out, NULL, event, type_char, logname, source_name, strings);
+            }
 
 	} // type_char != '.'
 
 	bytesread -= event->Length;
+        crash_log("     - record %d: event_processed, bytesread %d, event->Length %d", *record_number, bytesread, event->Length); 
 	event = (EVENTLOGRECORD *) ((LPBYTE) event + event->Length);
     }
 }
@@ -1096,6 +1144,8 @@ void process_eventlog_entries(SOCKET &out, const char *logname, char *buffer,
 void output_eventlog(SOCKET &out, const char *logname,
 		     DWORD *record_number, bool just_find_end, int level)
 {
+    crash_log(" - event log \"%s\":", logname);
+
     if (eventlog_buffer_size == 0) {
 	const int initial_size = 65536;
 	eventlog_buffer = new char[initial_size];
@@ -1106,6 +1156,7 @@ void output_eventlog(SOCKET &out, const char *logname,
     DWORD bytesread = 0;
     DWORD bytesneeded = 0;
     if (hEventlog) {
+        crash_log("   . successfully opened event log");
 	output(out, "[[[%s]]]\n", logname);
 	int worst_state = 0;
 	DWORD old_record_number = *record_number;
@@ -1129,6 +1180,7 @@ void output_eventlog(SOCKET &out, const char *logname,
 			    verbose("Failed to reopen event log. Bailing out.");
 			    return;
 			}
+                        crash_log("   . reopened log");
 		    }
 		    flags = EVENTLOG_SEQUENTIAL_READ | EVENTLOG_FORWARDS_READ;
 		}
@@ -1145,6 +1197,7 @@ void output_eventlog(SOCKET &out, const char *logname,
 				 &bytesread,
 				 &bytesneeded))
 		{
+                    crash_log("   . got entries starting at %d (%d bytes)", *record_number + 1, bytesread);
 		    process_eventlog_entries(out, logname, eventlog_buffer,
                              bytesread, record_number, just_find_end || t==0, &worst_state, level);
 		}
@@ -1152,6 +1205,7 @@ void output_eventlog(SOCKET &out, const char *logname,
 		    DWORD error = GetLastError();
 		    if (error == ERROR_INSUFFICIENT_BUFFER) {
 			grow_eventlog_buffer(bytesneeded);
+                        crash_log("   . needed to grow buffer to %d bytes", bytesneeded);
 		    }
 		    // found current end of log
 		    else if (error == ERROR_HANDLE_EOF) {
@@ -1257,18 +1311,527 @@ bool find_eventlogs(SOCKET &out)
 }
 
 
+// .-----------------------------------------------------------------------.
+// |            _                              _       _                   |
+// |           | |    ___   __ ___      ____ _| |_ ___| |__                |
+// |           | |   / _ \ / _` \ \ /\ / / _` | __/ __| '_ \               |
+// |           | |__| (_) | (_| |\ V  V / (_| | || (__| | | |              |
+// |           |_____\___/ \__, | \_/\_/ \__,_|\__\___|_| |_|              |
+// |                       |___/                                           |
+// +-----------------------------------------------------------------------+
+// | Functions related to the evaluation of logwatch textfiles             |
+// '-----------------------------------------------------------------------'
+#define MAX_LOGWATCH_GLOBLINES         128  // Maximum globline definitions
+#define MAX_LOGWATCH_GLOBLINE_TOKENS   128  // Maximum globline tokens
+#define MAX_LOGWATCH_CONDITIONS       1024  // Maximum text patterns per globline
+#define MAX_LOGWATCH_TEXTFILES        1024  // Maximum processed textfiles
+
+// Stores the condition pattern together with its state
+// Pattern definition within the config file:
+//      C = *critpatternglobdescription*
+struct condition_pattern {
+    char  state;
+    char *glob_pattern;
+};
+
+// All condition patterns from the config file are stored within this container
+// These elements are referenced by the globline_container
+struct pattern_container {
+    condition_pattern  *patterns[MAX_LOGWATCH_CONDITIONS];
+    int                 num_patterns;
+};
+
+// Single element of a globline:
+// C:/tmp/Testfile*.log
+struct glob_token {
+    char *pattern;
+    bool  found_match;
+};
+
+// Container for all globlines read from the config
+// The following is considered a globline
+// textfile = C:\Logfile1.txt C:\tmp\Logfile*.txt
+struct globline_container {
+    glob_token        *token[MAX_LOGWATCH_GLOBLINES];
+    int                num_tokens;
+    pattern_container *patterns;
+};
+
+// A textfile instance containing information about various file 
+// parameters and the pointer to the matching pattern_container
+struct logwatch_textfile {
+    char              *path;     
+    unsigned long long file_id;   // used to detect if a file has been replaced
+    unsigned long long file_size; // size of the file
+    unsigned long long offset;    // current fseek offset in the file
+    bool               missing;   // file no longer exists
+    pattern_container *patterns;  // glob patterns applying for this file
+};
+
+globline_container *g_logwatch_globlines[MAX_LOGWATCH_GLOBLINES];
+logwatch_textfile  *g_logwatch_textfiles[MAX_LOGWATCH_TEXTFILES];
+logwatch_textfile  *g_logwatch_hints[MAX_LOGWATCH_TEXTFILES]; // result of loaded state
+
+unsigned g_num_logwatch_globlines  = 0;
+unsigned g_num_logwatch_textfiles  = 0;
+unsigned g_num_logwatch_conditions = 0;
+unsigned g_num_logwatch_hints      = 0;
+
+globline_container *g_current_globline_container = NULL;
+
+
+void save_logwatch_offsets()
+{
+    FILE *file = fopen(g_logwatch_statefile, "w");
+    for (unsigned int i = 0; i < g_num_logwatch_textfiles ; i++) {
+        logwatch_textfile *tf = g_logwatch_textfiles[i];
+        if (!tf->missing) {
+            // llu_to_string is not reentrant, so do this in three steps
+            fprintf(file, "%s|%s", tf->path, llu_to_string(tf->file_id));
+            fprintf(file, "|%s", llu_to_string(tf->file_size));
+            fprintf(file, "|%s\r\n", llu_to_string(tf->offset));
+        }
+    }
+    fclose(file);
+}
+
+void parse_logwatch_state_line(char *line) 
+{
+    if (g_num_logwatch_hints >= MAX_LOGWATCH_TEXTFILES) {
+        verbose("Too many entries in logwatch state file.");
+        return;
+    }
+
+    /* Example: line = "M://log1.log|98374598374|0|16"; */
+    rstrip(line);
+    char *p = line;
+    while (*p && *p != '|') p++;
+    *p = 0;
+    char *path = line;
+    p++;
+    char *token = strtok(p, "|");
+    unsigned long long file_id = string_to_llu(token);
+    token = strtok(NULL, "|");
+    unsigned long long file_size = string_to_llu(token);
+    token = strtok(NULL, "|");
+    unsigned long long offset = string_to_llu(token);
+
+    logwatch_textfile *tf = new logwatch_textfile();
+    tf->path = strdup(path);
+    tf->file_id = file_id;
+    tf->file_size = file_size;
+    tf->offset = offset;
+    tf->missing = false;
+    tf->patterns = 0;
+    g_logwatch_hints[g_num_logwatch_hints++] = tf;
+}
+
+void load_logwatch_offsets()
+{
+    static bool offsets_loaded = false;
+    if (!offsets_loaded) {
+        FILE *file = fopen(g_logwatch_statefile, "r");
+        if (file) {
+            char line[256];
+            while (NULL != fgets(line, sizeof(line), file)) {
+                parse_logwatch_state_line(line);
+            }
+            fclose(file);
+        }
+        offsets_loaded = true;
+    }
+}
+
+
+
+
+// debug output
+void print_logwatch_config()
+{
+    printf("\nLOGWATCH CONFIG\n=================\nFILES\n");
+    for (unsigned int i = 0; i < g_num_logwatch_textfiles ; i++) {
+        printf("  %s %u %x missing %d\n", g_logwatch_textfiles[i]->path, 
+               (unsigned int)g_logwatch_textfiles[i]->offset, 
+               (unsigned int) g_logwatch_textfiles[i]->patterns, 
+               g_logwatch_textfiles[i]->missing);  
+    }
+    printf("\n");
+
+    printf("GLOBS\n");
+    for (unsigned int i = 0; i < g_num_logwatch_globlines ; i++) {
+        printf("Globline Container %x\n", (unsigned int)g_logwatch_globlines[i]->patterns); 
+        for (int j = 0; j < g_logwatch_globlines[i]->num_tokens ; j++)
+            printf("  %s\n", g_logwatch_globlines[i]->token[j]->pattern);
+        printf("Pattern Container\n");
+        for (int j = 0; j < g_logwatch_globlines[i]->patterns->num_patterns; j++) 
+            printf("  %c %s\n", g_logwatch_globlines[i]->patterns->patterns[j]->state, 
+                                g_logwatch_globlines[i]->patterns->patterns[j]->glob_pattern);
+    }
+    printf("\n");
+}
+
+// Add a new state pattern to the current pattern container
+void add_condition_pattern(char state, char *value)
+{
+    if (g_current_globline_container 
+        && g_current_globline_container->patterns->num_patterns + 1 >= MAX_LOGWATCH_CONDITIONS)
+    {
+        fprintf(stderr, "Maximum number of conditions for a globline exceeded %d.\n", MAX_LOGWATCH_CONDITIONS);
+    }
+
+    condition_pattern *new_pattern = new condition_pattern();
+    new_pattern->state = state;
+    new_pattern->glob_pattern = strdup(value);
+    g_current_globline_container->patterns->patterns[g_current_globline_container->patterns->num_patterns++] 
+        = new_pattern;
+}
+
+
+logwatch_textfile* get_logwatch_textfile(const char *filename)
+{
+    for (unsigned int i = 0; i < g_num_logwatch_textfiles; i++)
+        if (strcmp(filename, g_logwatch_textfiles[i]->path) == 0)
+            return g_logwatch_textfiles[i];
+    return 0;
+}
+
+// Add a new textfile and to the global textfile list
+// and determine some initial values
+bool add_new_logwatch_textfile(const char *full_filename, pattern_container *patterns)
+{
+    if (g_num_logwatch_textfiles + 1 >= MAX_LOGWATCH_TEXTFILES) {
+        fprintf(stderr, "Maximum number of textfiles exceeded %d.\n", MAX_LOGWATCH_TEXTFILES);
+        return false;
+    }
+
+    logwatch_textfile *new_textfile = new logwatch_textfile(); 
+    
+    HANDLE hFile = CreateFile(full_filename,// file to open
+           GENERIC_READ,          // open for reading
+           FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+           NULL,                  // default security
+           OPEN_EXISTING,         // existing file only
+           FILE_ATTRIBUTE_NORMAL, // normal file
+           NULL);                 // no attr. template
+           
+    BY_HANDLE_FILE_INFORMATION fileinfo;
+    GetFileInformationByHandle(hFile, &fileinfo);
+    CloseHandle(hFile);
+
+    new_textfile->path         = strdup(full_filename);
+    new_textfile->missing      = false;
+    new_textfile->patterns     = patterns;
+
+    // Hier aus den gespeicherten Hints was holen....
+    bool found_hint = false;
+    for (unsigned i=0; i<g_num_logwatch_hints; i++) {
+        logwatch_textfile *hint = g_logwatch_hints[i];
+        if (!strcmp(hint->path, full_filename)) {
+            new_textfile->file_size = hint->file_size;
+            new_textfile->file_id = hint->file_id;
+            new_textfile->offset = hint->offset;
+            found_hint = true;
+            break;
+        }
+    }
+        
+    if (!found_hint) {
+        new_textfile->file_size    = (unsigned long long)fileinfo.nFileSizeLow + 
+                                     (((unsigned long long)fileinfo.nFileSizeHigh) << 32);
+        new_textfile->file_id      = (unsigned long long)fileinfo.nFileIndexLow + 
+                                      (((unsigned long long)fileinfo.nFileIndexHigh) << 32);
+        new_textfile->offset       = new_textfile->file_size; 
+    }
+
+    g_logwatch_textfiles[g_num_logwatch_textfiles++] = new_textfile;
+    return true;
+}
+
+
+// Check if the given full_filename already exists. If so, do some basic file integrity checks
+// Otherwise create a new textfile instance
+void update_or_create_logwatch_textfile(const char *full_filename, pattern_container *patterns)
+{
+    logwatch_textfile *textfile;
+    if ((textfile = get_logwatch_textfile(full_filename)) != NULL) 
+    {
+        HANDLE hFile = CreateFile(textfile->path,// file to open
+               GENERIC_READ,          // open for reading
+               FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+               NULL,                  // default security
+               OPEN_EXISTING,         // existing file only
+               FILE_ATTRIBUTE_NORMAL, // normal file
+               NULL);                 // no attr. template
+
+        BY_HANDLE_FILE_INFORMATION fileinfo;
+        // Do some basic checks to ensure its still the same file
+        // try to fill the structure with info regarding the file
+        if (hFile != INVALID_HANDLE_VALUE)
+        {
+            if (GetFileInformationByHandle(hFile, &fileinfo))
+            {
+                unsigned long long file_id = (unsigned long long)fileinfo.nFileIndexLow + 
+                                             (((unsigned long long)fileinfo.nFileIndexHigh) << 32);
+                textfile->file_size        = (unsigned long long)fileinfo.nFileSizeLow + 
+                                             (((unsigned long long)fileinfo.nFileSizeHigh) << 32);
+
+                if (file_id != textfile->file_id) {                // file has been changed 
+                    verbose("File %s: id has changed from %s", 
+                        full_filename, llu_to_string(textfile->file_id));
+                    verbose(" to %s\n", llu_to_string(file_id));
+                    textfile->offset = 0;
+                    textfile->file_id = file_id;
+                } else if (textfile->file_size < textfile->offset) { // file has been truncated
+                    verbose("File %s: file has been truncated\n", full_filename);
+                    textfile->offset = 0;
+                }
+
+                textfile->missing = false; 
+            }
+            CloseHandle(hFile);
+        } else {
+            verbose("Cant open file with CreateFile %s\n", full_filename);
+        }
+
+    }
+    else
+        add_new_logwatch_textfile(full_filename, patterns); // Add new file
+}
+
+// Process a single expression (token) of a globline and try to find matching files
+void process_glob_expression(glob_token *glob_token, pattern_container *patterns) 
+{
+    WIN32_FIND_DATA data;
+    char full_filename[512];
+    glob_token->found_match = false;
+    HANDLE h = FindFirstFileEx(glob_token->pattern, FindExInfoStandard, &data, FindExSearchNameMatch, NULL, 0);
+    if (h != INVALID_HANDLE_VALUE) {
+        glob_token->found_match = true;
+        const char *basename = "";
+        char *end = strrchr(glob_token->pattern, '\\');
+        if (end) {
+            *end = 0; 
+            basename = glob_token->pattern;
+        }
+        snprintf(full_filename,sizeof(full_filename), "%s\\%s", basename, data.cFileName);
+        update_or_create_logwatch_textfile(full_filename, patterns);
+
+        while (FindNextFile(h, &data)){
+            snprintf(full_filename,sizeof(full_filename), "%s\\%s", basename, data.cFileName);
+            update_or_create_logwatch_textfile(full_filename, patterns);
+        }
+        
+        if (end) 
+            *end = '\\'; // repair string
+        FindClose(h);
+    }
+}
+
+// Add a new globline from the config file:
+// C:/Testfile D:/var/log/data.log D:/tmp/art*.log
+// This globline is split into tokens which are processed by process_glob_expression
+void add_globline(char *value)
+{
+    if ( g_num_logwatch_globlines + 1 >= MAX_LOGWATCH_GLOBLINES) {
+        fprintf(stderr, "Maximum number of globlines exceeded %d.\n", MAX_LOGWATCH_GLOBLINES);
+        exit(1);
+    }
+
+    // Each globline receives its own pattern container
+    // In case new files matching the glob pattern are we
+    // we already have all state,regex patterns available
+    globline_container *new_globline = new globline_container();
+    new_globline->patterns           = new pattern_container();
+    new_globline->num_tokens         = 0;
+
+    g_logwatch_globlines[g_num_logwatch_globlines++] = new_globline;
+    g_current_globline_container                     = new_globline;
+
+    // Split globline into tokens
+    if (value != 0) { 
+        char *copy = strdup(value);
+        char *token = strtok(copy, "|");
+        while (token) {
+            token = lstrip(token);
+            new_globline->token[new_globline->num_tokens]          = new glob_token();
+            new_globline->token[new_globline->num_tokens]->pattern = strdup(token); 
+            process_glob_expression(new_globline->token[new_globline->num_tokens], new_globline->patterns);
+            token = strtok(NULL, "|");
+            new_globline->num_tokens++;
+        }
+        free(copy);
+    } 
+}
+
+
+// Revalidate the existance of logfiles and check if the files attribute (id / size) indicate a change
+void revalidate_logwatch_textfiles()
+{
+    // First of all invalidate all textfiles
+    for (unsigned int i = 0; i < g_num_logwatch_textfiles ; i++)
+        g_logwatch_textfiles[i]->missing = true;  
+
+    for (unsigned int i = 0; i < g_num_logwatch_globlines; i++) {
+        globline_container *current_globline = g_logwatch_globlines[i];
+        for (int j = 0; j < current_globline->num_tokens; j++) { 
+            process_glob_expression(current_globline->token[j], current_globline->patterns);
+        }
+    }
+}
+
+
+bool globmatch(const char *pattern, char *astring);
+
+// Remove missing files from list
+void cleanup_logwatch_textfiles()
+{ 
+    for (unsigned int i=0; i < g_num_logwatch_textfiles; i++) {
+        if (g_logwatch_textfiles[i]->missing) {
+            // remove this file from the list
+            free(g_logwatch_textfiles[i]->path);
+            delete g_logwatch_textfiles[i]; 
+
+            // One entry less in our list..
+            g_num_logwatch_textfiles--;
+            i--;
+
+            // Check if this was not the last entry in the list
+            // In this case take the last entry and fill the gap
+            if (i != g_num_logwatch_textfiles)
+                g_logwatch_textfiles[i] = g_logwatch_textfiles[g_num_logwatch_textfiles];
+        }
+    }
+}
+
+// Called on program exit
+void cleanup_logwatch() 
+{
+    // cleanup textfiles
+    for (unsigned int i = 0; i < g_num_logwatch_textfiles ; i++)
+        g_logwatch_textfiles[i]->missing = true;  
+    cleanup_logwatch_textfiles();
+
+    // cleanup globlines and textpatterns
+    for (unsigned int i = 0; i < g_num_logwatch_globlines ; i++) {
+        for (int j = 0; j < g_logwatch_globlines[i]->num_tokens ; j++) {
+            free(g_logwatch_globlines[i]->token[j]->pattern);
+            delete g_logwatch_globlines[i]->token[j]; 
+        }
+        for (int j = 0; j < g_logwatch_globlines[i]->patterns->num_patterns; j++) { 
+            free(g_logwatch_globlines[i]->patterns->patterns[j]->glob_pattern);
+            delete g_logwatch_globlines[i]->patterns->patterns[j];
+        }
+        delete g_logwatch_globlines[i]->patterns;
+        delete g_logwatch_globlines[i];
+    }
+}
+
+
+// Process content of the given textfile
+// Can be called in dry-run mode (write_output = false). This tries to detect CRIT or WARN patterns
+// If write_output is set to true any data found is written to the out socket
+bool process_textfile(FILE *file, logwatch_textfile* textfile, SOCKET &out, bool write_output) {
+    char line[4096];
+    condition_pattern *pattern = 0;
+    verbose("Checking file %s\n", textfile->path);
+    while (!feof(file)) {
+        if (!fgets(line, sizeof(line), file))
+            break;
+        
+        if (line[strlen(line)-1] == '\n')
+           line[strlen(line)-1] = 0;
+
+        char state = '.';
+        for (int j=0; j < textfile->patterns->num_patterns; j++) {
+            pattern = textfile->patterns->patterns[j];
+            if (globmatch(pattern->glob_pattern, line)){
+                if (!write_output && (pattern->state == 'C' || pattern->state == 'W' || pattern->state == 'O'))
+                   return true;
+                state = pattern->state;
+                break;
+            }
+        }
+        if (write_output && strlen(line) > 0)
+            output(out, "%c %s\n", state, line);
+    }
+
+    return false;
+}
+
+
+// The output of this section is compatible with
+// the logwatch agent for Linux and UNIX
+void section_logfiles(SOCKET &out)
+{
+    crash_log("<<<logwatch>>>");
+    output(out, "<<<logwatch>>>\n");
+    revalidate_logwatch_textfiles();
+
+    logwatch_textfile *textfile;
+    
+    // Missing glob patterns
+    for (unsigned int i = 0; i < g_num_logwatch_globlines; i++) {
+        globline_container *current_globline = g_logwatch_globlines[i];
+        for(int j = 0; j < current_globline->num_tokens; j++) { 
+            if (!current_globline->token[j]->found_match)
+                output(out, "[[[%s:missing]]]\n", current_globline->token[j]->pattern); 
+        }
+    }
+    
+    for (unsigned int i = 0; i < g_num_logwatch_textfiles ; i++) {
+        textfile = g_logwatch_textfiles[i];
+        if (textfile->missing){
+            output(out, "[[[%s:missing]]]\n", textfile->path); 
+            continue;
+        }
+
+
+        FILE *file = fopen(textfile->path, "r");
+        if (!file) {
+            output(out, "[[[%s:cannotopen]]]\n", textfile->path); 
+            continue;
+        }
+
+        output(out, "[[[%s]]]\n", textfile->path);
+        
+        if (textfile->offset == textfile->file_size) {// no new data
+            fclose(file);
+            continue;
+        }
+        
+        fseek(file, textfile->offset, SEEK_SET);
+
+        // try to find WARN / CRIT match
+        bool found_match = process_textfile(file, textfile, out, false);
+
+        if (found_match) {
+            fseek(file, textfile->offset, SEEK_SET);
+            process_textfile(file, textfile, out, true);
+        }
+         
+        fclose(file);
+        textfile->offset = textfile->file_size;
+    }
+
+    cleanup_logwatch_textfiles();
+    save_logwatch_offsets();
+}
+
+
 // The output of this section is compatible with
 // the logwatch agent for Linux and UNIX
 void section_eventlog(SOCKET &out)
 {
+    crash_log("<<<logwatch>>>");
+
     // This agent remembers the record numbers
     // of the event logs up to which messages have
     // been processed. When started, the eventlog
     // is skipped to the end. Historic messages are
     // not been processed.
     static bool first_run = true;
-
     output(out, "<<<logwatch>>>\n");
+
     if (find_eventlogs(out))
     {
 	for (unsigned i=0; i < num_eventlogs; i++) {
@@ -1316,18 +1879,21 @@ void section_eventlog(SOCKET &out)
 
 void section_mem(SOCKET &out)
 {
+    crash_log("<<<mem>>>");
     output(out, "<<<mem>>>\n");
 
     MEMORYSTATUSEX statex;
     statex.dwLength = sizeof (statex);
     GlobalMemoryStatusEx (&statex);
 
-    output(out, "MemTotal:  %11d kB\n", statex.ullTotalPhys     / 1024);
-    output(out, "MemFree:   %11d kB\n", statex.ullAvailPhys     / 1024);
-    output(out, "SwapTotal: %11d kB\n", (statex.ullTotalPageFile - statex.ullTotalPhys) / 1024);
-    output(out, "SwapFree:  %11d kB\n", (statex.ullAvailPageFile - statex.ullAvailPhys) / 1024);
-    output(out, "PageTotal: %11d kB\n", statex.ullTotalPageFile / 1024);
-    output(out, "PageFree:  %11d kB\n", statex.ullAvailPageFile / 1024);
+    output(out, "MemTotal:     %11d kB\n", statex.ullTotalPhys     / 1024);
+    output(out, "MemFree:      %11d kB\n", statex.ullAvailPhys     / 1024);
+    output(out, "SwapTotal:    %11d kB\n", (statex.ullTotalPageFile - statex.ullTotalPhys) / 1024);
+    output(out, "SwapFree:     %11d kB\n", (statex.ullAvailPageFile - statex.ullAvailPhys) / 1024);
+    output(out, "PageTotal:    %11d kB\n", statex.ullTotalPageFile / 1024);
+    output(out, "PageFree:     %11d kB\n", statex.ullAvailPageFile / 1024);
+    output(out, "VirtualTotal: %11d kB\n", statex.ullTotalVirtual / 1024);
+    output(out, "VirtualFree:  %11d kB\n", statex.ullAvailVirtual / 1024);
 }
 
 // .-----------------------------------------------------------------------.
@@ -1344,6 +1910,7 @@ void output_fileinfo(SOCKET &out, const char *basename, WIN32_FIND_DATA *data);
 
 void section_fileinfo(SOCKET &out)
 {
+    crash_log("<<<fileinfo>>>");
     output(out, "<<<fileinfo:sep(124)>>>\n");
     output(out, "%.0f\n", current_time());
     for (unsigned i=0; i<g_num_fileinfo_paths; i++) {
@@ -1463,6 +2030,7 @@ bool banned_exec_name(char *name)
 
 void run_plugin(SOCKET &out, char *path)
 {
+    crash_log("Running program %s", path);
     char newpath[256];
     char *execpath = add_interpreter(path, newpath);
 
@@ -1470,7 +2038,7 @@ void run_plugin(SOCKET &out, char *path)
     if (f) {
         char line[4096];
         while (0 != fgets(line, sizeof(line), f)) {
-            output(out, line);
+            output(out, "%s", line);
         }
         pclose(f);
     }
@@ -1504,6 +2072,7 @@ void run_external_programs(SOCKET &out, char *dirname)
 
 void section_mrpe(SOCKET &out)
 {
+    crash_log("<<<mrpe>>>");
     output(out, "<<<mrpe>>>\n"); 
     for (unsigned i=0; i<g_num_mrpe_entries; i++)
     {
@@ -1548,6 +2117,7 @@ void section_mrpe(SOCKET &out)
 
 void section_local(SOCKET &out)
 {
+    crash_log("<<<local>>>");
     output(out, "<<<local>>>\n");
     run_external_programs(out, g_local_dir);
 }
@@ -1582,6 +2152,7 @@ void section_plugins(SOCKET &out)
 
 void section_check_mk(SOCKET &out)
 {
+    crash_log("<<<check_mk>>>");
     output(out, "<<<check_mk>>>\n");
     output(out, "Version: %s\n", CHECK_MK_VERSION);
     output(out, "AgentOS: windows\n");
@@ -1591,6 +2162,12 @@ void section_check_mk(SOCKET &out)
     output(out, "AgentDirectory: %s\n",   g_agent_directory);
     output(out, "PluginsDirectory: %s\n", g_plugins_dir);
     output(out, "LocalDirectory: %s\n",   g_local_dir);
+    if (g_crash_debug) {
+        output(out, "ConnectionLog: %s\n", g_connection_log);
+        output(out, "CrashLog: %s\n",      g_crash_log);
+        output(out, "SuccessLog: %s\n",    g_success_log);
+    }
+
     output(out, "OnlyFrom:");
     if (g_num_only_from == 0)
         output(out, " 0.0.0.0/0\n");
@@ -1607,6 +2184,9 @@ void section_check_mk(SOCKET &out)
         output(out, "\n");
     }
 }
+
+
+
 
 //  .----------------------------------------------------------------------.
 //  |                  ____                  _                             |
@@ -1787,6 +2367,104 @@ void do_remove()
     UninstallService();
 }
 
+// .-----------------------------------------------------------------------.
+// |       ____               _       ____       _                         |
+// |      / ___|_ __ __ _ ___| |__   |  _ \  ___| |__  _   _  __ _         |
+// |     | |   | '__/ _` / __| '_ \  | | | |/ _ \ '_ \| | | |/ _` |        |
+// |     | |___| | | (_| \__ \ | | | | |_| |  __/ |_) | |_| | (_| |        |
+// |      \____|_|  \__,_|___/_| |_| |____/ \___|_.__/ \__,_|\__, |        |
+// |                                                         |___/         |
+// '-----------------------------------------------------------------------'
+
+void open_crash_log()
+{
+    struct stat buf;
+
+    if (g_crash_debug) {
+        snprintf(g_crash_log, sizeof(g_crash_log), "%s\\crash.log", g_agent_directory);
+        snprintf(g_connection_log, sizeof(g_connection_log), "%s\\connection.log", g_agent_directory);
+        snprintf(g_success_log, sizeof(g_success_log), "%s\\success.log", g_agent_directory);
+
+        // rename left over log if exists (means crash found)
+        if (0 == stat(g_connection_log, &buf)) {
+            // rotate to up to 9 crash log files
+            char rotate_path_from[256];
+            char rotate_path_to[256];
+            for (int i=9; i>=1; i--) {
+                snprintf(rotate_path_to, sizeof(rotate_path_to),  
+                    "%s\\crash-%d.log", g_agent_directory, i);
+                if (i>1) 
+                    snprintf(rotate_path_from, sizeof(rotate_path_from), 
+                        "%s\\crash-%d.log", g_agent_directory, i-1);
+                else
+                    snprintf(rotate_path_from, sizeof(rotate_path_from), 
+                        "%s\\crash.log", g_agent_directory);
+                unlink(rotate_path_to);
+                rename(rotate_path_from, rotate_path_to);
+            }
+            rename(g_connection_log, g_crash_log);
+            g_found_crash = true;
+        }
+
+        g_connectionlog_file = fopen(g_connection_log, "w");
+        gettimeofday(&g_crashlog_start, 0);
+        time_t now = time(0);
+        struct tm *t = localtime(&now);
+        char timestamp[64];
+        strftime(timestamp, sizeof(timestamp), "%b %d %H:%M:%S", t);
+        crash_log("Opened crash log at %s.", timestamp);
+    }
+}
+
+void close_crash_log()
+{
+    if (g_crash_debug) {
+        crash_log("Closing crash log (no crash this time)");
+        fclose(g_connectionlog_file);
+        unlink(g_success_log);
+        rename(g_connection_log, g_success_log);
+    }
+}
+
+void crash_log(const char *format, ...)
+{
+    struct timeval tv;
+
+    if (g_connectionlog_file) {
+        gettimeofday(&tv, 0);
+        long int ellapsed_usec = tv.tv_usec - g_crashlog_start.tv_usec;
+        long int ellapsed_sec  = tv.tv_sec - g_crashlog_start.tv_sec;
+        if (ellapsed_usec < 0) {
+            ellapsed_usec += 1000000;
+            ellapsed_sec --;
+        }
+
+        va_list ap;
+        va_start(ap, format);
+        fprintf(g_connectionlog_file, "%ld.%06ld ", ellapsed_sec, ellapsed_usec);
+        vfprintf(g_connectionlog_file, format, ap);
+        fputs("\n", g_connectionlog_file);
+        fflush(g_connectionlog_file);
+    }
+}
+
+void output_crash_log(SOCKET &out)
+{
+    output(out, "<<<logwatch>>>\n");
+    output(out, "[[[Check_MK Agent]]]\n");
+    if (g_found_crash) {
+        output(out, "C Check_MK Agent crashed\n");
+        FILE *f = fopen(g_crash_log, "r");
+        char line[1024];
+        while (0 != fgets(line, sizeof(line), f)) {
+            output(out, "W ");
+            output(out, line);
+        }
+        fclose(f);
+        g_found_crash = false;
+    }
+}
+
 
 
 //  .----------------------------------------------------------------------.
@@ -1797,6 +2475,17 @@ void do_remove()
 //  |   \____\___/|_| |_|_| |_|\__, |\__,_|_|  \__,_|\__|_|\___/|_| |_|    |
 //  |                          |___/                                       |
 //  '----------------------------------------------------------------------'
+
+int parse_boolean(char *value)
+{
+    if (!strcmp(value, "yes"))
+        return 1;
+    else if (!strcmp(value, "no"))
+        return 0;
+    else
+        fprintf(stderr, "Invalid boolean value. Only yes and no are allowed.\r\n");
+        return -1;
+}
 
 void lowercase(char *s)
 {
@@ -1946,15 +2635,29 @@ void parse_execute(char *value)
     }
 }
 
+
+bool parse_crash_debug(char *value)
+{
+    int s = parse_boolean(value);
+    if (s == -1)
+        return false;
+    g_crash_debug = s;
+    return true;
+}
+
+
 bool handle_global_config_variable(char *var, char *value)
 {
-    if (!strcmp(var, "only_from")) {
+if (!strcmp(var, "only_from")) {
         parse_only_from(value);
         return true;
     }
     else if (!strcmp(var, "execute")) {
         parse_execute(value);
         return true;
+    }
+    else if (!strcmp(var, "crash_debug")) {
+        return parse_crash_debug(value);
     }
     else if (!strcmp(var, "sections")) {
         enabled_sections = 0;
@@ -1976,6 +2679,8 @@ bool handle_global_config_variable(char *var, char *value)
                 enabled_sections |= SECTION_WINPERF;
             else if (!strcmp(word, "logwatch"))
                 enabled_sections |= SECTION_LOGWATCH;
+            else if (!strcmp(word, "logfiles"))
+                enabled_sections |= SECTION_LOGFILES;
             else if (!strcmp(word, "systemtime"))
                 enabled_sections |= SECTION_SYSTEMTIME;
             else if (!strcmp(word, "plugins"))
@@ -2021,15 +2726,31 @@ bool handle_winperf_config_variable(char *var, char *value)
     return false;
 }
 
-int parse_boolean(char *value)
+bool handle_logfiles_config_variable(char *var, char *value)
 {
-    if (!strcmp(value, "yes"))
-        return 1;
-    else if (!strcmp(value, "no"))
-        return 0;
-    else
-        fprintf(stderr, "Invalid boolean value. Only yes and no are allowed.\r\n");
-        return -1;
+    load_logwatch_offsets();
+    if (!strcmp(var, "textfile")) {
+        if (value != 0)
+            add_globline(value);
+        return true;
+    }else if (!strcmp(var, "warn")) {
+        if (value != 0)
+            add_condition_pattern('W', value);
+        return true;
+    }else if (!strcmp(var, "crit")) {
+        if (value != 0)
+            add_condition_pattern('C', value);
+        return true;
+    }else if (!strcmp(var, "ignore")) {
+        if (value != 0)
+            add_condition_pattern('I', value);
+        return true;
+    }else if (!strcmp(var, "ok")) {
+        if (value != 0)
+            add_condition_pattern('O', value);
+        return true;
+    }
+    return false;
 }
 
 bool handle_logwatch_config_variable(char *var, char *value)
@@ -2065,7 +2786,6 @@ bool handle_logwatch_config_variable(char *var, char *value)
         logwatch_send_initial_entries = s;
         return true;
     }
-
     return false;
 }
 
@@ -2132,6 +2852,9 @@ bool handle_mrpe_config_variable(char *var, char *value)
     # Restrict access to certain IP addresses
     only_from = 127.0.0.1 192.168.56.0/24
 
+    # Enable crash debugging
+    crash_debug = on
+
 
 [winperf]
     # Select counters to extract. The following counters
@@ -2165,8 +2888,10 @@ void read_config_file()
     bool is_active = true; // false in sections with host restrictions
 
     while (!feof(file)) {
-        if (!fgets(line, sizeof(line), file))
+        if (!fgets(line, sizeof(line), file)){
+            fclose(file);
             return;
+        }
         lineno ++;
         char *l = strip(line);
         if (l[0] == 0 || l[0] == '#' || l[0] == ';')
@@ -2182,6 +2907,8 @@ void read_config_file()
                 variable_handler = handle_winperf_config_variable;
             else if (!strcmp(section, "logwatch"))
                 variable_handler = handle_logwatch_config_variable;
+            else if (!strcmp(section, "logfiles"))
+                variable_handler = handle_logfiles_config_variable;
             else if (!strcmp(section, "mrpe"))
                 variable_handler = handle_mrpe_config_variable;
             else if (!strcmp(section, "fileinfo"))
@@ -2234,7 +2961,11 @@ void read_config_file()
             }
         }
     }
+    fclose(file);
 }
+
+
+
 
 
 //  .----------------------------------------------------------------------.
@@ -2341,8 +3072,13 @@ void listen_tcp_loop()
                 uint32_t ip = 0;
                 if (remote_addr.sin_family == AF_INET)
                     ip = remote_addr.sin_addr.s_addr;
-                if (check_only_from(ip))
+                if (check_only_from(ip)) {
+                    open_crash_log();
+                    crash_log("Accepted client connection from %u.%u.%u.%u.",
+                            ip & 0xff, (ip >> 8) & 0xff, (ip >> 16) & 0xff, (ip >> 24) & 0xff);
                     output_data(connection);
+                    close_crash_log();
+                }
 		closesocket(connection);
 	    }
 	}
@@ -2453,6 +3189,8 @@ void output_data(SOCKET &out)
     // make sure, output of numbers is not localized
     setlocale(LC_ALL, "C");
 
+    if (g_crash_debug)
+        output_crash_log(out);
     if (enabled_sections & SECTION_CHECK_MK)
         section_check_mk(out);
     if (enabled_sections & SECTION_UPTIME)
@@ -2471,6 +3209,8 @@ void output_data(SOCKET &out)
         section_winperf(out);
     if (enabled_sections & SECTION_LOGWATCH)
         section_eventlog(out);
+    if (enabled_sections & SECTION_LOGFILES)
+        section_logfiles(out);
     if (enabled_sections & SECTION_PLUGINS)
         section_plugins(out);
     if (enabled_sections & SECTION_LOCAL)
@@ -2494,6 +3234,8 @@ void cleanup()
 
     while (g_num_fileinfo_paths) 
         free(g_fileinfo_path[--g_num_fileinfo_paths]);
+    
+    cleanup_logwatch();
 }
 
 void show_version()
@@ -2546,6 +3288,7 @@ void determine_directories()
     get_agent_dir(g_agent_directory, sizeof(g_agent_directory));
     snprintf(g_plugins_dir, sizeof(g_plugins_dir), "%s\\plugins", g_agent_directory);
     snprintf(g_local_dir, sizeof(g_local_dir), "%s\\local", g_agent_directory);
+    snprintf(g_logwatch_statefile, sizeof(g_logwatch_statefile), "%s\\logstate.txt", g_agent_directory);
 }
 
 int main(int argc, char **argv)

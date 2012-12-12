@@ -54,28 +54,52 @@ inventory_services = []
 #   ( ALL_HOSTS, [ "!Backup.*", "FooBar auto" ] ),
 # ]
 
-def inventory_windows_services(info):
+# Implemented in 1.2.1i2:
+# New rule-style (WATO compatible) notation:
+#   [({'start_mode': 'demand', 'service': ['Netman']}, [], ['@all'], {'docu_url': ''})]
+#
+# <services> is list of regexes matching the service name
+# <state> is the expected state to inventorize services of (running, stopped, ...)
+# <start_mode> is the expected state to inventorize services of (auto, manual, ...)
+#
+# All above attributes can be set to None or not set to disable this filter option for the entry.
+inventory_services_rules = []
 
+def inventory_windows_services(info):
     # Handle single entries (type str)
     def add_matching_services(name, state, start_type, entry):
-        if ' ' in entry and len(entry.split()) == 2:
+        if type(entry) == tuple:
+            # New wato rule handling
+            svc  = entry[0]
+            statespec = entry[1:]
+
+        elif ' ' in entry and len(entry.split()) == 2:
             svc, statespec = entry.split()
+
         else:
             svc = entry
             statespec = "running"
 
-        # First match name
-        if svc.startswith("~"):
-            if not get_regex(svc[1:]).match(name):
-                return []
-        elif svc != name:
-            return []
-
-        for n in statespec.split("/"):
-            if n not in [ state, start_type ]:
+        # First match name (optional since rule based config option available)
+        if svc:
+            if svc.startswith("~"):
+                if not get_regex(svc[1:]).match(name):
+                    return []
+            elif svc != name:
                 return []
 
-        return [(name, None)]
+        if type(statespec) == tuple:
+            # New wato rule handling (always given as tuple of two)
+            if (statespec[0] and statespec[0] != state) \
+               or (statespec[1] and statespec[1] != start_type):
+                return []
+
+        else:
+            for n in statespec.split("/"):
+                if n not in [ state, start_type ]:
+                    return []
+
+        return [(name, {})]
 
     # Handle entries like ( [ "term" ], ALL_HOSTS, [ "FooBar auto", ".*TEST running" ] )
     def add_services_with_tags(name, state, start_type, entry):
@@ -89,16 +113,38 @@ def inventory_windows_services(info):
                     matching += add_matching_services(name, state, start_type, svc)
         return matching
 
+    # Filter WATO compatible rules by tags/hostlist
+    rules = []
+    for rule in inventory_services_rules:
+        # 1. Get all rules matching the current host
+        taglist, hostlist = rule[1:3]
+        if not hosttags_match_taglist(tags_of_host(g_hostname), taglist) \
+           or not in_extraconf_hostlist(hostlist, g_hostname):
+            continue
+
+        # 2. Now extract the list of service regexes
+        value = rule[0]
+        svcs  = value.get('services', [])
+        state = value.get('state', None)
+        start_mode  = value.get('start_mode', None)
+        if svcs:
+            for svc in svcs:
+                rules.append(('~' + svc, state, start_mode))
+        else:
+            rules.append((None, state, start_mode))
 
     inventory = []
     for line in info:
-        name = line[0]
-        if '/' in line[1]:
-            state, start_type = line[1].split('/')
+        name = line[1]
+        if '/' in line[2]:
+            state, start_type = line[2].split('/')
         else:
-            state = line[1]
+            state = line[2]
             start_type = "unknown"
 
+        #
+        # Handle "old" inventory_services notation
+        #
         for entry in inventory_services:
             if type(entry) == str:
                 inventory += add_matching_services(name, state, start_type, entry)
@@ -107,36 +153,84 @@ def inventory_windows_services(info):
             else:
                 raise MKGeneralException("Invalid entry %r in inventory_services" % entry)
 
+        #
+        # New WATO compatible rule matching
+        #
+
+        for rule in rules:
+            inventory += add_matching_services(name, state, start_type, rule)
+
     return inventory
 
 
-def check_windows_services(item, _no_params, info):
-    # make sure, that thing also works for clusters:
-    # here a service can be listed more than once.
-    # It is sufficient of at least one "running" is
-    # found.
-    worststate = None
+# Format of parameters
+# {
+#    "states" : [ ( "running", "demand", 1 ),
+#                  ( "stopped", None, 2 ) ],
+#    "else" : 2,
+# }
+
+def check_windows_services(item, params, info):
+    # Hack for old manually defined checks:
+    if params == None:
+        params = factory_settings["services_default_levels"];
+
+    # A service may appear more than once (due to clusters).
+    # First make a list of all matching entries with their 
+    # states
+    found = []
     for line in info:
-        name = line[0]
-        if name == item:
+        if item == line[1]:
             # newer agents also send start type as part of state,
             # e.g. running/auto
-            if '/' in line[1]:
-                state, start_type = line[1].split('/')
+            if '/' in line[2]:
+                state, start_type = line[2].split('/')
             else:
-                state = line[1]
+                state = line[2]
                 start_type = "unknown"
+            found.append((line[0], state, start_type, " ".join(line[3:])))
 
-            displayname = " ".join(line[2:])
-            if state == 'running':
-                return (0, "OK - running (start type is %s): %s" % (start_type, displayname))
-            worststate = state
-            worst_start_type = start_type
-    if worststate:
-        return (2, "CRIT - %s (start type is %s): %s" % (worststate, worst_start_type, displayname))
-    else:
+    if len(found) == 0:
         return (3, "UNKNOWN - service not found")
 
 
-check_info['services'] = (check_windows_services, "service_%s", 0, inventory_windows_services)
-checkgroup_of['services'] = 'services'
+    # We take the best found state (neccessary for clusters)
+    best_state = None
+    for running_on, state, start_type, desc in found:
+        for t_state, t_start_type, mon_state in params["states"]:
+            if (t_state == None or t_state == state) \
+             and (t_start_type == None or t_start_type == start_type): 
+                this_state = mon_state 
+                break
+        else:
+            this_state = params["else"]
+
+        if best_state == None or this_state < best_state:
+            best_state = this_state
+            best_info = state, start_type
+            best_running_on = running_on
+    infotext = nagios_state_names[best_state] + " - " + desc + ": %s (start type is %s)" % best_info
+    if best_running_on and best_state != 2: #if best state ist critical, there should no message "running on"
+        infotext += " (running on: %s)" % best_running_on
+
+    return (best_state, infotext)
+
+
+
+# check_info['services'] = (check_windows_services, "service_%s", 0, inventory_windows_services)
+# checkgroup_of['services'] = 'services'
+
+factory_settings["services_default_levels"] = { 
+    "states"      : [ ( "running", None, 0 ) ],
+    "else"        : 2,
+}
+
+check_info['services'] = {
+    "check_function"          : check_windows_services,
+    "inventory_function"      : inventory_windows_services,
+    "service_description"     : "service_%s",
+    "has_perfdata"            : False,
+    "node_info"               : True,
+    "group"                   : "services",
+    "default_levels_variable" : "services_default_levels",
+}

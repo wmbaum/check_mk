@@ -33,11 +33,13 @@ stylesheets = [ 'pages', 'status', 'logwatch' ]
 def level_name(level):
     if   level == 'W': return 'WARN'
     elif level == 'C': return 'CRIT'
+    elif level == 'O': return 'OK'
     else: return 'OK'
 
 def level_state(level):
     if   level == 'W': return 1
     elif level == 'C': return 2
+    elif level == 'O': return 0
     else: return 0
 
 #   .----------------------------------------------------------------------.
@@ -54,6 +56,16 @@ def level_state(level):
 def page_show():
     host = html.var('host')
     filename = html.var('file')
+
+    # Acknowledging logs is supported on
+    # a) all logs on all hosts
+    # b) all logs on one host
+    # c) one log on one host
+    if html.has_var('_ack') and not html.var("_do_actions") == _("No"):
+        html.live.set_auth_domain('action')
+        do_log_ack(host, filename)
+        return
+
     if not host:
         show_log_list()
         return
@@ -63,11 +75,7 @@ def page_show():
         raise MKAuthException(_("You are not allowed to access the logs of the host %s") % htmllib.attrencode(host))
 
     if filename:
-        if html.has_var('ack') and not html.var("_do_actions") == _("No"):
-            html.live.set_auth_domain('action')
-            do_log_ack(host, filename)
-        else:
-            show_file(host, filename)
+        show_file(host, filename)
     else:
         show_host_log_list(host)
 
@@ -77,11 +85,13 @@ def show_log_list():
 
     html.begin_context_buttons()
     html.context_button(_("Analyze Patterns"), "%swato.py?mode=pattern_editor" % html.var('master_url', ''), 'analyze')
+    ack_button()
     html.end_context_buttons()
 
     html.write("<table class=data>\n")
     for host, logs in all_logs():
-        html.write('<tr><td colspan=2><h2>%s</h2></td></tr>' % host)
+        html.write('<tr><td colspan=2><h2><a href="%s">%s</a></h2></td></tr>' % \
+                                              (html.makeuri([('host', host)]), host))
         list_logs(host, logs)
     html.write("</table>\n")
 
@@ -90,13 +100,14 @@ def show_log_list():
 # Shows all problematic logfiles of a host
 def show_host_log_list(host):
     master_url = html.var('master_url', '')
-    html.header(_("Logfiles of host %s") % host, stylesheets = stylesheets)
+    html.header(_("Logfiles of Host %s") % host, stylesheets = stylesheets)
     html.begin_context_buttons()
     html.context_button(_("Services"), "%sview.py?view_name=host&site=&host=%s" %
                                 (master_url, htmllib.urlencode(host)), 'services')
-    html.context_button(_("All logfiles"), "logwatch.py")
+    html.context_button(_("All Logfiles"), html.makeuri([('host', ''), ('file', '')]))
     html.context_button(_("Analyze Host Patterns"), "%swato.py?mode=pattern_editor&host=%s" %
                                 (master_url, htmllib.urlencode(host)), 'analyze')
+    ack_button(host)
     html.end_context_buttons()
 
     html.write("<table class=data>\n")
@@ -131,8 +142,8 @@ def list_logs(host, logfiles):
             html.write("<tr class=%s%d>\n" % (rowno % 2 == 0 and "odd" or "even", state))
 
             html.write("<td class=\"state%d\">%s</td>\n" % (state, state_name))
-            html.write("<td><a href=\"logwatch.py?host=%s&amp;file=%s\">%s</a></td>\n" %
-                        (htmllib.urlencode(host), htmllib.urlencode(file_display),htmllib.attrencode(file_display)))
+            html.write("<td><a href=\"%s\">%s</a></td>\n" %
+                        (html.makeuri([('host', host), ('file', file_display)]), htmllib.attrencode(file_display)))
             html.write("<td>%s</td><td>%s</td></tr>\n" % \
                         (form_datetime(last_log['datetime']), len(logs)))
 
@@ -140,20 +151,32 @@ def list_logs(host, logfiles):
         html.write('<tr><td colspan=4>'+_('No logs found for this host.')+'</td></tr>\n')
 
 
+def ack_button(host = None, int_filename = None):
+    if not config.may("general.act") or (host and not may_see(host)):
+        return
+
+    if int_filename:
+        label = _("Clear Log")
+    else:
+        label = _("Clear Logs")
+
+    html.context_button(label, html.makeuri([('_ack', '1')]), 'delete')
+
+
 def show_file(host, filename):
     master_url = html.var('master_url', '')
 
     int_filename = form_file_to_int(filename)
-    html.header(_("Logfiles of host %s: %s") % (host, filename), stylesheets = stylesheets)
+    html.header(_("Logfiles of Host %s: %s") % (host, filename), stylesheets = stylesheets)
     html.begin_context_buttons()
     html.context_button(_("Services"), "%sview.py?view_name=host&site=&host=%s" % (master_url, htmllib.urlencode(host)), 'services')
-    html.context_button(_("All Logfiles of Host"), "logwatch.py?host=%s" % htmllib.urlencode(host))
-    html.context_button(_("All Logfiles"), "logwatch.py")
+    html.context_button(_("All Logfiles of Host"), html.makeuri([('file', '')]))
+    html.context_button(_("All Logfiles"), html.makeuri([('host', ''), ('file', '')]))
 
     html.context_button(_("Analyze Patterns"), "%swato.py?mode=pattern_editor&host=%s&file=%s" %
                                 (master_url, htmllib.urlencode(host), htmllib.urlencode(filename)), 'analyze')
 
-    if html.var('hidecontext', 'no') == 'yes':
+    if html.var('_hidecontext', 'no') == 'yes':
         hide_context_label = _('Show Context')
         hide_context_param = 'no'
         hide = True
@@ -174,15 +197,8 @@ def show_file(host, filename):
         html.footer()
         return
 
-    if config.may("act") and may_see(host):
-        html.context_button(_("Clear Log"), "logwatch.py?host=%s&amp;file=%s&amp;ack=1" % \
-                   (htmllib.urlencode(host), htmllib.urlencode(filename) ), 'delete')
-
-    html.context_button(_("Context"), 'logwatch.py?host=%s&file=%s&hidecontext=%s">%s</a>' % \
-                   (htmllib.urlencode(host), \
-                    htmllib.urlencode(filename), \
-                    htmllib.urlencode(hide_context_param), \
-                    htmllib.attrencode(hide_context_label) ))
+    ack_button(host, int_filename)
+    html.context_button(hide_context_label, html.makeuri([('_hidecontext', hide_context_param)]))
 
     html.end_context_buttons()
 
@@ -213,41 +229,64 @@ def show_file(host, filename):
 
 
 def do_log_ack(host, filename):
-    file = form_file_to_int(filename)
-    file_display = form_file_to_ext(file)
-    html.header(_("Acknowledge logfile %s - %s") % (htmllib.attrencode(host), file_display), stylesheets = stylesheets)
+    todo = []
+    if not host and not filename: # all logs on all hosts
+        for this_host, logs in all_logs():
+            for int_filename in logs:
+                file_display = form_file_to_ext(int_filename)
+                todo.append((this_host, int_filename, file_display))
+        ack_msg = _('all logfiles on all hosts')
+
+    elif host and not filename: # all logs on one host
+        for int_filename in host_logs(host):
+            file_display = form_file_to_ext(int_filename)
+            todo.append((host, int_filename, file_display))
+        ack_msg = _('all logfiles of host <tt>%s</tt>') % htmllib.attrencode(host)
+
+    elif host and filename: # one log on one host
+        int_filename = form_file_to_int(filename)
+        todo = [ (host, int_filename, form_file_to_ext(int_filename)) ]
+        ack_msg = _('the log file <tt>%s</tt> on host <tt>%s</tt>') % \
+                       (htmllib.attrencode(filename), htmllib.attrencode(host))
+
+    html.header(_("Acknowledge %s") % ack_msg, stylesheets = stylesheets)
 
     html.begin_context_buttons()
-    html.context_button(_("All logfiles of Host"), "logwatch.py?host=%s" % htmllib.urlencode(host))
+    html.context_button(_("All Logfiles"), html.makeuri([('host', ''), ('file', '')]))
+    if host:
+        html.context_button(_("All Logfiles of Host"), html.makeuri([('file', '')]))
+    if host and filename:
+        html.context_button(_("Back to Logfile"), html.makeuri([]))
     html.end_context_buttons()
 
-    ack  = html.var('ack')
-    if not html.confirm(_("Do you really want to acknowledge the log file <tt>%s</tt> by <b>deleting</b> all stored messages?") % filename):
+    ack = html.var('_ack')
+    if not html.confirm(_("Do you really want to acknowledge %s by <b>deleting</b> all stored messages?") % ack_msg):
         html.footer()
         return
 
-    if not (config.may("act") and may_see(host)):
+    if not config.may("general.act"):
         html.write("<h1 class=error>"+_('Permission denied')+"</h1>\n")
-        html.write("<div class=error>" + _('You are not allowed to acknowledge the logs of the host %s</div>') % htmllib.attrencode(host))
+        html.write("<div class=error>" + _('You are not allowed to acknowledge %s</div>') % ack_msg)
         html.footer()
         return
 
     # filter invalid values
     if ack != '1':
-        raise MKUserError('ack', _('Invalid value for ack parameter.'))
+        raise MKUserError('_ack', _('Invalid value for ack parameter.'))
 
-    try:
-        os.remove(defaults.logwatch_dir + '/' + host + '/' + file)
+    for this_host, int_filename, display_name in todo:
+        try:
+            if not may_see(this_host):
+                raise MKAuthException(_('Permission denied.'))
+            os.remove(defaults.logwatch_dir + '/' + this_host + '/' + int_filename)
+        except Exception, e:
+            html.show_error(_('The log file <tt>%s</tt> of host <tt>%s</tt> could not be deleted: %s.') % \
+                                      (htmllib.attrencode(file_display), htmllib.attrencode(this_host), e))
 
-        message = '<b>'+_('%s: %s Acknowledged') % (htmllib.attrencode(host), htmllib.attrencode(file_display)) +'</b><br>'
-        message += '<p>'
-        message += _('The log messages from host &quot;%s&quot; in file &quot;%s&quot; have been acknowledged.') % \
-                                                         (htmllib.attrencode(host), htmllib.attrencode(file_display))
-        message += '</p>'
-        html.message(message)
-    except Exception, e:
-        html.show_error(_('The log file &quot;%s&quot; from host &quot;%s&quot; could not be deleted: %s.') % \
-                                  (htmllib.attrencode(file_display), htmllib.attrencode(host), e))
+    html.message('<b>%s</b><p>%s</p>' % (
+        _('Acknowledged %s') % ack_msg,
+        _('Acknowledged all messages in %s.') % ack_msg
+    ))
     html.footer()
 
 
@@ -257,7 +296,7 @@ def get_worst_log(logs):
 
     for log in logs:
         for line in log['lines']:
-            if line['level'] > worst_level:
+            if line['level'] >= worst_level:
                 worst_level = line['level']
                 worst_log = log
 
@@ -302,6 +341,8 @@ def parse_file(host, file, hidecontext = False):
                     log['level'] = 2
                 elif level == 'WARN':
                     log['level'] = 1
+                elif level == 'OK':
+                    log['level'] = 0
                 else:
                     log['level'] = 0
 
@@ -322,6 +363,10 @@ def parse_file(host, file, hidecontext = False):
                 elif line[0] == 'C':
                     line_level = 2
                     line_class = 'CRIT'
+                
+                elif line[0] == 'O': 
+                    line_level = 0 
+                    line_class = 'OK'
 
                 elif not hidecontext:
                     line_level = 0
@@ -357,7 +402,7 @@ def all_logs():
     return logs
 
 def may_see(host):
-    if config.may("see_all"):
+    if config.may("general.see_all"):
         return True
 
     # FIXME: Or maybe make completely transparent and add pseudo local_connection() to Single livestatus clas?
@@ -373,12 +418,12 @@ def form_level(level):
     levels = [ 'OK', 'WARN', 'CRIT', 'UNKNOWN' ]
     return levels[level]
 
-def form_file_to_int(file):
-    return file.replace('/', '\\')
+def form_file_to_int(f):
+    return f.replace('/', '\\')
 
-def form_file_to_ext(file):
-    return file.replace('\\', '/')
+def form_file_to_ext(f):
+    return f.replace('\\', '/')
 
-def form_datetime(dt, format = '%Y-%m-%d %H:%M:%S'):
+def form_datetime(dt, fmt = '%Y-%m-%d %H:%M:%S'):
     # FIXME: Dateformat could be configurable
-    return dt.strftime(format)
+    return dt.strftime(fmt)

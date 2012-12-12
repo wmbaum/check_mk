@@ -24,21 +24,27 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
-
 # Configuration variables in main.mk needed during the actual check
 logwatch_dir = var_dir + '/logwatch'
 logwatch_patterns = { }
 logwatch_rules = []
 logwatch_max_filesize = 500000 # do not save more than 500k of message (configurable)
+logwatch_service_output = "default"
+logwatch_forward_to_ec = False
 
 # Variables embedded in precompiled checks
-check_config_variables += [ "logwatch_dir", "logwatch_max_filesize" ]
+check_config_variables += [ "logwatch_dir", "logwatch_max_filesize", "logwatch_service_output" ]
 
 def inventory_logwatch(info):
+    if logwatch_forward_to_ec:
+        # this is the regular logwatch inventory. Terminate when in logwatch forward mode
+        return []
+
     inventory = []
     for l in info:
         line = " ".join(l)
-        if len(line) > 6 and line[0:3] == "[[[" and line[-3:] == "]]]" and ':' not in line:
+        if len(line) > 6 and line[0:3] == "[[[" and line[-3:] == "]]]" \
+           and ':missing' not in line and ':cannotopen' not in line: 
             inventory.append((line[3:-3], "", '""'))
     return inventory
 
@@ -65,7 +71,7 @@ def inventory_logwatch(info):
 # appearance.
 #
 # PATTERN is a list like:
-# [ ( 'I',      ".*ssh.*" ),          # Ignore these messages
+# [ ( 'O',      ".*ssh.*" ),          # Make informational (OK) messages from these
 #   ( (10, 20), "login"   ),          # Warning at 10 messages, Critical at 20
 #   ( 'C',      "bad"     ),          # Always critical
 #   ( 'W',      "not entirely bad" ), # Always warning
@@ -82,12 +88,14 @@ def logwatch_state(state):
         return "OK"
 
 def logwatch_level_name(level):
-    if   level == 'W': return 'WARN'
+    if   level == 'O': return 'OK'
+    elif level == 'W': return 'WARN'
     elif level == 'C': return 'CRIT'
-    else: return 'OK'
+    else: return 'IGN'
 
 def logwatch_level_worst(worst, level):
-    if   level == 'W': return max(worst, 1)
+    if   level == 'O': return max(worst, 0)
+    elif level == 'W': return max(worst, 1)
     elif level == 'C': return max(worst, 2)
     else: return worst
 
@@ -97,7 +105,9 @@ def logwatch_precompile(hostname, item, _unused):
     # Initialize the patterns list with the logwatch_rules
     params = []
     description = check_info['logwatch']['service_description'] % item
-    rules = service_extra_conf(hostname, description, logwatch_rules)
+
+    # This is the new (-> WATO controlled) variable
+    rules = service_extra_conf(hostname, item, logwatch_rules)
     for rule in rules:
         for pattern in rule:
             params.append((pattern[0], pattern[1]))
@@ -221,18 +231,20 @@ def check_logwatch(item, params, info):
     # Write out new log lines (no reclassify here. It is done later in general for all logs)
     #
     if len(loglines) > 0:
-        worst = 0
+        worst = -1
         for line in loglines:
             worst = logwatch_level_worst(worst, logwatch_parse_line(line)[0])
 
-        try:
-            logarch = file(logfile, "a+")
-            logarch.write(time.strftime("<<<%Y-%m-%d %H:%M:%S " + logwatch_state(worst) + ">>>\n"))
-            logarch.write("\n".join(loglines) + "\n")
-            logarch.close()
-        except Exception, e:
-            raise MKGeneralException("User %s cannot create logfile: %s" % \
-                                     (username(), e))
+        # Ignore log lines which result in an "I" -> "Ignore" state
+        if worst > -1:
+            try:
+                logarch = file(logfile, "a+")
+                logarch.write(time.strftime("<<<%Y-%m-%d %H:%M:%S " + logwatch_state(worst) + ">>>\n"))
+                logarch.write("\n".join(loglines) + "\n")
+                logarch.close()
+            except Exception, e:
+                raise MKGeneralException("User %s cannot create logfile: %s" % \
+                                         (username(), e))
 
     # Get the patterns (either compile or reuse the precompiled ones)
     # Check_MK creates an empty string if the precompile function has
@@ -261,7 +273,7 @@ def check_logwatch(item, params, info):
     counts = {} # for counting number of matches of a certain pattern
     state_counts = {} # for counting number of blocks with a certain state
     block_header = None
-    block_worst = 0
+    block_worst = -1
     block_lines = []
     block_last_worst_line = ''
 
@@ -277,15 +289,17 @@ def check_logwatch(item, params, info):
                 continue
             if line.startswith('<<<') and line.endswith('>>>'):
                 if block_header:
-                    # The section is finished here. Add it to the list of reclassified lines
-                    reclassified_lines += finish_block(block_header, block_worst, block_lines)
+                    # The section is finished here. Add it to the list of reclassified lines if the
+                    # state of the block is not "I" -> "ignore"
+                    if block_worst > -1:
+                        reclassified_lines += finish_block(block_header, block_worst, block_lines)
 
-                    if block_worst >= worst:
-                        worst = block_worst
-                        last_worst_line = block_last_worst_line
+                        if block_worst >= worst:
+                            worst = block_worst
+                            last_worst_line = block_last_worst_line
 
                     block_lines = []
-                    block_worst = 0
+                    block_worst = -1
                 block_header = line
                 counts = {}
             else:
@@ -311,8 +325,9 @@ def check_logwatch(item, params, info):
 
                 block_lines.append(level + ' ' + text)
 
-        if block_header:
-            # The last section is finished here.
+        # The last section is finished here. Add it to the list of reclassified lines if the
+        # state of the block is not "I" -> "ignore"
+        if block_header and block_worst > -1:
             reclassified_lines += finish_block(block_header, block_worst, block_lines)
 
             if block_worst >= worst:
@@ -322,7 +337,10 @@ def check_logwatch(item, params, info):
 
         # Only rewrite the lines if at least one line has been reclassified
         if reclassified:
-            file(logfile, 'w').write('\n'.join(reclassified_lines))
+            if reclassified_lines:
+                file(logfile, 'w').write('\n'.join(reclassified_lines) + '\n')
+            else:
+                os.unlink(logfile)
 
     #
     # Render output
@@ -336,9 +354,11 @@ def check_logwatch(item, params, info):
         count_txt = []
         for level, num in state_counts.iteritems():
             count_txt.append('%d %s' % (num, logwatch_level_name(level)))
-
-        return (worst, state + " - %s messages (Last worst: \"%s\")" %
+        if logwatch_service_output == 'default':
+            return (worst, state + " - %s messages (Last worst: \"%s\")" %
                                            (', '.join(count_txt), last_worst_line))
+        else:
+            return (worst, state + " - %s messages" % ', '.join(count_txt))
 
 
 check_info['logwatch'] = {
@@ -350,3 +370,105 @@ check_info['logwatch'] = {
 }
 
 precompile_params['logwatch'] = logwatch_precompile
+
+#   .----------------------------------------------------------------------.
+#   |      _____ ____   _____ ___  ______        ___    ____  ____         |
+#   |     | ____/ ___| |  ___/ _ \|  _ \ \      / / \  |  _ \|  _ \        |
+#   |     |  _|| |     | |_ | | | | |_) \ \ /\ / / _ \ | |_) | | | |       |
+#   |     | |__| |___  |  _|| |_| |  _ < \ V  V / ___ \|  _ <| |_| |       |
+#   |     |_____\____| |_|   \___/|_| \_\ \_/\_/_/   \_\_| \_\____/        |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   | Forwarding logwatch messages to event console                        |
+#   '----------------------------------------------------------------------'
+
+import socket, time
+
+def inventory_logwatch_ec(info):
+    if logwatch_forward_to_ec and info:
+        # this is the logwatch event console forward inventory. Add one service per host.
+        return [(None, "{}")]
+
+    # this is the logwatch event console forward inventory. Terminate when not in logwatch forward mode
+    return []
+
+# OK   -> priority 5
+# WARN -> priority 4
+# CRIT -> priority 2
+def logwatch_to_prio(level):
+    if level == 'W':
+        return 4
+    elif level == 'C':
+        return 2
+    elif level == '0':
+        return 5
+
+def syslog_time():
+    localtime = time.localtime()
+    day = int(time.strftime("%d", localtime)) # strip leading 0
+    value = time.strftime("%b %%d %H:%M:%S", localtime)
+    return value % day
+
+def check_logwatch_ec(_unused, params, info):
+    # 1. Parse lines in info and separate by logfile
+    logs = []
+    logfile = None
+    for l in info:
+        line = " ".join(l)
+        if len(line) > 6 and line[0:3] == "[[[" and line[-3:] == "]]]":
+            # new logfile, extract name
+            logfile = line[3:-3]
+
+        elif logfile and line:
+            # new regular line, skip context lines
+            if line[0] != '.':
+                logs.append((logfile, line))
+
+    # 2. create syslog message of each line
+    # <128> Oct 24 10:44:27 Klappspaten /var/log/syslog: Oct 24 10:44:27 Klappspaten logger: asdasdad as
+    # <facility+priority> timestamp hostname logfile: message
+    facility = params.get('facility', 17) # default to "local1"
+    messages = []
+    for logfile, line in logs:
+        msg = '<%d>' % ((facility << 3) + logwatch_to_prio(line[0]),)
+        msg += '%s %s %s: %s' % (syslog_time(), g_hostname, logfile, line[2:])
+        messages.append(msg)
+
+    # 3. send lines to event console
+    # a) local in same omd site
+    # b) local pipe
+    # c) remote via udp
+    # d) remote via tcp
+    method = params.get('method')
+    if method == None:
+        method = os.getenv('OMD_ROOT') + "/tmp/run/mkeventd/events"
+
+    try:
+        if isinstance(method, tuple):
+            # connect either via tcp or udp
+            if method[0] == 'udp':
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            else:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+            sock.send('\n'.join(messages))
+            sock.close()
+
+        else:
+            # write into local event pipe
+            pipe = file(method, 'w')
+            pipe.write('\n'.join(messages))
+            pipe.close()
+
+        num_messages = len(messages)
+        return (0, 'OK - Forwarded %d messages to event console' % num_messages, [('messages', num_messages)])
+    except Exception, e:
+        return (2, 'CRITICAL - Unable to forward messages to event console (%s)' % e)
+
+check_info['logwatch.ec'] = {
+    'check_function':      check_logwatch_ec,
+    'service_description': "Log Forwarding",
+    'has_perfdata':        0,
+    'inventory_function':  inventory_logwatch_ec,
+    'group':               'logwatch_ec',
+}

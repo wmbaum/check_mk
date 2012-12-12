@@ -52,6 +52,21 @@ register_configvar(group,
     domain = "multisite")
 
 register_configvar(group,
+    "profile",
+    Checkbox(
+        title = _("Profile requests"),
+        label = _("enable profile mode"),
+        help = _("It is possible to profile the rendering process of Multisite pages. This "
+                 "Is done using the Python module cProfile. When enabled two files are placed "
+                 "into the Multisite var directory named <code>multisite.profile</code> and "
+                 "<code>multisite.profile.py</code>. By executing the later file you can get "
+                 "runtime statistics about the last processed page."),
+       default_value = False
+    ),
+    domain = "multisite"
+)
+
+register_configvar(group,
     "debug_livestatus_queries",
     Checkbox(title = _("Debug Livestatus queries"),
              label = _("enable debug of Livestatus queries"),
@@ -149,6 +164,7 @@ register_configvar(group,
               help = _("When you point your browser to the Multisite GUI, usually the dashboard "
                        "is shown in the main (right) frame. You can replace this with any other "
                        "URL you like here."),
+              size = 80,
               default_value = "dashboard.py"),
     domain = "multisite")
 
@@ -178,7 +194,7 @@ register_configvar(group,
              label = _("hide variable names"),
              help = _("When enabled, internal configuration variable names of Check_MK are hidded "
                       "from the user (for example in the rule editor)"),
-             default_value = False),
+             default_value = True),
     domain = "multisite")
 
 register_configvar(group,
@@ -215,6 +231,294 @@ register_configvar(group,
             ]),
     domain = "multisite"
     )
+
+register_configvar(group,
+    "bi_precompile_on_demand",
+    Checkbox(title = _("Precompile aggregations on demand"),
+             label = _("Only precompile on demand"),
+             help = _(
+                "By default all aggregations in Check_MK BI are precompiled on first "
+                "usage of a BI or host/service related dialog in the status GUI. "
+                "In case of large environments with many BI aggregations this complete "
+                "precompilation might take too much time (several seconds). It is now possible "
+                "to change the precompilation to be executed on demand. BI only precompiles the "
+                "aggregations which are really requested by the users."
+             ),
+             default_value = False),
+    domain = "multisite")
+
+register_configvar(group,
+    "bi_compile_log",
+    Optional(
+        Filename(
+            label = _("Absolute path to log file"),
+            default = defaults.var_dir + '/web/bi-compile.log',
+        ),
+          title = _("Logfile for BI compilation diagnostics"),
+          label = _("Activate logging of BI compilations into a logfile"),
+          help = _("If this option is used and set to a filename, Check_MK BI will create a logfile "
+                   "containing details about compiling BI aggregations. This includes statistics and "
+                   "details for each executed compilation.")),
+    domain = "multisite")
+
+#   .----------------------------------------------------------------------.
+#   |          _   _                 __  __                 _              |
+#   |         | | | |___  ___ _ __  |  \/  | __ _ _ __ ___ | |_            |
+#   |         | | | / __|/ _ \ '__| | |\/| |/ _` | '_ ` _ \| __|           |
+#   |         | |_| \__ \  __/ |    | |  | | (_| | | | | | | |_            |
+#   |          \___/|___/\___|_|    |_|  |_|\__, |_| |_| |_|\__|           |
+#   |                                       |___/                          |
+#   +----------------------------------------------------------------------+
+
+import userdb
+
+group = _("User Management")
+
+register_configvar(group,
+    "user_connectors",
+    ListChoice(
+        title = _('Enabled User Connectors'),
+        help  = _('The Multisite User Management code is modularized, the modules '
+                  'are called user connectors. A user connector can hook into multisite '
+                  'at several places where users are handled. Examples are the authentication '
+                  'or saving of user accounts. Here you can enable one or several connectors '
+                  'to extend or replace the default authentication mechanism (htpasswd) e.g. '
+                  'with ldap based mechanism.'),
+        default_value = [ 'htpasswd' ],
+        choices       = userdb.list_user_connectors,
+        allow_empty   = False,
+    ),
+    domain = "multisite",
+)
+
+register_configvar(group,
+    "ldap_connection",
+    Dictionary(
+        title = _("LDAP Connection Settings"),
+        help  = _("This option configures all LDAP specific connection options. These options "
+                  "are used by the LDAP user connector."),
+        elements = [
+            ("server", TextAscii(
+                title = _("LDAP Server"),
+                help = _("Set the host address of the LDAP server. Might be an IP address or "
+                         "resolvable hostname."),
+                allow_empty = False,
+            )),
+            ("port", Integer(
+                title = _("TCP Port"),
+                help  = _("This variable allows to specify the TCP port to "
+                          "be used to connect to the LDAP server. "),
+                minvalue = 1,
+                maxvalue = 65535,
+                default_value = 389,
+            )),
+            ("use_ssl", FixedValue(
+                title  = _("Use SSL"),
+                help   = _("Connect to the LDAP server with a SSL encrypted connection."),
+                value  = True,
+                totext = _("Encrypt the network connection using SSL."),
+            )),
+            ("version", DropdownChoice(
+                title = _("LDAP Version"),
+                help  = _("Select the LDAP version the LDAP server is serving. Most modern "
+                          "servers use LDAP version 3."),
+                choices = [ (2, "2"), (3, "3") ],
+                default_value = 3,
+            )),
+            ("type", DropdownChoice(
+                title = _("Directory Type"),
+                help  = _("Select the software the LDAP directory is based on. Depending on "
+                          "the selection e.g. the attribute names used in LDAP queries will "
+                          "be altered."),
+                choices = [
+                    ("ad",       _("Active Directory")),
+                    ("openldap", _("OpenLDAP")),
+                ],
+            )),
+            ("bind", Tuple(
+                title = _("LDAP Bind Credentials"),
+                help  = _("Set the credentials to be used to connect to the LDAP server. The "
+                          "used account must not be allowed to do any changes in the directory "
+                          "the whole connection is read only. "
+                          "In some environment an anonymous connect/bind is allowed, in this "
+                          "case you don't have to configure anything here."
+                          "It must be possible to list all needed user and group objects from the "
+                          "directory."),
+                elements = [
+                    LDAPDistinguishedName(
+                        title = _("Bind DN"),
+                        help  = _("Specify the distinguished name to be used to bind to "
+                                  "the LDAP directory."),
+                        size = 80,
+                    ),
+                    Password(
+                        title = _("Bind Password"),
+                        help  = _("Specify the password to be used to bind to "
+                                  "the LDAP directory."),
+                    ),
+                ],
+            )),
+        ],
+        optional_keys = ['use_ssl', 'bind', ],
+    ),
+    domain = "multisite",
+)
+
+register_configvar(group,
+    "ldap_userspec",
+    Dictionary(
+        title = _("LDAP User Settings"),
+        help  = _("This option configures all user related LDAP options. These options "
+                  "are used by the LDAP user connector to find the needed users in the LDAP directory."),
+        elements = [
+            ("dn", LDAPDistinguishedName(
+                title = _("User Base DN"),
+                help  = _("The base distinguished name to be used when performing user account "
+                          "related queries to the LDAP server."),
+                size = 80,
+            )),
+            ("scope", DropdownChoice(
+                title = _("Search Scope"),
+                help  = _("Scope to be used in LDAP searches. In most cases \"sub\" is the best choice. "
+                          "It searches for matching objects in the given base and the whole subtree."),
+                choices = [
+                    ("sub",  _("Search whole subtree below the base DN")),
+                    ("base", _("Search only the entry at the base DN")),
+                    ("one",  _("Search all entries one level below the base DN")),
+                ],
+                default_value = "sub",
+            )),
+            ("filter", TextAscii(
+                title = _("Search Filter"),
+                help = _("Using this option you can define an optional LDAP filter which is used during "
+                         "LDAP searches. It can be used to only handle a subset of the users below the given "
+                         "base DN."),
+                size = 80,
+                default_value = lambda: userdb.ldap_filter('users', False),
+            )),
+            ("user_id", TextAscii(
+                title = _("User-ID Attrubute"),
+                help  = _("The attribute used to identify the individual users. It must have "
+                          "unique values to make an user identifyable by the value of this "
+                          "attribute."),
+                default_value = lambda: userdb.ldap_attr('user_id'),
+            )),
+        ],
+        optional_keys = ['scope', 'filter', 'user_id'],
+    ),
+    domain = "multisite",
+)
+
+register_configvar(group,
+    "ldap_groupspec",
+    Dictionary(
+        title = _("LDAP Group Settings"),
+        help  = _("This option configures all group related LDAP options. These options "
+                  "are only needed when using group related attribute synchonisation plugins."),
+        elements = [
+            ("dn", LDAPDistinguishedName(
+                title = _("Group Base DN"),
+                help  = _("The base distinguished name to be used when performing group account "
+                          "related queries to the LDAP server."),
+                size = 80,
+            )),
+            ("scope", DropdownChoice(
+                title = _("Search Scope"),
+                help  = _("Scope to be used in group related LDAP searches. In most cases \"sub\" "
+                          "is the best choice. It searches for matching objects in the given base "
+                          "and the whole subtree."),
+                choices = [
+                    ("sub",  _("Search whole subtree below the base DN")),
+                    ("base", _("Search only the entry at the base DN")),
+                    ("one",  _("Search all entries one level below the base DN")),
+                ],
+                default_value = "sub",
+            )),
+            ("filter", TextAscii(
+                title = _("Search Filter"),
+                help = _("Using this option you can define an optional LDAP filter which is used "
+                         "during group related LDAP searches. It can be used to only handle a "
+                         "subset of the groups below the given base DN."),
+                size = 80,
+                default_value = lambda: userdb.ldap_filter('groups', False),
+            )),
+        ],
+        optional_keys = ['scope', 'filter'],
+    ),
+    domain = "multisite",
+)
+
+register_configvar(group,
+    "ldap_active_plugins",
+    Dictionary(
+        title = _('LDAP Attribute Sync Plugins'),
+        help  = _('It is possible to fetch several attributes of users, like Email or full names, '
+                  'from the LDAP directory. This is done by plugins which can individually enabled '
+                  'or disabled. When enabling a plugin, it is used upon the next synchonisation of '
+                  'user accounts for gathering their attributes. The user options which get imported '
+                  'into Check_MK from LDAP will be locked in WATO.'),
+        elements = userdb.ldap_attribute_plugins_elements,
+    ),
+    domain = "multisite",
+)
+
+register_configvar(group,
+    "ldap_cache_livetime",
+    Integer(
+        title = _('LDAP Cache Livetime'),
+        help  = _('This option defines the maximum age for using the cached LDAP data. The time of the '
+                  'last LDAP synchronisation is saved and checked on every request to the multisite '
+                  'interface. Once the cache gets outdated, a new synchronisation job is started.'),
+        minvalue = 1,
+        default_value = 300,
+    ),
+    domain = "multisite",
+)
+
+def list_roles():
+    roles = load_roles()
+    return [ (i, r["alias"]) for i, r in roles.items() ]
+
+def list_contactgroups():
+    contact_groups = load_group_information().get("contact", {})
+    entries = [ (c, contact_groups[c]) for c in contact_groups ]
+    entries.sort()
+    return entries
+
+register_configvar(group,
+    "default_user_profile",
+    Dictionary(
+        title = _("Default User Profile"),
+        help  = _("With this option you can specify the attributes a user which is created during "
+                  "its initial login gets added. For example, the default is to add the role \"user\" "
+                  "to all automatically created users."),
+        elements = [
+            ('roles', ListChoice(
+                title = _('User Roles'),
+                help  = _('Specify the initial roles of an automatically created user.'),
+                default_value = [ 'user' ],
+                choices = list_roles,
+            )),
+            ('contactgroups', ListChoice(
+                title = _('Contact groups'),
+                help  = _('Specify the initial contact groups of an automatically created user.'),
+                default_value = [],
+                choices = list_contactgroups,
+            )),
+        ],
+        optional_keys = [],
+    ),
+    domain = "multisite",
+)
+
+#   .----------------------------------------------------------------------.
+#   |                   _                                      _           |
+#   |     ___ _ __ ___ | | __   ___  _ __  _ __ ___   ___   __| | ___      |
+#   |    / __| '_ ` _ \| |/ /  / _ \| '_ \| '_ ` _ \ / _ \ / _` |/ _ \     |
+#   |   | (__| | | | | |   <  | (_) | |_) | | | | | | (_) | (_| |  __/     |
+#   |    \___|_| |_| |_|_|\_\  \___/| .__/|_| |_| |_|\___/ \__,_|\___|     |
+#   |                               |_|                                    |
+#   +----------------------------------------------------------------------+
 
 group = _("Operation mode of Check_MK")
 
@@ -297,6 +601,16 @@ register_configvar(group,
                      ("file", _("Create check files")) ]),
     need_restart = True)
 
+register_configvar(group,
+    "check_mk_perfdata_with_times",
+    Checkbox(title = _("Check_MK with times performance data"),
+             label = _("Return process times within performance data"),
+             help = _("Enabling this option results in additional performance data "
+                      "for the Check_MK output, giving information regarding the process times. "  
+                      "It provides the following fields: user_time, system_time, children_user_time "
+                      "and children_system_time")), 
+    need_restart = True)
+
 group = _("Inventory - automatic service detection")
 
 register_configvar(group,
@@ -323,21 +637,6 @@ register_configvar(group,
             (2, _("Critical") ),
             (3, _("Unknown") ),
             ]))
-
-
-register_configvar(group,
-    "always_cleanup_autochecks",
-    Checkbox(title = _("Always cleanup autochecks"),
-             help = _("When switched on, Check_MK will always cleanup the autochecks files "
-                      "after each inventory, i.e. create one file per host. This is the same "
-                      "as adding the option <tt>-u</tt> to each call of <tt>-I</tt> on the "
-                      "command line.")))
-
-
-group = _("Check configuration")
-
-# if_inventory_porttypes = [ '6', '32', '117' ]
-# if_inventory_portstates = [ '1' ]
 
 _if_portstate_choices = [
                         ( '1', 'up(1)'),
@@ -417,30 +716,6 @@ _if_porttype_choices = [
   ("221", "gfp(221)" ), ("222", "ciscoISLvlan(222)" ), ("223", "actelisMetaLOOP(223)" ), ("224",
   "fcipLink(224)" ), ("225", "rpr(225)" ), ("226", "qam(226)" ), ("227", "lmp(227)" ), ("228",
   "cblVectaStar(228)" ), ("229", "docsCableMCmtsDownstream(229)" ), ("230", "adsl2(230)" ), ]
-
-register_configvar(group,
-    "if_inventory_monitor_state",
-    Checkbox(title = _("Monitor port state of network interfaces"),
-             label = _("monitor port state"),
-             help = _("When this option is active then during inventory of networking interfaces "
-                      "(and switch ports) the current operational state of the port will "
-                      "automatically be coded as a check parameter into the check. That way the check "
-                      "will get warning or critical when the state changes. This setting can later "
-                      "by overridden on a per-host and per-port base by defining special check "
-                      "parameters via a rule.")))
-
-register_configvar(group,
-    "if_inventory_monitor_speed",
-    Checkbox(title = _("Monitor port speed of network interfaces"),
-             label = _("monitor port speed"),
-             help = _("When this option is active then during inventory of networking interfaces "
-                      "(and switch ports) the current speed setting of the port will "
-                      "automatically be coded as a check parameter into the check. That way the check "
-                      "will get warning or critical when speed later changes (for example from "
-                      "100 MBit/s to 10 MBit/s). This setting can later "
-                      "by overridden on a per-host and per-port base by defining special check "
-                      "parameters via a rule.")))
-
 register_configvar(group,
     "if_inventory_pad_portnumbers",
     Checkbox(title = _("Pad port numbers with zeroes"),
@@ -492,12 +767,119 @@ register_configvar(group,
                  "a single check per host, one check per device or a separate check "
                  "for read and written bytes."),
         choices = [
+            ('rule'   , _("controlled by ruleset Inventory mode for Disk IO check") ),
             ('summary', _("one summary check per host")),
             ('single' , _("one check per individual disk/LUN") ),
             ('legacy' , _("one check for read, one for write") ),
-            ]),
+            ],
+        default_value = 'rule',
+        ),
     )
 
+register_configvar(group,
+    "win_dhcp_pools_inventorize_empty",
+    Checkbox(
+        title = _("Inventorize empty windows dhcp pools"),
+        help = _("You can activate the inventorization of "
+                 "dhcp pools, which have no ip addresses in it"),
+        ),
+    need_restart = True
+    )
+
+register_configvar(group,
+    "always_cleanup_autochecks",
+    Checkbox(title = _("Always cleanup autochecks"),
+             help = _("When switched on, Check_MK will always cleanup the autochecks files "
+                      "after each inventory, i.e. create one file per host. This is the same "
+                      "as adding the option <tt>-u</tt> to each call of <tt>-I</tt> on the "
+                      "command line.")))
+
+
+group = _("Check configuration")
+
+
+register_configvar(group,
+    "if_inventory_monitor_state",
+    Checkbox(title = _("Monitor port state of network interfaces"),
+             label = _("monitor port state"),
+             help = _("When this option is active then during inventory of networking interfaces "
+                      "(and switch ports) the current operational state of the port will "
+                      "automatically be coded as a check parameter into the check. That way the check "
+                      "will get warning or critical when the state changes. This setting can later "
+                      "by overridden on a per-host and per-port base by defining special check "
+                      "parameters via a rule.")))
+
+register_configvar(group,
+    "if_inventory_monitor_speed",
+    Checkbox(title = _("Monitor port speed of network interfaces"),
+             label = _("monitor port speed"),
+             help = _("When this option is active then during inventory of networking interfaces "
+                      "(and switch ports) the current speed setting of the port will "
+                      "automatically be coded as a check parameter into the check. That way the check "
+                      "will get warning or critical when speed later changes (for example from "
+                      "100 MBit/s to 10 MBit/s). This setting can later "
+                      "by overridden on a per-host and per-port base by defining special check "
+                      "parameters via a rule.")))
+
+register_configvar(group,
+    "logwatch_service_output",
+    DropdownChoice(
+        title = _("Service output for logwatch"),
+        help = _("You can change the plugin output of logwatch "
+                 "to show only the count of messages or also "
+                 "to show the last worst message"),
+        choices = [
+            ( 'default' , _("Show count and last message") ),
+            ( 'count', _("Show only count")),
+            ],
+        default_value = 'default',
+        ),
+    need_restart = True
+    )
+
+register_configvar(group,
+    "logwatch_forward_to_ec",
+    Checkbox(
+        title = _("Forward logwatch messages to event console"),
+        label = _("forward to event console"),
+        help  = _("Instead of using the regular logwatch check all lines received by logwatch can "
+                  "be forwarded to a Check_MK event console daemon to be processed. The target event "
+                  "console can be configured for each host in a separate rule."),
+    ),
+)
+
+register_configvar(group,
+    "printer_supply_some_remaining_status",
+    DropdownChoice(
+        title = _("Printer supply some remaining status"),
+        help = _("Set the reported nagios state when the fill state "
+                 "is something between empty and small "
+                 "remaining capacity"),
+        choices = [
+            ( 0, _("OK") ),
+            ( 1, _("Warning")),
+            ( 2, _("Critical")),
+            ],
+        default_value = 2,
+        ),
+    )
+
+register_configvar(group,
+    "printer_supply_default_levels",
+    Tuple(
+        title = _("Printer supply default levels"),
+        help = _("Set global default levels for warning and critical. "),
+        elements = [
+           Integer(
+                title = _("Warning at"),
+                minvalue = 1,
+           ),
+           Integer(
+                 title = _("Critical at"),
+                 minvalue = 1,
+           ),
+         ],
+        ))
 
 #   +----------------------------------------------------------------------+
 #   |                         ____        _                                |
@@ -517,9 +899,7 @@ register_configvar(group,
 #   +----------------------------------------------------------------------+
 
 register_rulegroup("grouping", _("Grouping"), 
-   _("Assignment of host and services to host groups, service groups and contacts groups. "
-     "The assignment to contacts groups is neccessary for configuring notifications. "
-     "Before you can assign to groups, you need to create them."))
+   _("Assignment of host &amp; services to host, service and contacts groups. "))
 group = "grouping"
 
 register_rule(group,
@@ -554,17 +934,9 @@ register_rule(group,
 
 
 register_rulegroup("monconf", _("Monitoring Configuration"), 
-    _("General object configuration like timeperiods and intervals for checking and configuration, "
-      "services to be ignored by inventory, and clustering"))
+    _("Intervals for checking, retries, clustering, configuration for inventory and similar"))
 
-group = "monconf/Checking"
-
-register_rule(group,
-    "extra_host_conf:max_check_attempts",
-    Integer(title = _("Maximum number of check attempts for host"),
-            help = _("The maximum number of failed host checks until the host will be considered "
-                     "in a hard down state"),
-            minvalue = 1))
+group = "monconf/" + _("Service Checks")
 
 register_rule(group,
     "extra_service_conf:max_check_attempts",
@@ -601,6 +973,92 @@ register_rule(group,
     itemtype = "service")
 
 register_rule(group,
+    "extra_service_conf:check_period",
+    TimeperiodSelection(
+        title = _("Check period for active services"),
+        help = _("If you specify a notification period for a service then active checks "
+                 "of that service will only be done in that period. Please note, that the "
+                 "checks driven by Check_MK are passive checks and are not affected by this "
+                 "rule. You can use the rule for the active Check_MK check, however.")),
+    itemtype = "service")
+
+register_rule(group,
+    "check_periods",
+    TimeperiodSelection(
+        title = _("Check period for passive Check_MK services"),
+        help = _("If you specify a notification period for a Check_MK service then "
+                 "results will be processed only within this period.")),
+    itemtype = "service")
+
+register_rule(group,
+    "extra_service_conf:process_perf_data",
+    DropdownChoice(
+        title = _("Enable/disable processing of perfdata for services"),
+        help = _("This setting allows you to disable the processing of perfdata for a "
+                 "service completely."),
+        choices = [ ("1", _("Enable processing of perfdata")),
+                    ("0", _("Disable processing of perfdata")) ],
+        ),
+        itemtype = "service")
+
+register_rule(group,
+    "extra_service_conf:passive_checks_enabled",
+    DropdownChoice(
+        title = _("Enable/disable passive checks for services"),
+        help = _("This setting allows you to disable the processing of passiv check results for a "
+                 "service."),
+        choices = [ ("1", _("Enable processing of passiv check results")),
+                    ("0", _("Disable processing of passiv check results")) ],
+        ),
+        itemtype = "service")
+
+register_rule(group,
+    "extra_service_conf:active_checks_enabled",
+    DropdownChoice(
+        title = _("Enable/disable active checks for services"),
+        help = _("This setting allows you to disable or enable "
+                 "active checks for a service."),
+        choices = [ ("1", _("Enable active checks")),
+                    ("0", _("Disable active checks")) ],
+        ),
+        itemtype = "service")
+
+group = "monconf/" + _("Host Checks")
+
+register_rule(group,
+    "extra_host_conf:max_check_attempts",
+    Integer(title = _("Maximum number of check attempts for host"),
+            help = _("The maximum number of failed host checks until the host will be considered "
+                     "in a hard down state"),
+            minvalue = 1))
+
+register_rule(group,
+    "extra_host_conf:check_interval",
+    Integer(
+        title = _("Normal check interval for host checks"),
+        help = _("The default interval is set to one minute. Here you can specify a larger "
+                 "interval. The host is contacted in this interval on a regular base. The host "
+                 "check is also being executed when a problematic service state is detected to check "
+                 "wether or not the service problem is resulting from a host problem."),
+        minvalue = 1,
+        label = _("minutes")
+    )
+)
+
+register_rule(group,
+    "extra_host_conf:retry_interval",
+    Integer(title = _("Retry check interval for host checks"),
+        help = _("This setting is relevant if you have set the maximum number of check "
+                 "attempts to a number greater than one. In case a host check is not UP "
+                 "and the maximum number of check attempts is not yet reached, it will be "
+                 "rescheduled with this interval. The retry interval is usually set to a smaller "
+                 "value than the normal interval."),
+        minvalue = 1,
+        label = _("minutes")
+    )
+)
+
+register_rule(group,
     "extra_host_conf:check_period",
     TimeperiodSelection(
         title = _("Check period for hosts"),
@@ -610,17 +1068,16 @@ register_rule(group,
     )
 
 register_rule(group,
-    "extra_service_conf:check_period",
-    TimeperiodSelection(
-        title = _("Check period for services"),
-        help = _("If you specify a notification period for a service then active checks "
-                 "of that service will only be done in that period. Please note, that the "
-                 "checks driven by Check_MK are passive checks and are not affected by this "
-                 "rule. You can use the rule for the active Check_MK check, however.")),
-    itemtype = "service")
+    "extra_host_conf:check_command",
+    TextAscii(
+        label = _("Command:"),
+        title = _("Check Command for Hosts Check"),
+        help = _("This parameter changes the default check_command for "
+                 "a host check"),
+        ),
+    )
 
-
-group = "monconf/Notifications"
+group = "monconf/" + _("Notifications")
 register_rule(group,
     "extra_host_conf:notifications_enabled",
     DropdownChoice(
@@ -669,7 +1126,116 @@ register_rule(group,
                  "as the 'service time'.")),
     itemtype = "service")
 
-group = "monconf/Inventory and Check_MK settings"
+register_rule(group,
+    "extra_host_conf:first_notification_delay",
+    Integer(
+        minvalue = 0,
+        default_value = 60,
+        label = _("Delay:"),
+        unit = _("minutes"),
+        title = _("Delay host notifications"),
+        help = _("This setting delays notifications about host problems by the "
+                 "specified amount of time. If the host is up again within that "
+                 "time, no notification will be sent out."),
+        )
+    )
+
+register_rule(group,
+    "extra_service_conf:first_notification_delay",
+    Integer(
+        minvalue = 0,
+        default_value = 60,
+        label = _("Delay:"),
+        unit = _("minutes"),
+        title = _("Delay service notifications"),
+        help = _("This setting delays notifications about service problems by the "
+                 "specified amount of time. If the service is OK again within that "
+                 "time, no notification will be sent out."),
+        ),
+    itemtype = "service")
+
+register_rule(group,
+    "extra_host_conf:notification_interval",
+    Optional(
+        Integer(
+            minvalue = 1,
+            default_value = 120,
+            label = _("Interval:"),
+            unit = _("minutes")),
+        title = _("Periodic notifications during host problems"),
+        help = _("If you enable periodic notifications, then during a problem state "
+               "of the host notifications will be sent out in regular intervals "
+               "until the problem is acknowledged."),
+        label = _("Enable periodic notifications"),
+        none_label = _("disabled"),
+        none_value = 0,
+        )
+    )
+
+
+
+register_rule(group,
+    "extra_service_conf:notification_interval",
+    Optional(
+        Integer(
+            minvalue = 1,
+            default_value = 120,
+            label = _("Interval:"),
+            unit = _("minutes")),
+        title = _("Periodic notifications during service problems"),
+        help = _("If you enable periodic notifications, then during a problem state "
+               "of the service notifications will be sent out in regular intervals "
+               "until the problem is acknowledged."),
+        label = _("Enable periodic notifications"),
+        none_label = _("disabled"),
+        none_value = 0,
+        ),
+
+    itemtype = "service")
+
+register_rule(group,
+    "extra_host_conf:flap_detection_enabled",
+    DropdownChoice(
+        title = _("Enable/disable flapping detection for hosts"),
+        help = _("This setting allows you to disable the flapping detection for a "
+                 "host completely."),
+        choices = [ ("1", _("Enable flap detection")),
+                    ("0", _("Disable flap detection")) ],
+        ))
+
+register_rule(group,
+    "extra_service_conf:flap_detection_enabled",
+    DropdownChoice(
+        title = _("Enable/disable flapping detection for services"),
+        help = _("This setting allows you to disable the flapping detection for a "
+                 "service completely."),
+        choices = [ ("1", _("Enable flap detection")),
+                    ("0", _("Disable flap detection")) ],
+        ),
+        itemtype = "service")
+
+
+register_rule(group,
+    "extra_service_conf:notes_url",
+    TextAscii(
+        label = _("Url:"),
+        title = _("Notes url for Services"),
+        help = _("With this setting you can set links to documentations "
+                 "for each service"),
+        ),
+    itemtype = "service")
+
+register_rule(group,
+    "extra_host_conf:notes_url",
+    TextAscii(
+        label = _("Url:"),
+        title = _("Notes url for Hosts"),
+        help = _("With this setting you can set links to documentations "
+                 "for Hosts"),
+        ),
+    )
+
+group = "monconf/" + _("Inventory and Check_MK settings")
 
 register_rule(group,
     "only_hosts",
@@ -710,7 +1276,7 @@ register_rule(group,
              "to the cluster.<br><br>Please make sure that you re-inventorize the " 
              "cluster and the physical nodes after changing this ruleset."),
     itemtype = "service")
-group = "monconf/Various"
+group = "monconf/" + _("Various")
 
 class MonitoringIcon(ValueSpec):
     def __init__(self, **kwargs):
@@ -732,6 +1298,8 @@ class MonitoringIcon(ValueSpec):
         return icons
 
     def render_input(self, varprefix, value):
+        if value is None:
+            value = ""
         num_columns = 12
         html.write("<table>")
         for nr, filename in enumerate([""] + self.available_icons()):
@@ -757,12 +1325,12 @@ class MonitoringIcon(ValueSpec):
     def from_html_vars(self, varprefix):
         nr = int(html.var(varprefix))
         if nr == 0:
-            return ""
+            return None
         else:
             return self.available_icons()[nr-1]
 
     def validate_datatype(self, value, varprefix):
-        if type(value) != str:
+        if value is not None and type(value) != str:
             raise MKUserError(varprefix, _("The type is %s, but should be str") %
                 type(value))
 
@@ -798,11 +1366,10 @@ register_rule(group,
 
 
 
-register_rulegroup("agent", "Access to Check_MK/SNMP Agents", 
-   _("Settings concerning the connection to the Check_MK and SNMP agents and "
-     "alternative data aquisition methods"))
+register_rulegroup("agent", _("Access to Agents"),
+   _("Settings concerning the connection to the Check_MK and SNMP agents"))
 
-group = "agent/General Settings"
+group = "agent/" + _("General Settings")
 register_rule(group,
     "dyndns_hosts",
     title = _("Hosts with dynamic DNS lookup during monitoring"),
@@ -811,7 +1378,7 @@ register_rule(group,
              "activate the changes. In some rare cases DNS lookups must be done each time "
              "a host is connected to, e.g. when the IP address of the host is dynamic "
              "and can change."))
-group = "agent/SNMP"
+group = "agent/" + _("SNMP")
 
 _snmpv3_basic_elements = [
      DropdownChoice(
@@ -854,6 +1421,19 @@ register_rule(group,
         title = _("SNMP communities of monitored hosts")))
 
 register_rule(group,
+    "snmp_character_encodings",
+    DropdownChoice(
+        title = _("Output text coding settings for SNMP devices"),
+        help = _("Some devices send texts in non-ASCII characters. Check_MK"
+                 " always assumes UTF-8 encoding. You can declare other "
+                 " other encodings here"),
+        choices = [ 
+           ("utf-8", _("UTF-8 (default)") ),
+           ("latin1" ,_("latin1")),
+           ]
+        )),
+
+register_rule(group,
     "bulkwalk_hosts",
     title = _("Hosts using bulk walk (and SNMP v2c)"),
     help = _("Most SNMP hosts support SNMP version 2c. However, Check_MK defaults to version 1, "
@@ -872,24 +1452,57 @@ register_rule(group,
              "If you want to use SNMP v2c on those devices, nevertheless, then use this rule set. "
              "One reason is enabling 64 bit counters."))
 
+register_rule(group,
+    "snmp_timing",
+    Dictionary(
+        title = _("Timing settings for SNMP access"),
+        help = _("This rule decides about the number of retries and timeout values "
+                 "for the SNMP access to devices."),
+        elements = [
+            ( "timeout",
+              Integer(
+                  title = _("Timeout between retries"),
+                  help = _("The default is 1 sec."),
+                  default_value = 1,
+                  minvalue = 1,
+                  maxvalue = 60, 
+                  unit = _("sec"),
+              ),
+            ),
+            ( "retries",
+              Integer(
+                  title = _("Number of retries"),
+                  help = _("The default is 5."),
+                  default_value = 5,
+                  minvalue = 1,
+                  maxvalue = 50,
+              )
+            ),
+       ]),
+    match = "dict")
+
+
 
 register_rule(group,
     "usewalk_hosts",
-    title = _("Hosts that simulate SNMP by using a stored SNMP walk"),
+    title = _("Simulating SNMP by using a stored SNMP walk"),
     help = _("This ruleset helps in test and development. You can create stored SNMP "
              "walks on the command line with cmk --snmpwalk HOSTNAME. A host that "
              "is configured with this ruleset will then use the information from that "
              "file instead of using real SNMP. "))
 
-group = "agent/Check_MK Agent"
+group = "agent/" + _("Check_MK Agent")
 
 register_rule(group,
     "agent_ports",
-    Integer(title = _("TCP port for connection to Check_MK agent"),
+    Integer(
             help = _("This variable allows to specify the TCP port to "
                      "be used to connect to the agent on a per-host-basis. "),
             minvalue = 1,
-            maxvalue = 65535))
+            maxvalue = 65535,
+            default_value = 6556),
+    title = _("TCP port for connection to Check_MK agent")
+)
 
 
 
@@ -903,5 +1516,7 @@ register_rule(group,
                  "the same format the agent would do. This is for example useful for monitoring "
                  "via SSH. The command line may contain the placeholders <tt>&lt;IP&gt;</tt> and "
                  "<tt>&lt;HOST&gt;</tt>."),
-        label = _("Command line to execute")))
+        label = _("Command line to execute"),
+        size = 80,
+        attrencode = True))
 
