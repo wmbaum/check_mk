@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/python
 # -*- encoding: utf-8; py-indent-offset: 4 -*-
 # +------------------------------------------------------------------+
 # |             ____ _               _        __  __ _  __           |
@@ -24,12 +24,13 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
-if which mysqladmin > /dev/null
-then
-  # Check if mysqld is running and root password setup
-  echo "<<<mysql_ping>>>"
-  mysqladmin --defaults-extra-file=$MK_CONFDIR/mysql.cfg ping 2>&1
+def inventory_plesk_domains(info):
+    if info and info[0]:
+        return [ (None, None) ]
 
-  mysql --defaults-extra-file=$MK_CONFDIR/mysql.cfg -sN \
-     -e "select '<<<mysql>>>' ; show global status; show global variables; select '<<<mysql_capacity>>>' ; SELECT table_schema, sum( data_length + index_length ), sum( data_free )  FROM information_schema.TABLES GROUP BY table_schema;"
-fi
+def check_plesk_domains(_no_item, _no_params, info):
+    if not info:
+        return (1, 'WARN - No domains configured')
+    return (0, '%s' % ',<br>'.join([ i[0] for i in info]))
+
+check_info["plesk_domains"] = (check_plesk_domains, "Plesk Domains", 0, inventory_plesk_domains)

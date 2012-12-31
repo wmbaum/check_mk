@@ -66,6 +66,8 @@ body.main {
     font-family: arial, helvetica, sans-serif;
     font-size: 9pt;
     margin: 0;
+    /* avoid white background shining through in case of unaligned image in zoomed browser view */
+    background-color: #426D8A; 
 }
 
 body.main div.main {
@@ -314,7 +316,7 @@ table.data th.tablegap {
     background-color: transparent; /* none; */
 }
 
-table.data tr.data td {
+table.data tr.data > td {
     border-right: 1px solid #ccc;
     padding: 2px 4px;
     height: 22px;
@@ -715,7 +717,7 @@ div.really h1, div.success h1, div.error h1, div.message h1, div.warning h1 {
      font-size: 12pt;
      font-weight: bold;
      margin-bottom: 5px;
-     color: #000;
+     color: white;
      margin-left: 0px;
 }
 

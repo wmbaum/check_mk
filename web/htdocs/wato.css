@@ -277,7 +277,7 @@ table.validationerror img {
 
 .wato div.folderpath li select {
     padding: 2px 0px 2px 4px;
-    background-color: #6da1b8;
+    background-color: #7399ba;
     margin: 0;
     color: #fff;
     font-weight: normal;
@@ -287,6 +287,7 @@ table.validationerror img {
     right: -6px;
     z-index: 200;
     height: 17px;
+    box-shadow: none;
 }
 
 .wato div.folderpath li:hover select {
@@ -589,8 +590,14 @@ table.validationerror img {
     vertical-align: middle;
 }*/
 
-.wato table.data.ruleset td {
-/*    vertical-align: top; */
+
+.wato table.data.ruleset tr.disabled td * {
+    color: #999;
+    text-shadow: 0px 1px 0px #fff;
+}
+
+.wato table.data.ruleset td.condition {
+    width: 360px;
 }
 
 /* Special styling for Timeperiods editor */ 
@@ -826,10 +833,11 @@ div.varname {
     background-image: url("images/repprogress.png");
     background-repeat: repeat;
     float: left;
-    color: white;
     text-align: center;
-    padding-top: 0px;
+    padding-top: 4px;
     font-size: 8pt;
+    box-shadow: 0.5px 0.5px 1px #224466 inset;
+    color: black;
 }
 
 .wato td.tag-ellipsis {
@@ -839,6 +847,11 @@ div.varname {
     text-overflow: ellipsis;
     -o-text-overflow: ellipsis;
 }
+
+.wato td#repmsg_local {
+    width: 280px;
+}
+
 
 /*-------------------------------------------------------------------------.
 |               ____                                                       |

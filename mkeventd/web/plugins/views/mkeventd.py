@@ -42,7 +42,7 @@ def table_events(what, columns, add_headers, only_sites, limit, filters):
     host_filters = ""
     for host in required_hosts:
         host_filters += "Filter: host_name =~ %s\n" \
-                        "Filter: host_address = %s\n" % (host, host)
+                        "Filter: host_address = %s\n" % (host.encode("utf-8"), host.encode("utf-8"))
     if len(required_hosts) > 0:
         host_filters += "Or: %d\n" % (len(required_hosts) * 2)
 
@@ -201,8 +201,8 @@ if mkeventd_enabled:
     # returns header lines for the event daemon, if the filter is in
     # use.
     class EventFilterText(FilterText):
-        def __init__(self, table, name, title, op):
-           FilterText.__init__(self, name, title, table, name, name, op)
+        def __init__(self, table, filter_name, column, title, op):
+           FilterText.__init__(self, filter_name, title, table, column, filter_name, op)
            self._table = table
     
         # Disable Livestatus filter
@@ -212,17 +212,17 @@ if mkeventd_enabled:
         def event_headers(self):
             return FilterText.filter(self, self._table)
     
-    declare_filter(200, EventFilterText("event", "event_id",          _("Event ID"),                              "="))
-    declare_filter(200, EventFilterText("event", "event_rule_id",     _("ID of rule"),                            "="))
-    declare_filter(201, EventFilterText("event", "event_text",        _("Message/Text of event"),                 "~~"))
-    declare_filter(201, EventFilterText("event", "event_application", _("Application / Syslog-Tag"),              "~~"))
-    declare_filter(201, EventFilterText("event", "event_contact",     _("Contact Person"),                        "~~"))
-    declare_filter(201, EventFilterText("event", "event_comment",     _("Comment to the event"),                  "~~"))
-    declare_filter(201, EventFilterText("event", "event_host_regex",  _("Hostname/IP-Address of original event"), "~~"))
-    declare_filter(201, EventFilterText("event", "event_host",        _("Hostname/IP-Address of event, exact match"), "="))
-    declare_filter(201, EventFilterText("event", "event_owner",       _("Owner of event"),                        "~~"))
-    declare_filter(221, EventFilterText("history", "history_who",       _("User that performed action"),            "~~"))
-    declare_filter(222, EventFilterText("history", "history_line",      _("Line number in history logfile"),        "="))
+    declare_filter(200, EventFilterText("event",   "event_id",         "event_id",          _("Event ID"),                              "="))
+    declare_filter(200, EventFilterText("event",   "event_rule_id",    "event_rule_id",     _("ID of rule"),                            "="))
+    declare_filter(201, EventFilterText("event",   "event_text",       "event_text",        _("Message/Text of event"),                 "~~"))
+    declare_filter(201, EventFilterText("event",   "event_application","event_application", _("Application / Syslog-Tag"),              "~~"))
+    declare_filter(201, EventFilterText("event",   "event_contact",    "event_contact",     _("Contact Person"),                        "~~"))
+    declare_filter(201, EventFilterText("event",   "event_comment",    "event_comment",     _("Comment to the event"),                  "~~"))
+    declare_filter(201, EventFilterText("event",   "event_host_regex", "event_host",        _("Hostname/IP-Address of original event"), "~~"))
+    declare_filter(201, EventFilterText("event",   "event_host",       "event_host",        _("Hostname/IP-Address of event, exact match"), "="))
+    declare_filter(201, EventFilterText("event",   "event_owner",      "event_owner",       _("Owner of event"),                        "~~"))
+    declare_filter(221, EventFilterText("history", "history_who",      "history_who",       _("User that performed action"),            "~~"))
+    declare_filter(222, EventFilterText("history", "history_line",     "history_line",      _("Line number in history logfile"),        "="))
     
     
     class EventFilterCount(Filter):
@@ -828,6 +828,44 @@ if mkeventd_enabled:
         ],
     })
     
+    multisite_builtin_views['ec_events_of_monhost'] = mkeventd_view({
+        'title':       u'Events of Monitored Host',
+        'description': u'Currently open events of a host that is monitored',
+        'datasource':  'mkeventd_events',
+        'layout':      'table',
+        'hidden':      True,
+        'painters': [
+            ('event_id',     'ec_event', ''),
+            ('event_icons', None, ''),
+            ('event_state',   None, ''),
+            ('event_sl',      None, ''),
+            ('event_rule_id', None, ''),
+            ('event_application', None, ''),
+            ('event_text',    None, ''),
+            ('event_last',    None, ''),
+            ('event_count',   None, ''),
+        ],
+        'show_filters': [
+            'event_id',
+            'event_rule_id',
+            'event_text',
+            'event_application',
+            'event_contact',
+            'event_comment',
+            'event_count',
+            'event_phase',
+            'event_state',
+            'event_first',
+            'event_last',
+            'event_priority',
+            'event_facility',
+            'event_sl',
+        ],
+        'hide_filters': [
+            'site',
+            'host',
+        ],
+    })
     multisite_builtin_views['ec_events_of_host'] = mkeventd_view({
         'title':       u'Events of Host',
         'description': u'Currently open events of one specific host',

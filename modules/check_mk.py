@@ -27,7 +27,7 @@
 # This file is also read in by check_mk's web pages. In that case,
 # the variable check_mk_web is set to True
 
-import os, sys, socket, time, getopt, glob, re, stat, py_compile, urllib
+import os, sys, socket, time, getopt, glob, re, stat, py_compile, urllib, inspect
 
 # These variable will be substituted at 'make dist' time
 check_mk_version  = '(inofficial)'
@@ -2275,16 +2275,12 @@ def make_inventory(checkname, hostnamelist, check_only=False, include_state=Fals
             if info == None: # No data for this check type
                 continue
             try:
-                # New preferred style since 1.1.11i3: only one argument: info
-                try:
+                # Check number of arguments of inventory function
+                if len(inspect.getargspec(inventory_function)[0]) == 2:
+                    inventory = inventory_function(checkname, info) # inventory is a list of pairs (item, current_value)
+                else:
+                    # New preferred style since 1.1.11i3: only one argument: info
                     inventory = inventory_function(info)
-                except Exception, e:
-                    # failed? Lets try pre-1.1.11i3 style inventory function
-                    try:
-                        inventory = inventory_function(checkname, info) # inventory is a list of pairs (item, current_value)
-                    except Exception, ee:
-                        # Let the first exception happen again
-                        inventory_function(info)
 
                 if inventory == None: # tolerate if function does no explicit return
                     inventory = []
@@ -3923,7 +3919,7 @@ def do_update():
 
 
 def do_check_nagiosconfig():
-    command = nagios_binary + " -v "  + nagios_config_file + " 2>&1"
+    command = nagios_binary + " -vp "  + nagios_config_file + " 2>&1"
     sys.stdout.write("Validating Nagios configuration...")
     if opt_verbose:
         sys.stderr.write("Running '%s'" % command)
@@ -3945,10 +3941,8 @@ def do_restart_nagios(only_reload):
     action = only_reload and "load" or "start"
     sys.stdout.write("Re%sing Nagios..." % action)
     sys.stdout.flush()
-    if omd_root:
-        command = "omd re%s core 2>&1" % action
-    else:
-        command = nagios_startscript + " re%s 2>&1" % action
+    os.putenv("CORE_NOVERIFY", "yes")
+    command = nagios_startscript + " re%s 2>&1" % action
 
     process = os.popen(command, "r")
     output = process.read()

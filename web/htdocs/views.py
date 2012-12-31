@@ -1412,7 +1412,8 @@ def render_view(view, rows, datasource, group_painters, painters,
         if show_checkboxes and html.var("selected_rows"):
             selected = get_selected_rows(view, rows, html.var("selected_rows"))
             headinfo = "%d/%s" % (len(selected), headinfo)
-        if 'T' in display_options:
+        
+        if html.output_format == "html":
             html.javascript("update_headinfo('%s');" % headinfo)
 
         # Play alarm sounds, if critical events have been displayed
@@ -1611,6 +1612,7 @@ def view_optiondial(view, option, choices, help):
     html.write('<div title="%s" id="optiondial_%s" class="optiondial %s val_%s"' 
        'onclick="view_dial_option(this, \'%s\', \'%s\', %r);"><div>%s</div></div>' % (
         help, option, option, value, view["name"], option, choices, title))
+    html.final_javascript("init_optiondial('optiondial_%s');" % option)
 
 def view_optiondial_off(option):
     html.write('<div class="optiondial off %s"></div>' % option)
@@ -1646,6 +1648,7 @@ def ajax_set_viewoption():
     config.save_user_file("viewoptions", vo)
 
 def togglebutton_off(icon):
+    html.begin_context_buttons()
     html.write('<div class="togglebutton off %s"></div>' % icon)
 
 def togglebutton(id, isopen, icon, help):

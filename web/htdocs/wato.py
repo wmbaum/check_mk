@@ -85,9 +85,6 @@
 # actual Check_MK files (hosts.mk). WATO is designed for managing
 # 100.000 hosts. So operations on all hosts might last a while...
 #
-# g_hook -> dictionary of hooks (i.e. user supplied functions) to
-#           be called in various situations.
-#
 # g_configvars -> dictionary of variables in main.mk that can be configured
 #           via WATO.
 #
@@ -108,7 +105,7 @@
 
 import sys, pprint, socket, re, subprocess, time, datetime,  \
        shutil, tarfile, StringIO, math, fcntl, pickle
-import config, htmllib, table, multitar
+import config, htmllib, table, multitar, userdb, hooks
 from lib import *
 from valuespec import *
 import forms
@@ -415,7 +412,7 @@ def folder_dir(the_folder):
 
 # Save one folder (i.e. make sure the directory exist and write its .wato file)
 def save_folder(folder):
-    if folder[".lock"] != False:
+    if folder.get(".lock"):
         raise MKAuthException(_("Sorry, you cannot edit this folder. It is locked."))
 
     # Remove temporary entries from the dictionary
@@ -429,9 +426,9 @@ def save_folder(folder):
     config.write_settings_file(wato_filename, cleaned)
 
 def save_folder_and_hosts(folder):
-    if folder[".lock"] == False:
+    if not folder.get(".lock"):
         save_folder(folder)
-    if folder[".lock_hosts"] == False:
+    if not folder.get(".lock_hosts"):
         save_hosts(folder)
 
 
@@ -634,7 +631,7 @@ def save_hosts(folder = None):
     if folder == None:
         folder = g_folder
     
-    if folder[".lock_hosts"] != False:
+    if folder.get(".lock_hosts"):
         raise MKAuthException(_("Sorry, you cannot edit hosts in this folder. They are locked.")) 
 
     folder_path = folder[".path"]
@@ -820,15 +817,15 @@ def mode_folder(phase):
         if config.may("wato.rulesets") or config.may("wato.seeall"):
             html.context_button(_("Rulesets"),        make_link([("mode", "ruleeditor")]), "rulesets")
         html.context_button(_("Folder Properties"), make_link_to([("mode", "editfolder")], g_folder), "edit")
-        if g_folder[".lock_subfolders"] == False and config.may("wato.manage_folders"):
+        if not g_folder.get(".lock_subfolders") and config.may("wato.manage_folders"):
             html.context_button(_("New folder"),        make_link([("mode", "newfolder")]), "newfolder")
-        if g_folder[".lock_hosts"] == False and config.may("wato.manage_hosts"):
+        if not g_folder.get(".lock_hosts") and config.may("wato.manage_hosts"):
             html.context_button(_("New host"),    make_link([("mode", "newhost")]), "new")
             html.context_button(_("New cluster"), make_link([("mode", "newcluster")]), "new_cluster")
         if config.may("wato.services"):
             html.context_button(_("Bulk Inventory"), make_link([("mode", "bulkinventory"), ("all", "1")]), 
                         "inventory")
-        if g_folder[".lock_hosts"] == False and config.may("wato.parentscan"):
+        if not g_folder.get(".lock_hosts") and config.may("wato.parentscan"):
             html.context_button(_("Parent scan"), make_link([("mode", "parentscan"), ("all", "1")]),
                         "parentscan")
         search_button()
@@ -940,17 +937,17 @@ def mode_folder(phase):
         render_folder_path()
 
         lock_messages = []
-        if g_folder[".lock_hosts"]:
+        if g_folder.get(".lock_hosts"):
             if g_folder[".lock_hosts"] == True:
                 lock_messages.append(_("Hosts attributes locked (You cannot create, edit or delete hosts in this folder)")) 
             else:
                 lock_messages.append(g_folder[".lock_hosts"])
-        if g_folder[".lock"]:
+        if g_folder.get(".lock"):
             if g_folder[".lock"] == True:
                 lock_messages.append(_("Folder attributes locked (You cannot edit the attributes of this folder)"))
             else:
                 lock_messages.append(g_folder[".lock"])
-        if g_folder[".lock_subfolders"]:
+        if g_folder.get(".lock_subfolders"):
             if g_folder[".lock_subfolders"] == True:
                 lock_messages.append(_("Folder is locked (You cannot create or remove folders in this folder)")) 
             else:
@@ -967,14 +964,14 @@ def mode_folder(phase):
             have_something = show_hosts(g_folder) or have_something
         if not have_something:
             menu_items = []
-            if g_folder[".lock_hosts"] == False:
+            if not g_folder.get(".lock_hosts"):
                 menu_items.extend([
                 ("newhost", _("Create new host"), "new", "hosts",
                   _("Add a new host to the monitoring (agent must be installed)")),
                 ("newcluster", _("Create new cluster"), "new_cluster", "hosts",
                   _("Use Check_MK clusters if an item can move from one host "
                     "to another at runtime"))])
-            if g_folder[".lock_subfolders"] == False:
+            if not g_folder.get(".lock_subfolders"):
                 menu_items.extend([
                 ("newfolder", _("Create new folder"), "newfolder", "hosts",
                   _("Folders group your hosts, can inherit attributes and can have permissions."))
@@ -1011,7 +1008,7 @@ def check_host_permissions(hostname, exception=True, folder=None):
     effective = effective_attributes(host, folder)
     use, cgs = effective.get("contactgroups", (None, []))
     # Get contact groups of user
-    users = load_users()
+    users = userdb.load_users()
     if config.user_id not in users:
         user_cgs = []
     else:
@@ -1040,7 +1037,7 @@ def get_folder_permissions_of_users(users):
 
     permissions = {}
 
-    users = load_users()
+    users = userdb.load_users()
     for username in users.iterkeys():
         permissions[username] = {}
         for folder_path, folder in folders.iteritems():
@@ -1071,7 +1068,7 @@ def check_folder_permissions(folder, how, exception=True, user = None, users = N
 
     # Get contact groups of user
     if users == None:
-        users = load_users()
+        users = userdb.load_users()
     if user not in users:
         user_cgs = []
     else:
@@ -1104,7 +1101,7 @@ def check_user_contactgroups(cgspec):
         return
 
     use, cgs = cgspec
-    users = load_users()
+    users = userdb.load_users()
     if config.user_id not in users:
         user_cgs = []
     else:
@@ -1156,7 +1153,7 @@ def show_subfolders(folder):
                     style = 'display:none',
                 )
 
-            if folder[".lock_subfolders"] == False and entry[".lock"] == False: 
+            if not folder.get(".lock_subfolders") and not entry.get(".lock"):
                 if config.may("wato.manage_folders") and auth_write:
                     html.icon_button(
                         '', # url is replaced by onclick code
@@ -1190,7 +1187,7 @@ def show_subfolders(folder):
         # Show contact groups of the folder
         effective = effective_attributes(None, entry)
         use, cgs = effective.get("contactgroups", (None, []))
-        group_info = load_group_information().get("contact", {})
+        group_info = userdb.load_group_information().get("contact", {})
         for num, cg in enumerate(cgs):
             cgalias = group_info.get(cg,cg)
             html.icon(_("Contactgroup assign to this folder"), "contactgroups")
@@ -1253,7 +1250,7 @@ def show_hosts(folder):
         html.write("<td class=bulkactions colspan=%d>" % (colspan-3))
         html.write(' ' + _("Selected hosts:\n"))
 
-        if g_folder[".lock_hosts"] == False:
+        if not g_folder.get(".lock_hosts"):
             if config.may("wato.manage_hosts"):
                 html.button("_bulk_delete", _("Delete"))
             if config.may("wato.edit_hosts"):
@@ -1261,7 +1258,7 @@ def show_hosts(folder):
                 html.button("_bulk_cleanup", _("Cleanup"))
         if config.may("wato.services"):
             html.button("_bulk_inventory", _("Inventory"))
-        if g_folder[".lock_hosts"] == False: 
+        if not g_folder.get(".lock_hosts"):
             if config.may("wato.parentscan"):
                 html.button("_parentscan", _("Parentscan"))
             if config.may("wato.edit_hosts") and config.may("wato.move_hosts"):
@@ -1318,7 +1315,7 @@ def show_hosts(folder):
         if attr.show_in_table():
             html.write("<th>%s</th>" % attr.title())
 
-    if g_folder[".lock_hosts"] == False and config.may("wato.edit_hosts") and config.may("wato.move_hosts"):
+    if not g_folder.get(".lock_hosts") and config.may("wato.edit_hosts") and config.may("wato.move_hosts"):
         html.write("<th class=right>" + _("Move To") + "</th>")
 
     html.write("</tr>\n")
@@ -1365,7 +1362,7 @@ def show_hosts(folder):
                 image = "inventory_failed"
                 msg += ". " + _("The inventory of this host failed during a previous bulk inventory.")
             html.icon_button(services_url, msg, image)
-        if g_folder[".lock_hosts"] == False and config.may("wato.manage_hosts"):
+        if not g_folder.get(".lock_hosts") and config.may("wato.manage_hosts"):
             if config.may("wato.clone_hosts"):
                 html.icon_button(clone_url, _("Create a clone of this host"), "insert")
             html.icon_button(delete_url, _("Delete this host"), "delete")
@@ -1422,7 +1419,7 @@ def show_hosts(folder):
                 html.write("</td>\n")
 
         # Move to
-        if g_folder[".lock_hosts"] == False and config.may("wato.edit_hosts") and config.may("wato.move_hosts"):
+        if not g_folder.get(".lock_hosts") and config.may("wato.edit_hosts") and config.may("wato.move_hosts"):
             html.write("<td class=right>")
             move_to_folder_combo("host", hostname)
             html.write("</td>\n")
@@ -1518,9 +1515,9 @@ def move_hosts_to(hostnames, path):
     load_hosts(target_folder)
     target_hosts = target_folder[".hosts"]
     
-    if g_folder[".lock_hosts"] != False:
+    if g_folder.get(".lock_hosts"):
         raise MKUserError(None, _("Cannot move selected hosts: Hosts in this folder are locked."))
-    if target_folder[".lock_hosts"] != False:
+    if target_folder.get(".lock_hosts"):
         raise MKUserError(None, _("Cannot move selected hosts: Hosts in target folder are locked."))
 
     num_moved = 0
@@ -1562,7 +1559,7 @@ def delete_hosts_after_confirm(hosts):
     c = wato_confirm(_("Confirm deletion of %d hosts") % len(hosts),
                      _("Do you really want to delete the %d selected hosts?") % len(hosts))
     if c:
-        if g_folder[".lock_hosts"] != False:
+        if g_folder.get(".lock_hosts"):
             raise MKUserError(None, _("Cannot delete hosts. Hosts in this folder are locked"))
 
         for delname in hosts:
@@ -1582,9 +1579,9 @@ def delete_hosts_after_confirm(hosts):
         return None # browser reload
 
 def move_folder(what_folder, target_folder):
-    if what_folder[".lock_subfolders"] != False:
+    if what_folder.get(".lock_subfolders"):
         raise MKUserError(None, _("Cannot move folder: This folder is locked."))
-    elif target_folder[".lock_subfolders"] != False:
+    elif target_folder.get(".lock_subfolders"):
         raise MKUserError(None, _("Cannot move folder: Target folder is locked."))
 
     old_parent = what_folder[".parent"]
@@ -1677,12 +1674,12 @@ def mode_editfolder(phase, new):
 
     elif phase == "action":
         if new:
-            if g_folder[".lock_subfolders"] != False:
+            if g_folder.get(".lock_subfolders"):
                 raise MKUserError("title", _("Folder is locked. You cannot create or remove a folders "  
                                              "in this folder.")) 
             config.need_permission("wato.manage_folders")
         else:
-            if g_folder[".lock"] != False:
+            if g_folder.get(".lock"):
                 raise MKUserError("title", _("Folder attributes locked. You cannot change the attributes of this folder.")) 
             config.need_permission("wato.edit_folders")
 
@@ -1693,6 +1690,7 @@ def mode_editfolder(phase, new):
         title = html.var_utf8("title")
         if not title:
             raise MKUserError("title", _("Please supply a title."))
+        title_changed = not new and title != g_folder.get('title', '')
 
         # OS filename
         if new:
@@ -1750,7 +1748,7 @@ def mode_editfolder(phase, new):
 
             g_folder["title"]      = title
 
-            if attributes_changed:
+            if attributes_changed or title_changed:
                 mark_affected_sites_dirty(g_folder)
                 g_folder["attributes"] = attributes
 
@@ -1779,7 +1777,7 @@ def mode_editfolder(phase, new):
         check_folder_permissions(g_folder, "read")
         
         lock_message = ""
-        if g_folder[".lock"]:
+        if g_folder.get(".lock"):
             if g_folder[".lock"] == True:
                 lock_message = _("Folder attributes locked (You cannot edit the attributes of this folder)")
             else:
@@ -1820,7 +1818,7 @@ def mode_editfolder(phase, new):
             configure_attributes(new, {"folder": attributes}, "folder", parent, myself)
 
         forms.end()
-        if new or g_folder[".lock"] == False:
+        if new or not g_folder.get(".lock"):
             html.button("save", _("Save &amp; Finish"), "submit")
         html.hidden_fields()
         html.end_form()
@@ -1993,8 +1991,8 @@ def mode_edithost(phase, new, cluster):
                     mark_affected_sites_dirty(g_folder, hostname)
                     log_pending(AFFECTED, hostname, "edit-host", _("Edited properties of host [%s]") % hostname)
                 save_folder_and_hosts(g_folder)
-                call_hook_hosts_changed(g_folder)
                 reload_hosts(g_folder)
+                call_hook_hosts_changed(g_folder)
 
             errors = validate_all_hosts([hostname]).get(hostname, []) + validate_host(g_folder[".hosts"][hostname], g_folder)
             if errors: # keep on this page if host does not validate
@@ -2026,7 +2024,7 @@ def mode_edithost(phase, new, cluster):
             html.write("</td></tr></table></div>")
 
         lock_message = ""
-        if g_folder[".lock_hosts"]:
+        if g_folder.get(".lock_hosts"):
             if g_folder[".lock_hosts"] == True:
                 lock_message = _("Host attributes locked (You cannot edit this host)")
             else:
@@ -2057,7 +2055,7 @@ def mode_edithost(phase, new, cluster):
         configure_attributes(new, {hostname: host}, "host", parent = g_folder)
 
         forms.end()
-        if g_folder[".lock_hosts"] == False:
+        if not g_folder.get(".lock_hosts"):
             html.image_button("services", _("Save &amp; go to Services"), "submit")
             html.image_button("save", _("Save &amp; Finish"), "submit")
             if not new:
@@ -2070,7 +2068,7 @@ def delete_host_after_confirm(delname):
     c = wato_confirm(_("Confirm host deletion"),
                      _("Do you really want to delete the host <tt>%s</tt>?") % delname)
     if c:
-        if g_folder[".lock_hosts"] != False:
+        if g_folder.get(".lock_hosts"):
             raise MKUserError(None, _("Cannot delete host. Hosts in this folder are locked"))
 
         mark_affected_sites_dirty(g_folder, delname)
@@ -2391,18 +2389,12 @@ def search_hosts_in_folder(folder, crit):
     if found:
         render_folder_path(folder, True)
         found.sort()
-        html.write("<table class=data><tr><th>%s</th>" % (_("Hostname"), ))
-        for attr, topic in host_attributes:
-            if attr.show_in_table():
-                html.write("<th>%s</th>" % attr.title())
-        html.write("</tr>")
 
-        even = "even"
+        table.begin(""); 
         for hostname, host, effective in found:
-            even = even == "even" and "odd" or "even"
             host_url =  make_link_to([("mode", "edithost"), ("host", hostname)], folder)
-            html.write('<tr class="data %s0"><td><a href="%s">%s</a></td>\n' %
-               (even, host_url, hostname))
+            table.row()
+            table.cell(_("Hostname"), '<a href="%s">%s</a>' % (host_url, hostname))
             for attr, topic in host_attributes:
                 attrname = attr.name()
                 if attr.show_in_table():
@@ -2411,9 +2403,8 @@ def search_hosts_in_folder(folder, crit):
                     else:
                         tdclass, content = attr.paint(effective[attrname], hostname)
                         tdclass += " inherited"
-                    html.write('<td class="%s">%s</td>' % (tdclass, content))
-        html.write("</tr>\n")
-        html.write("</table><br>\n")
+                    table.cell(attr.title(), content, css=tdclass)
+        table.end()
 
     return len(found)
 
@@ -3448,7 +3439,7 @@ def mode_changelog(phase):
             if config.debug:
                 raise
             else:
-                raise MKUserError(None, "<h3>%s</h3>%s" % (_("Cannot activate changes"), e))
+                raise MKUserError(None, "<h1>%s</h1>%s" % (_("Cannot activate changes"), e))
 
         sitestatus_do_async_replication = False # see below
         if html.has_var("_siteaction"):
@@ -4070,7 +4061,7 @@ def check_mk_local_automation(command, args=[], indata=""):
         except Exception, e:
             if config.debug:
                 raise
-            html.show_error("<h3>Cannot activate changes</h3>%s" % e)
+            html.show_error("<h1>Cannot activate changes</h1>%s" % e)
             return
 
     if config.debug:
@@ -4094,8 +4085,10 @@ def check_mk_local_automation(command, args=[], indata=""):
     if exitcode != 0:
         if config.debug:
             log_audit(None, "automation", "Automation command %s failed with exit code %d: %s" % (" ".join(cmd), exitcode, outdata))
-        raise MKGeneralException("Error running <tt>%s</tt> (exit code %d): <pre>%s</pre>%s" %
-              (" ".join(cmd), exitcode, hilite_errors(outdata), outdata.lstrip().startswith('sudo:') and sudo_msg or ''))
+            raise MKGeneralException("Error running <tt>%s</tt> (exit code %d): <pre>%s</pre>%s" %
+                  (" ".join(cmd), exitcode, hilite_errors(outdata), outdata.lstrip().startswith('sudo:') and sudo_msg or ''))
+        else:
+            raise MKGeneralException("<h1>%s</h1>%s" % (_("Error"), hilite_errors(outdata)))
 
 
     # On successful "restart" command execute the activate changes hook
@@ -4621,7 +4614,7 @@ class ContactGroupsAttribute(Attribute):
             return
         self._loaded_at = id(html)
 
-        self._contactgroups = load_group_information().get("contact", {})
+        self._contactgroups = userdb.load_group_information().get("contact", {})
 
     def from_html_vars(self):
         cgs = []
@@ -4915,7 +4908,7 @@ def configure_attributes(new, hosts, for_what, parent, myself=None, without_attr
                 else:
                     disabled = True
 
-            if (for_what == "host" and g_folder[".lock_hosts"] != False) or (for_what == "folder" and g_folder[".lock"] != False):
+            if (for_what == "host" and g_folder.get(".lock_hosts")) or (for_what == "folder" and g_folder.get(".lock")):
                 checkbox_code = None
             elif force_entry:
                 checkbox_code = '<input type=checkbox name="ignored_%s" CHECKED DISABLED>' % checkbox_name
@@ -5185,42 +5178,25 @@ def mode_snapshot(phase):
                 snapshots.append(f)
         snapshots.sort(reverse=True)
 
-        if len(snapshots) == 0:
-            html.write("<div class=info>" + _("There are no snapshots available.") + "</div>")
-        else:
-            html.write('<h3>' + _("Snapshots") + '</h3>')
-            html.write('<table class=data>')
-            html.write("<tr>")
-            html.write("<th>%s</th>" % _("Actions"))
-            html.write("<th>%s</th>" % _("Filename"))
-            html.write("<th>%s</th>" % _("Age"))
-            html.write("<th>%s</th>" % _("Size"))
-            html.write("</tr>")
 
-            odd = "odd"
-            for name in snapshots:
-                odd = odd == "odd" and "even" or "odd"
-                html.write('<tr class="data %s0"><td>' % odd)
-
-                # Buttons
-                html.icon_button(make_action_link(
-                   [("mode","snapshot"),("_restore_snapshot", name)]), _("Restore"), "restore")
-                html.icon_button(make_action_link(
-                   [("mode","snapshot"),("_delete_file", name)]), _("Delete"), "delete")
-                html.write("<td>")
-
-                # Snapshot name
-                html.write('<a href="%s">%s</a>' % (make_action_link([("mode","snapshot"),("_download_file", name)]), name))
-
-                # Age and Size
-                html.write("<td class=number>")
-                st = os.stat(snapshot_dir + name)
-                age = time.time() - st.st_mtime
-                html.write(html.age_text(age))
-                html.write("</td>")
-                html.write("<td class=number>%d</td>" % st.st_size)
-            html.write('</table>')
-
+        table.begin(_("Snapshots"), empty_text=_("There are no snapshots available."))
+        for name in snapshots:
+            table.row()
+            # Buttons
+            table.cell(_("Actions"), css="buttons") 
+            html.icon_button(make_action_link(
+               [("mode","snapshot"),("_restore_snapshot", name)]), _("Restore"), "restore")
+            html.icon_button(make_action_link(
+               [("mode","snapshot"),("_delete_file", name)]), _("Delete"), "delete")
+            # Snapshot name
+            table.cell(_("Filename"), '<a href="%s">%s</a>' % 
+                       (make_action_link([("mode","snapshot"),("_download_file", name)]), name)) 
+            # Age and Size
+            st = os.stat(snapshot_dir + name)
+            age = time.time() - st.st_mtime
+            table.cell(_("Age"), html.age_text(age), css="number")
+            table.cell(_("Size"), "%d" % st.st_size, css="number"), 
+        table.end()
 
         html.write("<h3>" + _("Restore from uploaded file") + "</h3>")
         html.begin_form("upload_form", None, "POST")
@@ -5253,7 +5229,7 @@ def create_snapshot():
 def factory_reset():
     # Darn. What makes things complicated here is that we need to conserve htpasswd,
     # at least the account of the currently logged in user.
-    users = load_users()
+    users = userdb.load_users()
     for id in users.keys():
         if id != config.user_id:
             del users[id]
@@ -5270,7 +5246,7 @@ def factory_reset():
     make_nagios_directory(multisite_dir)
     make_nagios_directory(root_dir)
 
-    save_users(users) # make sure, omdadmin is present after this
+    userdb.save_users(users) # make sure, omdadmin is present after this
     log_pending(SYNCRESTART, None, "factory-reset", _("Complete reset to factory settings."))
 
 
@@ -5677,13 +5653,14 @@ def mode_groups(phase, what):
         global_buttons()
         html.context_button(_("New group"), make_link([("mode", "edit_%s_group" % what)]), "new")
         if what == "contact":
-            pass
+            html.context_button(_("Rules"), make_link([("mode", "rulesets"), 
+                ("filled_in", "search"), ("search", "contact group")]), "rulesets")
         else:
             varname = what + "_groups"
             html.context_button(_("Rules"), make_link([("mode", "edit_ruleset"), ("varname", varname)]), "rulesets")
         return
 
-    all_groups = load_group_information()
+    all_groups = userdb.load_group_information()
     groups = all_groups.get(what, {})
 
     if phase == "action":
@@ -5692,7 +5669,7 @@ def mode_groups(phase, what):
         if what == 'contact':
             # Is the contactgroup in use?
             member_links = []
-            users = filter_hidden_users(load_users())
+            users = filter_hidden_users(userdb.load_users())
             entries = users.items()
             entries.sort(cmp = lambda a, b: cmp(a[1].get("alias"), b[1].get("alias")))
             for id, user in entries:
@@ -5738,7 +5715,7 @@ def mode_groups(phase, what):
 
     # Show member of contact groups
     if what == "contact":
-        users = filter_hidden_users(load_users())
+        users = filter_hidden_users(userdb.load_users())
         members = {}
         for userid, user in users.items():
             cgs = user.get("contactgroups", [])
@@ -5756,7 +5733,6 @@ def mode_groups(phase, what):
         html.icon_button(edit_url, _("Properties"), "edit")
         html.icon_button(clone_url, _("Create a copy of this group"), "clone")
         html.icon_button(delete_url, _("Delete"), "delete")
-        html.write("</td>")
         
         table.cell(_("Name"), name)
         table.cell(_("Alias"), alias)
@@ -5794,7 +5770,7 @@ def mode_edit_group(phase, what):
         html.context_button(_("All groups"), make_link([("mode", "%s_groups" % what)]), "back")
         return
 
-    all_groups = load_group_information()
+    all_groups = userdb.load_group_information()
     groups = all_groups.setdefault(what, {})
 
     if phase == "action":
@@ -5846,32 +5822,6 @@ def mode_edit_group(phase, what):
     html.hidden_fields()
     html.end_form()
 
-
-
-    # Formular malen für neue / bestehende Gruppe
-
-def load_group_information():
-    try:
-        filename = root_dir + "groups.mk"
-        if not os.path.exists(filename):
-            return {}
-
-        vars = {}
-        for what in ["host", "service", "contact" ]:
-            vars["define_%sgroups" % what] = {}
-
-        execfile(filename, vars, vars)
-        groups = {}
-        for what in ["host", "service", "contact" ]:
-            groups[what] = vars.get("define_%sgroups" % what, {})
-        return groups
-
-    except Exception, e:
-        if config.debug:
-            raise MKGeneralException(_("Cannot read configuration file %s: %s" %
-                          (filename, e)))
-        return {}
-
 def save_group_information(groups):
     make_nagios_directory(root_dir)
     out = create_user_file(root_dir + "groups.mk", "w")
@@ -5890,7 +5840,7 @@ class GroupSelection(ElementSelection):
         self._no_selection = kwargs.get("no_selection")
 
     def get_elements(self):
-        all_groups = load_group_information()
+        all_groups = userdb.load_group_information()
         this_group = all_groups.get(self._what, {})
         # replace the title with the key if the title is empty
         elements = [ (k, t and t or k) for (k, t) in this_group.items() ]
@@ -5965,39 +5915,25 @@ def mode_timeperiods(phase):
             else:
                 return None
 
-    html.write("<h3>" + _("Time Periods") + "</h3>")
 
-    if len(timeperiods) == 0:
-        html.write("<div class=info>" + _("There are no timeperiods defined yet.") + "</div>")
-        return
-
-    html.write("<table class=data>")
-    html.write("<tr><th>"
-               + _("Actions") + "</th><th>"
-               + _("Name")    + "</th><th>"
-               + _("Alias")   + "</th></tr>")
-
-    odd = "even"
+    table.begin(_("Time Periods"), empty_text = _("There are no timeperiods defined yet."))
     names = timeperiods.keys()
     names.sort()
     for name in names:
-        odd = odd == "odd" and "even" or "odd"
-        html.write('<tr class="data %s0">' % odd)
-
+        table.row()
+        
         timeperiod = timeperiods[name]
         edit_url     = make_link([("mode", "edit_timeperiod"), ("edit", name)])
         delete_url   = html.makeactionuri([("_delete", name)])
 
-        html.write("<td class=buttons>")
+        table.cell(_("Actions"), css="buttons")
         html.icon_button(edit_url, _("Properties"), "edit")
         html.icon_button(delete_url, _("Delete"), "delete")
-        html.write("</td>")
 
-        html.write("<td>%s</td>" % name)
-        html.write("<td>%s</td>" % timeperiod.get("alias", ""))
-        html.write("</tr>")
+        table.cell(_("Name"), name)
+        table.cell(_("Alias"), timeperiod.get("alias", ""))
+    table.end()
 
-    html.write("</table>")
 
 
 def load_timeperiods():
@@ -6315,7 +6251,7 @@ def find_usage_of_timeperiod(tpname):
                     break
 
     # Part 2: Users
-    for userid, user in load_users().items():
+    for userid, user in userdb.load_users().items():
         tp = user.get("notification_period")
         if tp == tpname:
             used_in.append(("%s: %s" % (_("User"), userid),
@@ -6476,74 +6412,60 @@ def mode_sites(phase):
             return ""
         return
 
-    if len(sites) == 0:
-        html.write("<div class=info>" +
-           _("You have not configured any local or remotes sites. Multisite will "
-             "implicitely add the data of the local monitoring site. If you add remotes "
-             "sites, please do not forget to add your local monitoring site also, if "
-             "you want to display its data.") + "</div>")
-        return
 
+    table.begin(_("Connections to local and remote sites"),
+                empty_text = _("You have not configured any local or remotes sites. Multisite will "
+                               "implicitely add the data of the local monitoring site. If you add remotes "
+                               "sites, please do not forget to add your local monitoring site also, if "
+                               "you want to display its data."))
 
-    html.write("<h3>" + _("Connections to local and remote sites") + "</h3>")
-    html.write("<table class=data>")
-    html.write("<tr><th>" + _("Actions") + "<th>"
-                + _("Site-ID")
-                + "</th><th>" + _("Alias")
-                + "</th><th>" + _("Connection")
-                + "</th><th>" + _("Status host")
-                + "</th><th>" + _("Disabled")
-                + "</th><th>" + _("Timeout")
-                + "</th><th>" + _("Pers.")
-                + "</th><th>" + _("Replication")
-                + "</th><th>" + _("Prio")
-                + "</th><th>" + _("Login")
-                + "</th></tr>\n")
-
-    odd = "even"
     entries = sites.items()
     sort_sites(entries)
     for id, site in entries:
-        odd = odd == "odd" and "even" or "odd"
-        html.write('<tr class="data %s0">' % odd)
+        table.row()
         # Buttons
         edit_url = make_link([("mode", "edit_site"), ("edit", id)])
         delete_url = html.makeactionuri([("_delete", id)])
-        html.write("<td class=buttons>")
+        table.cell(_("Actions"), css="buttons") 
         html.icon_button(edit_url, _("Properties"), "edit")
         html.icon_button(delete_url, _("Delete"), "delete")
 
+        # Site-ID
+        table.cell(_("Site-ID"), id)
+
         # Alias
-        html.write("</td><td>%s</td><td>%s</td>" % (id, site.get("alias", "")))
+        table.cell(_("Alias"), site.get("alias", "")) 
 
         # Socket
         socket = site.get("socket", _("local site"))
         if socket == "disabled:":
             socket = _("don't query status")
-        html.write("<td>%s</td>" % socket)
+        table.cell(_("Socket"), socket)
 
         # Status host
         if "status_host" in site:
             sh_site, sh_host = site["status_host"]
-            html.write("<td>%s/%s</td>" % (sh_site, sh_host))
+            table.cell(_("Status host"), "%s/%s" % (sh_site, sh_host)) 
         else:
-            html.write("<td></td>")
+            table.cell(_("Status host"))
+
+        # Disabled
         if site.get("disabled", False) == True:
-            html.write("<td><b>" + _("yes") + "</b></td>")
+            table.cell(_("Disabled"), "<b>%s</b>" % _("yes"))
         else:
-            html.write("<td>" + _("no") + "</td>")
+            table.cell(_("Disabled"), _("no"))
 
         # Timeout
         if "timeout" in site:
-            html.write("<td class=number>%d sec</td>" % site["timeout"])
+            table.cell(_("Timeout"), _("%d sec") % site["timeout"], css="number")
         else:
-            html.write("<td></td>")
+            table.cell(_("Timeout"), "")
 
         # Persist
         if site.get("persist", False):
-            html.write("<td><b>" + _("yes") + "</b></td>")
+            table.cell(_("Pers."), "<b>%s</b>" % _("yes"))
         else:
-            html.write("<td>" + _("no") + "</td>")
+            table.cell(_("Pers."), _("no"))
 
         # Replication
         if site.get("replication") == "slave":
@@ -6552,13 +6474,14 @@ def mode_sites(phase):
             repl = _("Peer")
         else:
             repl = ""
-        html.write("<td>%s</td>" % repl)
+        table.cell(_("Replication"), repl)
 
-        html.write("<td class=number>%s</td>" % 
-                ( site.get("replication") != "slave" and str(site.get("repl_priority", 0)) or ""))
+        # Replication Priority
+        table.cell(_("Prio"), (site.get("replication") != "slave" and 
+                    str(site.get("repl_priority", 0)) or ""), css="number")
 
         # Login-Button for Replication
-        html.write("<td>")
+        table.cell(_("Login"))
         if repl:
             if site.get("secret"):
                 logout_url = make_action_link([("mode", "sites"), ("_logout", id)])
@@ -6566,11 +6489,8 @@ def mode_sites(phase):
             else:
                 login_url = make_action_link([("mode", "sites"), ("_login", id)])
                 html.buttonlink(login_url, _("Login"))
-        html.write("</td>")
-
-
-        html.write("</tr>")
-    html.write("</table>")
+    
+    table.end()
 
 def mode_edit_site(phase):
     sites = load_sites()
@@ -7310,16 +7230,20 @@ def ajax_activation():
             duration = time.time() - start
             update_replication_status(None, {}, { 'act': duration })
         except Exception:
-            import traceback
-            raise MKUserError(None, "Error executing hooks: %s" %
-                                        traceback.format_exc().replace('\n', '<br />'))
+            if config.debug:
+                import traceback
+                raise MKUserError(None, "Error executing hooks: %s" %
+                                            traceback.format_exc().replace('\n', '<br />'))
+            else:
+                raise
 
         log_commit_pending() # flush logfile with pending actions
         log_audit(None, "activate-config", _("Configuration activated, monitoring server restarted"))
 
         # html.message
         html.write('OK: ')
-        html.write('<div class=act_success><img src="images/icon_apply.png" /> %s</div>' % _("The new configuration has been successfully activated."))
+        html.write('<div class=act_success><img src="images/icon_apply.png" /> %s</div>' % 
+                  _("Configuration successfully activated."))
     except Exception, e:
         html.show_error(str(e))
 
@@ -7587,13 +7511,11 @@ def delete_distributed_wato_file():
 #   | Mode for managing users and contacts.                                |
 #   '----------------------------------------------------------------------'
 
-# Custom user attributes
-user_attributes = []
-user_attribute = {}
-
-def declare_user_attribute(name, vs):
-    user_attributes.append((name, vs))
-    user_attribute[name] = vs
+def declare_user_attribute(name, vs, user_editable = True):
+    userdb.user_attributes[name] = {
+        'valuespec':     vs,
+        'user_editable': user_editable,
+    }
 
 def load_notification_scripts_from(adir):
     scripts = {}
@@ -7624,7 +7546,7 @@ def load_notification_scripts():
     scripts = load_notification_scripts_from(not_dir)
     try:
         local_dir = defaults.omd_root + "/local/share/check_mk/notifications"
-        load_notification_scripts_from(local_dir)
+        scripts.update(load_notification_scripts_from(local_dir))
     except:
         pass
     choices = scripts.items()
@@ -7646,7 +7568,7 @@ vs_notification_method = \
                 ListOf(
                     Foldable(
                         Dictionary(
-                            optional_keys = [ "only_services", "escalation" ],
+                            optional_keys = [ "only_hosts", "only_services", "escalation" ],
                             columns = 1,
                             headers = True,
                             elements = [
@@ -7720,6 +7642,14 @@ vs_notification_method = \
                                     default_value = [ 'w', 'c', 'u' ],
                                 )
                               ),
+                              ( "only_hosts",
+                                ListOfStrings(
+                                    title = _("Limit to the following hosts"),
+                                    help = _("Configure the hosts for this notification. Only exact, case sensitive matches"),
+                                    orientation = "horizontal",
+                                    valuespec = RegExp(size = 20),
+                                ),
+                              ),
                               ( "only_services",
                                 ListOfStrings(
                                     title = _("Limit to the following services"),
@@ -7762,10 +7692,10 @@ def mode_users(phase):
     # loading the users, because it might modify the users list
     userdb.hook_sync(add_to_changelog = True)
 
-    roles = load_roles()
-    users = filter_hidden_users(load_users())
+    roles = userdb.load_roles()
+    users = filter_hidden_users(userdb.load_users())
     timeperiods = load_timeperiods()
-    contact_groups = load_group_information().get("contact", {})
+    contact_groups = userdb.load_group_information().get("contact", {})
 
     if phase == "action":
         delid = html.var("_delete")
@@ -7776,7 +7706,7 @@ def mode_users(phase):
                          _("Do you really want to delete the user %s?" % delid))
         if c:
             del users[delid]
-            save_users(users)
+            userdb.save_users(users)
             log_pending(SYNCRESTART, None, "edit-users", _("Deleted user %s" % (delid)))
             return None
         elif c == False:
@@ -7814,7 +7744,7 @@ def mode_users(phase):
             table.cell(_("Connector"), connector['short_title'])
             locked_attributes = userdb.locked_attributes(user.get('connector'))
         else:
-            table_cell(_("Connector"), "%s (disabled)" % userdb.get_connector_id(user.get('connector')), css="error")
+            table.cell(_("Connector"), "%s (disabled)" % userdb.get_connector_id(user.get('connector')), css="error")
             locked_attributes = []
 
         # Authentication
@@ -7874,7 +7804,7 @@ def mode_users(phase):
 
     table.end()
 
-    if not load_group_information().get("contact", {}):
+    if not userdb.load_group_information().get("contact", {}):
         url = "wato.py?mode=contact_groups"
         html.write("<div class=info>" +
             _("Note: you haven't defined any contact groups yet. If you <a href='%s'>"
@@ -7885,7 +7815,7 @@ def mode_users(phase):
 
 
 def mode_edit_user(phase):
-    users = load_users()
+    users = userdb.load_users()
     userid = html.var("edit") # missing -> new user
     cloneid = html.var("clone") # Only needed in 'new' mode
     new = userid == None
@@ -7915,9 +7845,9 @@ def mode_edit_user(phase):
 
     # Load data that is referenced - in order to display dropdown
     # boxes and to check for validity.
-    contact_groups = load_group_information().get("contact", {})
+    contact_groups = userdb.load_group_information().get("contact", {})
     timeperiods = load_timeperiods()
-    roles = load_roles()
+    roles = userdb.load_roles()
 
     if phase == "action":
         if not html.check_transaction():
@@ -8055,13 +7985,13 @@ def mode_edit_user(phase):
         new_user["notification_method"] = value
 
         # Custom attributes
-        for name, vs in user_attributes:
-            value = vs.from_html_vars('ua_' + name)
-            vs.validate_value(value, "ua_" + name)
+        for name, attr in userdb.get_user_attributes():
+            value = attr['valuespec'].from_html_vars('ua_' + name)
+            attr['valuespec'].validate_value(value, "ua_" + name)
             new_user[name] = value
 
         # Saving
-        save_users(users)
+        userdb.save_users(users)
         if new:
             log_pending(SYNCRESTART, None, "edit-users", _("Create new user %s" % id))
         else:
@@ -8206,7 +8136,7 @@ def mode_edit_user(phase):
 
                 html.hidden_field("cg_" + gid, is_member and '1' or '')
 
-        if not is_member_of_at_least_one:
+        if is_locked('contactgroups') and not is_member_of_at_least_one:
             html.write('<i>%s</i>' % _('No contact groups assigned.'))
 
     html.help(_("Contact groups are used to assign monitoring "
@@ -8219,7 +8149,7 @@ def mode_edit_user(phase):
     forms.header(_("Notifications"), isopen=False)
 
     forms.section(_("Enabling"), simple=True)
-    html.checkbox("notifications_enabled", user.get("notifications_enabled", True), 
+    html.checkbox("notifications_enabled", user.get("notifications_enabled", False),
          label = _("enable notifications"))
     html.help(_("Notifications are sent out "
                 "when the status of a host or service changes."))
@@ -8279,10 +8209,12 @@ def mode_edit_user(phase):
 
     forms.header(_("Personal Settings"), isopen = False)
     select_language(user.get('language', ''))
-    for name, vs in user_attributes:
-        forms.section(vs.title())
-        vs.render_input("ua_" + name, user.get(name, vs.default_value()))
-        html.help(vs.help())
+    for name, attr in userdb.get_user_attributes():
+        if attr['user_editable']:
+            vs = attr['valuespec']
+            forms.section(vs.title())
+            vs.render_input("ua_" + name, user.get(name, vs.default_value()))
+            html.help(vs.help())
 
     # TODO: Later we could add custom macros here, which
     # then could be used for notifications. On the other hand,
@@ -8300,209 +8232,6 @@ def filter_hidden_users(users):
     else:
         return users
 
-def load_users():
-    # First load monitoring contacts from Check_MK's world
-    filename = root_dir + "contacts.mk"
-    if os.path.exists(filename):
-        try:
-            vars = { "contacts" : {} }
-            execfile(filename, vars, vars)
-            contacts = vars["contacts"]
-        except Exception, e:
-            if config.debug:
-                raise MKGeneralException(_("Cannot read configuration file %s: %s" %
-                              (filename, e)))
-            contacts = {}
-    else:
-        contacts = {}
-
-    # Now add information about users from the Web world
-    filename = multisite_dir + "users.mk"
-    if os.path.exists(filename):
-        try:
-            vars = { "multisite_users" : {} }
-            execfile(filename, vars, vars)
-            users = vars["multisite_users"]
-        except Exception, e:
-            if config.debug:
-                raise MKGeneralException(_("Cannot read configuration file %s: %s" %
-                              (filename, e)))
-            users = {}
-    else:
-        users = {}
-
-    # Merge them together. Monitoring users not known to Multisite
-    # will be added later as normal users.
-    result = {}
-    for id, user in users.items():
-        profile = contacts.get(id, {})
-        profile.update(user)
-        result[id] = profile
-
-    # This loop is only neccessary if someone has edited
-    # contacts.mk manually. But we want to support that as
-    # far as possible.
-    for id, contact in contacts.items():
-        if id not in result:
-            result[id] = contact
-            result[id]["roles"] = [ "user" ]
-            result[id]["locked"] = True
-            result[id]["password"] = ""
-
-    # Passwords are read directly from the apache htpasswd-file.
-    # That way heroes of the command line will still be able to
-    # change passwords with htpasswd. Users *only* appearing
-    # in htpasswd will also be loaded and assigned to the role
-    # they are getting according to the multisite old-style
-    # configuration variables.
-
-    filename = defaults.htpasswd_file
-    if os.path.exists(filename):
-        for line in file(filename):
-            line = line.strip()
-            if ':' in line:
-                id, password = line.strip().split(":")[:2]
-                if password.startswith("!"):
-                    locked = True
-                    password = password[1:]
-                else:
-                    locked = False
-                if id in result:
-                    result[id]["password"] = password
-                    result[id]["locked"] = locked
-                else:
-                    # Create entry if this is an admin user
-                    new_user = {
-                        "roles"    : config.roles_of_user(id),
-                        "password" : password,
-                        "locked"   : False,
-                    }
-                    result[id] = new_user
-                # Make sure that the user has an alias
-                result[id].setdefault("alias", id)
-            # Other unknown entries will silently be dropped. Sorry...
-
-    # Now read the serials, only process for existing users
-    serials_file = '%s/auth.serials' % os.path.dirname(defaults.htpasswd_file)
-    if os.path.exists(serials_file):
-        for line in file(serials_file):
-            line = line.strip()
-            if ':' in line:
-                user_id, serial = line.split(':')[:2]
-                if user_id in result:
-                    result[user_id]['serial'] = saveint(serial)
-
-    # Now read the user specific files
-    dir = defaults.var_dir + "/web/"
-    for d in os.listdir(dir):
-        if d[0] != '.':
-            id = d
-
-            # read automation secrets and add them to existing
-            # users or create new users automatically
-            secret_file = dir + d + "/automation.secret"
-            if os.path.exists(secret_file):
-                secret = file(secret_file).read().strip()
-                if id in result:
-                    result[id]["automation_secret"] = secret
-                else:
-                    result[id] = {
-                        "roles" : ["guest"],
-                        "automation_secret" : secret,
-                    }
-
-    return result
-
-def split_dict(d, keylist, positive):
-    return dict([(k,v) for (k,v) in d.items() if (k in keylist) == positive])
-
-def save_users(profiles):
-    custom_values = [ name for (name, vs) in user_attributes ]
-
-    # Keys not to put into contact definitions for Check_MK
-    non_contact_keys = [
-        "roles",
-        "password",
-        "locked",
-        "automation_secret",
-        "language",
-        "serial",
-        "connector",
-    ] + custom_values
-
-    # Keys to put into multisite configuration
-    multisite_keys   = [
-        "roles",
-        "locked",
-        "automation_secret",
-        "alias",
-        "language",
-        "connector",
-    ] + custom_values
-
-    # Remove multisite keys in contacts.
-    contacts = dict(
-        e for e in 
-            [ (id, split_dict(user, non_contact_keys + userdb.non_contact_attributes(user.get('connector')), False))
-               for (id, user)
-               in profiles.items() ])
-
-    # Only allow explicitely defined attributes to be written to multisite config
-    users = {}
-    for uid, profile in profiles.items():
-        users[uid] = dict([ (p, val)
-                            for p, val in profile.items()
-                            if p in multisite_keys + userdb.multisite_attributes(profile.get('connector'))])
-
-    # Check_MK's monitoring contacts
-    filename = root_dir + "contacts.mk"
-    out = create_user_file(filename, "w")
-    out.write("# Written by WATO\n# encoding: utf-8\n\n")
-    out.write("contacts.update(\n%s\n)\n" % pprint.pformat(contacts))
-
-    # Users with passwords for Multisite
-    make_nagios_directory(multisite_dir)
-    filename = multisite_dir + "users.mk"
-    out = create_user_file(filename, "w")
-    out.write("# Written by WATO\n# encoding: utf-8\n\n")
-    out.write("multisite_users = \\\n%s\n" % pprint.pformat(users))
-
-    # Execute user connector save hooks
-    userdb.hook_save(profiles)
-
-    # Write out the users serials
-    serials_file = '%s/auth.serials' % os.path.dirname(defaults.htpasswd_file)
-    out = create_user_file(serials_file, "w")
-    for user_id, user in profiles.items():
-        out.write('%s:%d\n' % (user_id, user.get('serial', 0)))
-    out.close()
-
-    # Write user specific files
-    for id, user in profiles.items():
-        user_dir = defaults.var_dir + "/web/" + id
-        make_nagios_directory(user_dir)
-
-        # authentication secret for local processes
-        auth_file = user_dir + "/automation.secret"
-        if "automation_secret" in user:
-            create_user_file(auth_file, "w").write("%s\n" % user["automation_secret"])
-        elif os.path.exists(auth_file):
-            os.remove(auth_file)
-
-        # Write out the users serial
-        serial_file = user_dir + '/serial.mk'
-        create_user_file(serial_file, 'w').write('%d\n' % user.get('serial', 0))
-
-    # Remove settings directories of non-existant users
-    dir = defaults.var_dir + "/web"
-    for e in os.listdir(dir):
-        if e not in ['.', '..'] and e not in profiles: 
-            entry = dir + "/" + e
-            if os.path.isdir(entry):
-                shutil.rmtree(entry)
-
-    # Call the users_saved hook
-    call_hook_users_saved(users)
 
 # Dropdown for choosing a multisite user
 class UserSelection(ElementSelection):
@@ -8510,7 +8239,7 @@ class UserSelection(ElementSelection):
         ElementSelection.__init__(self, **kwargs)
 
     def get_elements(self):
-        users = filter_hidden_users(load_users())
+        users = filter_hidden_users(userdb.load_users())
         elements = dict([ (name, "%s - %s" % (name, us.get("alias", name))) for (name, us) in users.items() ])
         return elements
 
@@ -8554,8 +8283,8 @@ def mode_roles(phase):
         html.context_button(_("Matrix"), make_link([("mode", "role_matrix")]), "matrix")
         return
 
-    roles = load_roles()
-    users = filter_hidden_users(load_users())
+    roles = userdb.load_roles()
+    users = filter_hidden_users(userdb.load_users())
 
     if phase == "action":
         if html.var("_delete"):
@@ -8594,30 +8323,17 @@ def mode_roles(phase):
             else:
                 return None
 
-
-    html.write("<h3>" + _("Roles") + "</h3>")
-    html.write("<table class=data>")
-    html.write("<tr>"
-             + "<th>" + _("Actions")       + "</th>"
-             + "<th>" + _("Name")          + "</th>"
-             + "<th>" + _("Alias")         + "</th>"
-             + "<th>" + _("Type")          + "</th>"
-             + "<th>" + _("Modifications") + "</th>"
-             + "<th>" + _("Users")         + "</th>"
-             + "</tr>\n")
-
+    table.begin(_("Roles"))
 
     # Show table of builtin and user defined roles
     entries = roles.items()
     entries.sort(cmp = lambda a,b: cmp((a[1]["alias"],a[0]), (b[1]["alias"],b[0])))
 
-    odd = "even"
     for id, role in entries:
-        odd = odd == "odd" and "even" or "odd"
-        html.write('<tr class="data %s0">' % odd)
+        table.row()
 
         # Actions
-        html.write("<td>")
+        table.cell(_("Actions"), css="buttons")
         edit_url = make_link([("mode", "edit_role"), ("edit", id)])
         clone_url = html.makeactionuri([("_clone", id)])
         delete_url = html.makeactionuri([("_delete", id)])
@@ -8625,33 +8341,35 @@ def mode_roles(phase):
         html.icon_button(clone_url, _("Clone"), "clone")
         if not role.get("builtin"):
             html.icon_button(delete_url, _("Delete this role"), "delete")
-        html.write("</td>")
 
         # ID
-        html.write("<td>%s</td>" % id)
+        table.cell(_("Name"), id)
 
         # Alias
-        html.write("<td>%s</td>" % role["alias"])
+        table.cell(_("Alias"), role["alias"])
 
         # Type
-        html.write("<td>%s</td>" % (role.get("builtin") and _("builtin") or _("custom")))
+        table.cell(_("Type"), role.get("builtin") and _("builtin") or _("custom"))
 
         # Modifications
-        html.write("<td><span title='%s'>%s</span></td>" % (
-            _("That many permissions do not use the factory defaults."), len(role["permissions"])))
+        table.cell(_("Modifications"), "<span title='%s'>%s</span>" % ( 
+            _("That many permissions do not use the factory defaults."), len(role["permissions"]))) 
 
         # Users
-        html.write("<td>%s</td>" %
+        table.cell(_("Users"), 
           ", ".join([ '<a href="%s">%s</a>' % (make_link([("mode", "edit_user"), ("edit", user_id)]),
              user.get("alias", user_id))
             for (user_id, user) in users.items() if (id in user["roles"])]))
 
-        html.write("</tr>\n")
 
     # Possibly we could also display the following information
     # - number of set permissions (needs loading users)
     # - number of users with this role
-    html.write("</table>")
+    table.end() 
+
+
+
+    
 
 def mode_edit_role(phase):
     id = html.var("edit")
@@ -8663,7 +8381,7 @@ def mode_edit_role(phase):
         html.context_button(_("All Roles"), make_link([("mode", "roles")]), "back")
         return
 
-    roles = load_roles()
+    roles = userdb.load_roles()
     role = roles[id]
 
     if phase == "action":
@@ -8780,50 +8498,6 @@ def make_unicode(s):
     else:
 	return s
 
-
-def load_roles():
-    # Fake builtin roles into user roles.
-    builtin_role_names = {  # Default names for builtin roles
-        "admin" : _("Administrator"),
-        "user"  : _("Normal monitoring user"),
-        "guest" : _("Guest user"),
-    }
-    roles = dict([(id, {
-         "alias" : builtin_role_names.get(id, id),
-         "permissions" : {}, # use default everywhere
-         "builtin": True})
-                  for id in config.builtin_role_ids ])
-
-    filename = multisite_dir + "roles.mk"
-    if not os.path.exists(filename):
-        return roles
-
-    try:
-        vars = { "roles" : roles }
-        execfile(filename, vars, vars)
-        # Make sure that "general." is prefixed to the general permissions
-        # (due to a code change that converted "use" into "general.use", etc.
-        for role in roles.values():
-            for pname, pvalue in role["permissions"].items():
-                if "." not in pname:
-                    del role["permissions"][pname]
-                    role["permissions"]["general." + pname] = pvalue
-
-        # Reflect the data in the roles dict kept in the config module needed
-        # for instant changes in current page while saving modified roles.
-        # Otherwise the hooks would work with old data when using helper
-        # functions from the config module
-        config.roles.update(vars['roles'])
-
-        return vars["roles"]
-
-    except Exception, e:
-        if config.debug:
-            raise MKGeneralException(_("Cannot read configuration file %s: %s" %
-                          (filename, e)))
-        return roles
-
-
 def save_roles(roles):
     # Reflect the data in the roles dict kept in the config module Needed
     # for instant changes in current page while saving modified roles.
@@ -8844,13 +8518,13 @@ def save_roles(roles):
 # be renamed and are not handled here. If new_id is None,
 # the role is being deleted
 def rename_user_role(id, new_id):
-    users = load_users()
+    users = userdb.load_users()
     for user in users.values():
         if id in user["roles"]:
             user["roles"].remove(id)
             if new_id:
                 user["roles"].append(new_id)
-    save_users(users)
+    userdb.save_users(users)
 
 def mode_role_matrix(phase):
     if phase == "title":
@@ -8864,7 +8538,7 @@ def mode_role_matrix(phase):
         return
 
     # Show table of builtin and user defined roles, sorted by alias
-    roles = load_roles()
+    roles = userdb.load_roles()
     role_list = roles.items()
     role_list.sort(cmp = lambda a,b: cmp((a[1]["alias"],a[0]), (b[1]["alias"],b[0])))
 
@@ -9030,32 +8704,22 @@ def mode_hosttags(phase):
             ])
 
     else:
-        html.write("<h3>" + _("Host tag groups") + "</h3>")
-        html.help(_("Host tags are the basis of Check_MK's rule based configuration. "
-                    "If the first step you define arbitrary tag groups. A host "
-                    "has assigned exactly one tag out of each group. These tags can "
-                    "later be used for defining parameters for hosts and services, "
-                    "such as <i>disable notifications for all hosts with the tags "
-                    "<b>Network device</b> and <b>Test</b></i>."))
+        table.begin(_("Host tag groups"),
+                    help = (_("Host tags are the basis of Check_MK's rule based configuration. "
+                             "If the first step you define arbitrary tag groups. A host "
+                             "has assigned exactly one tag out of each group. These tags can "
+                             "later be used for defining parameters for hosts and services, "
+                             "such as <i>disable notifications for all hosts with the tags "
+                             "<b>Network device</b> and <b>Test</b></i>.")),
+                    empty_text = _("You haven't defined any tag groups yet."))
 
         if hosttags:
-            html.write("<table class=data>")
-            html.write("<tr>" +
-                       "<th>" + _("Actions") + "</th>"
-                       "<th>" + _("ID") + "</th>"
-                       "<th>" + _("Title") + "</th>"
-                       "<th>" + _("Type") + "</th>"
-                       "<th>" + _("Choices") + "</th>"
-                       "<th>" + _("Demonstration") + "</th>"
-                       "</tr>")
-            odd = "even"
             for nr, entry in enumerate(hosttags):
                 tag_id, title, choices = entry[:3] # forth: dependency information
-                odd = odd == "odd" and "even" or "odd"
-                html.write('<tr class="data %s0">' % odd)
+                table.row() 
                 edit_url     = make_link([("mode", "edit_hosttag"), ("edit", tag_id)])
                 delete_url   = html.makeactionuri([("_delete", tag_id)])
-                html.write("<td>")
+                table.cell(_("Actions"), css="buttons")
                 if nr == 0:
                     html.empty_icon_button()
                 else:
@@ -9068,52 +8732,35 @@ def mode_hosttags(phase):
                                 _("Move this tag group one position down"), "down")
                 html.icon_button(edit_url,   _("Edit this tag group"), "edit")
                 html.icon_button(delete_url, _("Delete this tag group"), "delete")
-                html.write("</td>")
-                html.write("<td>%s</td>" % tag_id)
-                html.write("<td>%s</td>" % title)
-                html.write("<td>%s</td>" % (len(choices) == 1 and _("Checkbox") or _("Dropdown")))
-                html.write("<td class=number>%d</td>" % len(choices))
-                html.write("<td>")
+
+                table.cell(_("ID"), tag_id)
+                table.cell(_("Title"), title) 
+                table.cell(_("Type"), (len(choices) == 1 and _("Checkbox") or _("Dropdown")))
+                table.cell(_("Choices"), str(len(choices)))
+                table.cell(_("Demonstration"))
                 html.begin_form("tag_%s" % tag_id)
                 host_attribute["tag_%s" % tag_id].render_input(None)
                 html.end_form()
-                html.write("</td>")
+        table.end()
 
-                html.write("</tr>")
-            html.write("</table>")
-
-        else:
-            html.write("<div class=info>%s</div>" % _("You haven't defined any tag groups yet."))
-
-        html.write("<h3>" + _("Auxiliary tags") + "</h3>")
-        html.help(_("Auxiliary tags can be attached to other tags. That way "
-                    "you can for example have all hosts with the tag <tt>cmk-agent</tt> "
-                    "get also the tag <tt>tcp</tt>. This makes the configuration of "
-                    "your hosts easier."))
+        table.begin(_("Auxiliary tags"),
+                    help = _("Auxiliary tags can be attached to other tags. That way "
+                             "you can for example have all hosts with the tag <tt>cmk-agent</tt> "
+                             "get also the tag <tt>tcp</tt>. This makes the configuration of "
+                             "your hosts easier."),
+                    empty_text = _("You haven't defined any auxiliary tags."))
 
         if auxtags:
-            html.write("<table class=data>")
-            html.write("<tr>" +
-                       "<th>" + _("Actions") + "</th>"
-                       "<th>" + _("ID") + "</th>"
-                       "<th>" + _("Title") + "</th>"
-                       "</tr>")
-            odd = "even"
+            table.row()
             for nr, (tag_id, title) in enumerate(auxtags):
-                odd = odd == "odd" and "even" or "odd"
-                html.write('<tr class="data %s0">' % odd)
                 edit_url     = make_link([("mode", "edit_auxtag"), ("edit", nr)])
                 delete_url   = html.makeactionuri([("_delaux", nr)])
-                html.write("<td class=buttons>")
+                table.cell(_("Actions"), css="buttons")
                 html.icon_button(edit_url, _("Edit this auxiliary tag"), "edit")
                 html.icon_button(delete_url, _("Delete this auxiliary tag"), "delete")
-                html.write("</td>")
-                html.write("<td>%s</td>" % tag_id)
-                html.write("<td>%s</td>" % title)
-                html.write("</tr>")
-            html.write("</table>")
-        else:
-            html.write("<div class=info>%s</div>" % _("You haven't defined any auxiliary tags."))
+                table.cell(_("ID"), tag_id)
+                table.cell(_("Title"), title)
+        table.end()
 
 
 def mode_edit_auxtag(phase):
@@ -9736,7 +9383,7 @@ def change_host_tags_in_rules(folder, operations, mode):
 #   '----------------------------------------------------------------------'
 
 vs_rule_options = Dictionary(
-    title = _("General options"),
+    title = _("Additional options"),
     optional_keys = False,
     render = "form",
     elements = [
@@ -9751,7 +9398,7 @@ vs_rule_options = Dictionary(
         ),
         ( "docu_url",
           TextAscii(
-            title = _("Docu-URL"),
+            title = _("Documentation-URL"),
             help = _("An optional URL pointing to documentation or any other page. This will be displayed "
                      "as an icon <img class=icon src='images/button_url_lo.png'> and open a new page when clicked. "
                      "You can use either global URLs (beginning with <tt>http://</tt>), absolute local urls "
@@ -9777,7 +9424,7 @@ def mode_ruleeditor(phase):
         if only_host:
             return _("Rules effective on host ") + only_host
         else:
-            return _("Configuration of Hosts and Services (Ruleeditor)")
+            return _("Rule-Based Configuration of Host &amp; Service Parameters")
 
     elif phase == "buttons":
         global_buttons()
@@ -9987,7 +9634,7 @@ def mode_rulesets(phase):
     html.write('</div>')
 
 def create_new_rule_form(rulespec, hostname = None, item = None):
-    html.begin_form("new_rule")
+    html.begin_form("new_rule", add_transid = False)
 
     html.write('<table>')
     if hostname:
@@ -9997,9 +9644,10 @@ def create_new_rule_form(rulespec, hostname = None, item = None):
             label += _(" and %s '%s'") % (rulespec["itemname"], item)
             ty = rulespec["itemname"]
 
-        title = _("Create %s specific rule for: ") % ty
         html.write('<tr><td>')
-        html.button("_new_host_rule", title)
+        html.button("_new_host_rule", _("Create %s specific rule for: ") % ty)
+        html.hidden_field("host", hostname)
+        html.hidden_field("item", mk_repr(item))
         html.write('</td><td style="vertical-align:middle">')
         html.write(label)
         html.write('</td></tr>\n')
@@ -10007,9 +9655,11 @@ def create_new_rule_form(rulespec, hostname = None, item = None):
     html.write('<tr><td>')
     html.button("_new_rule", _("Create rule in folder: "))
     html.write('</td><td>')
-    html.select("folder", folder_selection(g_root_folder))
+
+    html.select("rule_folder", folder_selection(g_root_folder))
     html.write('</td></tr></table>\n')
-    html.hidden_fields()
+    html.hidden_field("varname", html.var("varname"))
+    html.hidden_field("mode", "new_rule")
     html.end_form()
 
 def mode_edit_ruleset(phase):
@@ -10054,22 +9704,6 @@ def mode_edit_ruleset(phase):
         check_folder_permissions(rule_folder, "write", True)
         rulesets = load_rulesets(rule_folder)
         rules = rulesets.get(varname, [])
-
-        if html.var("_new_rule") or html.var("_new_host_rule"):
-            if html.check_transaction():
-                if html.var("_new_rule"):
-                    hostname = None
-                    item = NO_ITEM
-                new_rule = create_rule(rulespec, hostname, item)
-                if hostname:
-                    rules[0:0] = [new_rule]
-                else:
-                    rules.append(new_rule)
-                save_rulesets(rule_folder, rulesets)
-                mark_affected_sites_dirty(rule_folder)
-                log_pending(AFFECTED, None, "edit-ruleset",
-                      _("Created new rule in ruleset %s in folder %s") % (rulespec["title"], rule_folder["title"]))
-            return
 
         rulenr = int(html.var("_rulenr")) # rule number relativ to folder
         action = html.var("_action")
@@ -10125,7 +9759,8 @@ def mode_edit_ruleset(phase):
     if not hostname:
         render_folder_path(keepvarnames = ["mode", "varname"])
 
-    html.write("<h3>" + rulespec["title"] + "</h3>")
+    # Titel ist schon Seitentitel
+    # html.write("<h3>" + rulespec["title"] + "</h3>")
     if not config.wato_hide_varnames:
         display_varname = ':' in varname and '%s["%s"]' % tuple(varname.split(":")) or varname
         html.write('<div class=varname>%s</div>' % display_varname)
@@ -10140,73 +9775,39 @@ def mode_edit_ruleset(phase):
 
     else:
         html.write('<table class="data ruleset">')
-        html.write("<tr>"
-                   "<th>" + _("#") + "</th>"
-                   "<th>" + _("Actions") + "</th>"
-                   "<th>" + _("Act.") + "</th>"
-                   "<th>" + _("Comment") + "</th>"
-                   "<th>" + _("Folder") + "</th>"
-                   "<th>" + _("Value") + "</th>"
-                   "<th>" + _("Conditions") + "</th>"
-                   "<th></th>" # Several icons
-                   "</tr>\n")
 
-        odd = "odd"
         alread_matched = False
         match_keys = set([]) # in case if match = "dict"
         last_folder = None
+
         for rulenr in range(0, len(ruleset)):
             folder, rule = ruleset[rulenr]
             if folder != last_folder:
                 first_in_group = True
+                alias_path = get_folder_aliaspath(folder, show_main = False)
+                table.begin(title = "%s %s" % (_("Rules in folder"), alias_path), css="ruleset")
                 rel_rulenr = 0
-                # Count how many of the following rules are located in the same
-                # folder
-                row_span = 1
-                while rulenr + row_span < len(ruleset) and ruleset[rulenr + row_span][0] == folder:
-                    row_span += 1
                 last_folder = folder
             else:
                 first_in_group = False
-            last_in_group = rulenr == len(ruleset) - 1 or ruleset[rulenr+1][0] != folder
+                rel_rulenr += 1
 
-            odd = odd == "odd" and "even" or "odd"
+            last_in_group = (rulenr == len(ruleset) - 1 or \
+                ruleset[rulenr+1][0] != folder)
+            
             value, tag_specs, host_list, item_list, rule_options = parse_rule(rulespec, rule)
-            html.write('<tr class="data %s0">' % odd)
+            disabled = rule_options.get("disabled")
+            table.row(disabled and "disabled" or None)
 
-            # Rule number
-            html.write("<td class=number>%d</td>" % (rulenr + 1))
 
-            # Actions
-            html.write("<td class=\"buttons rulebuttons\">")
-            if not first_in_group:
-                rule_button("up", _("Move this rule one position up"), folder, rel_rulenr)
-            else:
-                rule_button(None)
-            if not last_in_group:
-                rule_button("down", _("Move this rule one position down"), folder, rel_rulenr)
-            else:
-                rule_button(None)
-            edit_url = make_link([
-                ("mode", "edit_rule"),
-                ("varname", varname),
-                ("rulenr", rel_rulenr),
-                ("host", hostname),
-                ("item", mk_repr(item)),
-                ("rule_folder", folder[".path"])])
-            html.icon_button(edit_url, _("Edit this rule"), "edit")
-            rule_button("insert", _("Insert a copy of this rule into the folder '%s'")
-                        % g_folder["title"], folder, rel_rulenr)
-            rule_button("delete", _("Delete this rule"), folder, rel_rulenr)
-            html.write("</td>")
-
-            # Disabling and rule matching 
-            html.write("<td class=buttons>")
-            if rule_options.get("disabled"):
-                html.icon(_("This rule is currently disabled and will not be applied"), "disabled")
-            elif hostname:
-                reason = rule_matches_host_and_item(
-                    rulespec, tag_specs, host_list, item_list, folder, g_folder, hostname, item)
+            # Rule matching
+            if hostname:
+                table.cell(_("Ma."))
+                if disabled:
+                    reason = _("This rule is disabled")
+                else:
+                    reason = rule_matches_host_and_item(
+                        rulespec, tag_specs, host_list, item_list, folder, g_folder, hostname, item)
 
                 # Handle case where dict is constructed from rules
                 if reason == True and rulespec["match"] == "dict":
@@ -10242,24 +9843,54 @@ def mode_edit_ruleset(phase):
                     title = _("This rule does not match: %s") % reason
                     img = 'nmatch'
                 html.write('<img align=absmiddle title="%s" class=icon src="images/icon_rule%s.png"> ' % (title, img))
-            html.write("</td>")
 
-            # Comment
-            html.write('<td>')
-            url = rule_options.get("docu_url")
-            if url:
-                html.icon_button(url, _("Context information about this rule"), "url", target="_blank")
-            html.write(htmllib.attrencode(rule_options.get("comment", "")))
-            html.write('</td>')
+            # Disabling
+            table.cell("", css="buttons")
+            if disabled:
+                html.icon(_("This rule is currently disabled and will not be applied"), "disabled")
+            else:
+                html.empty_icon()
+
+            # Actions
+            table.cell(_("Order"), css="buttons rulebuttons")
+            if not first_in_group:
+                rule_button("up", _("Move this rule one position up"), folder, rel_rulenr)
+            else:
+                rule_button(None)
+            if not last_in_group:
+                rule_button("down", _("Move this rule one position down"), folder, rel_rulenr)
+            else:
+                rule_button(None)
+
+            table.cell(_("Actions"), css="buttons rulebuttons")
+            edit_url = make_link([
+                ("mode", "edit_rule"),
+                ("varname", varname),
+                ("rulenr", rel_rulenr),
+                ("host", hostname),
+                ("item", mk_repr(item)),
+                ("rule_folder", folder[".path"])])
+            html.icon_button(edit_url, _("Edit this rule"), "edit")
+            rule_button("insert", _("Insert a copy of this rule into the folder '%s'")
+                        % g_folder["title"], folder, rel_rulenr)
+            rule_button("delete", _("Delete this rule"), folder, rel_rulenr)
 
 
             # Folder
-            if first_in_group:
-                alias_path = get_folder_aliaspath(folder, show_main = False)
-                html.write('<td rowspan=%d>%s</td>' % (row_span, alias_path))
+            # alias_path = get_folder_aliaspath(folder, show_main = False)
+            # classes = ""
+            # if first_in_group:
+            #     classes += "first"
+            # if last_in_group:
+            #     classes += " last"
+            # html.write('<td class="folder %s"><table><tr><td>%s</td></tr></table></td>' % (classes, alias_path))
+
+            # Conditions
+            table.cell(_("Conditions"), css="condition")
+            render_conditions(rulespec, tag_specs, host_list, item_list, varname, folder)
 
             # Value
-            html.write('<td class=value>\n')
+            table.cell(_("Value"))
 
             if rulespec["valuespec"]:
                 try:
@@ -10278,30 +9909,19 @@ def mode_edit_ruleset(phase):
                 img = value and "yes" or "no"
                 title = value and _("This rule results in a positive outcome.") \
                               or  _("this rule results in a negative outcome.")
-                value_html = '<img align=absmiddle title="%s" src="images/rule_%s.png">' % (title, img)
-            html.write('%s</td>\n' % value_html)
+                value_html = '<img align=absmiddle class=icon title="%s" src="images/rule_%s.png">' \
+                                % (title, img)
+            html.write(value_html)
 
-            # Conditions
-            html.write("<td>")
-            render_conditions(rulespec, tag_specs, host_list, item_list, varname, folder)
-            html.write("</td>")
+            # Comment
+            table.cell(_("Comment"))
+            url = rule_options.get("docu_url")
+            if url:
+                html.icon_button(url, _("Context information about this rule"), "url", target="_blank")
+                html.write("&nbsp;")
+            html.write(htmllib.attrencode(rule_options.get("comment", "")))
 
-            # Icons
-            html.write("<td>")
-            # "this folder"
-            if not hostname and folder == g_folder:
-                title = _("This rule is defined in the current folder.")
-                html.write('<img title="%s" class=icon src="images/icon_localrule.png">' % title)
-            elif hostname and hostname in host_list:
-                title = _("This rule contains an exception for the host %s." % hostname)
-                html.write('<img title="%s" class=icon src="images/icon_localrule.png">' % title)
-            else:
-                html.write('<img src="images/icon_trans.png" class=icon>')
-
-            html.write("</td>")
-            rel_rulenr += 1
-
-        html.write('</table>')
+        table.end()
 
     create_new_rule_form(rulespec, hostname, item)
 
@@ -10451,16 +10071,20 @@ def construct_rule(ruleset, value, tag_specs, host_list, item_list, rule_options
     if item_list != None:
         rule.append(item_list)
 
-    # Append rule options, but only if they are not trivial
+    # Append rule options, but only if they are not trivial. That way we 
+    # keep as close as possible to the original Check_MK in rules.mk so that
+    # command line users will feel at home...
     ro = {}
     if rule_options.get("disabled"):
         ro["disabled"] = True
     if rule_options.get("comment"):
         ro["comment"] = rule_options["comment"]
+    if rule_options.get("docu_url"):
+        ro["docu_url"] = rule_options["docu_url"]
 
     # Preserve other keys that we do not know of
     for k,v in rule_options.items():
-        if k not in [ "disabled", "comment"] :
+        if k not in [ "disabled", "comment", "docu_url"]:
             ro[k] = v
     if ro:
         rule.append(ro)
@@ -10605,32 +10229,48 @@ def get_rule_conditions(ruleset):
     return tag_list, host_list, item_list
 
 
-def mode_edit_rule(phase):
-    rulenr = int(html.var("rulenr"))
+
+def mode_edit_rule(phase, new = False):
     varname = html.var("varname")
     rulespec = g_rulespecs[varname]
 
     if phase == "title":
-        return _("Edit rule %s") % rulespec["title"]
+        return _("%s rule %s") % (new and _("New") or _("Edit"), rulespec["title"])
 
     elif phase == "buttons":
-        html.context_button(_("Abort"),
-             make_link([("mode", "edit_ruleset"),
-                        ("varname", varname),
-                        ("host", html.var("host", "")),
-                        ("item", html.var("item", "None"))]), "abort")
+        var_list = [("mode", "edit_ruleset"), ("varname", varname), ("host", html.var("host",""))] 
+        if html.var("item"):        
+            var_list.append( ("item", html.var("item")) )
+        html.context_button(_("Abort"), make_link(var_list), "abort")
         return
 
-    folder = g_folders[html.var("rule_folder")]
+    folder   = html.has_var("_new_host_rule") and g_folder or g_folders[html.var("rule_folder")]
     rulesets = load_rulesets(folder)
-    rules = rulesets[varname]
-    rule = rules[rulenr]
+    rules    = rulesets[varname]
+
+    if new:
+        host = None
+        item = NO_ITEM
+        if html.has_var("_new_host_rule"):
+            host = html.var("host")
+            item = html.has_var("item") and mk_eval(html.var("item")) or NO_ITEM 
+        try:
+            rule     = create_rule(rulespec, host, item)
+        except Exception, e:
+            if phase != "action":
+                html.message(_("Cannot create rule: %s") % e)
+            return
+        rulenr   = len(rules) 
+    else:
+        rulenr   = int(html.var("rulenr"))
+        rule     = rules[rulenr]
+
     valuespec = rulespec.get("valuespec")
     value, tag_specs, host_list, item_list, rule_options = parse_rule(rulespec, rule)
 
     if phase == "action":
         if html.check_transaction():
-            # General options
+            # Additional options
             rule_options = vs_rule_options.from_html_vars("options")
             vs_rule_options.validate_value(rule_options, "options")
 
@@ -10649,13 +10289,22 @@ def mode_edit_rule(phase):
                 value = html.var("value") == "yes"
             rule = construct_rule(rulespec, value, tag_specs, host_list, item_list, rule_options)
             if new_rule_folder == folder:
-                rules[rulenr] = rule
+                if new:
+                    rules.append(rule)
+                else:
+                    rules[rulenr] = rule
                 save_rulesets(folder, rulesets)
                 mark_affected_sites_dirty(folder)
-                log_pending(AFFECTED, None, "edit-rule", _("Changed properties of rule %s in folder %s") %
-                        (rulespec["title"], folder["title"]))
+
+                if new:
+                    log_pending(AFFECTED, None, "edit-rule", _("Created new rule in ruleset %s in folder %s") % 
+                               (rulespec["title"], new_rule_folder["title"]))
+                else:
+                    log_pending(AFFECTED, None, "edit-rule", _("Changed properties of rule %s in folder %s") %
+                               (rulespec["title"], new_rule_folder["title"]))
             else: # Move rule to new folder
-                del rules[rulenr]
+                if not new: 
+                    del rules[rulenr]
                 save_rulesets(folder, rulesets)
                 rulesets = load_rulesets(new_rule_folder)
                 rules = rulesets.setdefault(varname, [])
@@ -10666,36 +10315,15 @@ def mode_edit_rule(phase):
                 log_pending(AFFECTED, None, "edit-rule", _("Changed properties of rule %s, moved rule from "
                             "folder %s to %s") % (rulespec["title"], folder["title"],
                             new_rule_folder["title"]))
+        else:
+            return "edit_ruleset"
 
-        return "edit_ruleset"
+        return ("edit_ruleset",  _("%s rule in ruleset '%s' in folder %s") % 
+                                  (new and _("Created new") or _("Edited"), rulespec["title"], new_rule_folder["title"]))
 
-    html.help(rulespec["help"])
+    html.write("<div class=info>" + rulespec["help"] + "</div>")
 
-    html.begin_form("rule_editor")
-
-    # Rule Options
-    vs_rule_options.render_input("options", rule_options)
-
-    # Value
-    forms.header(_("Value"))
-    if valuespec:
-        value = rule[0]
-        forms.section()
-        try:
-            valuespec.validate_datatype(value, "ve")
-            valuespec.render_input("ve", value)
-        except:
-            if config.debug:
-                raise
-            valuespec.render_input("ve", valuespec.default_value())
-
-        valuespec.set_focus("ve")
-    else:
-        forms.section("")
-        for posneg, img in [ ("positive", "yes"), ("negative", "no")]:
-            val = img == "yes"
-            html.write('<img class=ruleyesno align=top src="images/rule_%s.png"> ' % img)
-            html.radiobutton("value", img, value == val, _("Make the outcome of the ruleset <b>%s</b><br>") % posneg)
+    html.begin_form("rule_editor", method="POST")
 
     # Conditions
     forms.header(_("Conditions"))
@@ -10784,6 +10412,30 @@ def mode_edit_rule(phase):
                              "with <tt>.*</tt><br>Please note that on windows systems any backslashes need to be escaped."
                              "For example C:\\\\tmp\\\\message.log"))
                 html.write("</div>")
+
+    # Value
+    forms.header(_("Value"))
+    if valuespec:
+        value = rule[0]
+        forms.section()
+        try:
+            valuespec.validate_datatype(value, "ve")
+            valuespec.render_input("ve", value)
+        except:
+            if config.debug:
+                raise
+            valuespec.render_input("ve", valuespec.default_value())
+
+        valuespec.set_focus("ve")
+    else:
+        forms.section("")
+        for posneg, img in [ ("positive", "yes"), ("negative", "no")]:
+            val = img == "yes"
+            html.write('<img class=ruleyesno align=top src="images/rule_%s.png"> ' % img)
+            html.radiobutton("value", img, value == val, _("Make the outcome of the ruleset <b>%s</b><br>") % posneg)
+
+    # Addiitonal rule options
+    vs_rule_options.render_input("options", rule_options)
 
     forms.end()
     html.button("save", _("Save"))
@@ -11153,7 +10805,7 @@ def page_user_profile():
     success = None
     if html.has_var('_save') and html.check_transaction():
         try:
-            users = load_users()
+            users = userdb.load_users()
 
             # Profile edit (user options like language etc.)
             if config.may('general.edit_profile'):
@@ -11177,9 +10829,19 @@ def page_user_profile():
                 # load the new language
                 load_language(config.get_language())
 
-            if config.may('general.edit_notifications'):
-                value = forms.get_input(vs_notification_method, "notification_method")
-                users[config.user_id]["notification_method"] = value
+                user = users.get(config.user_id)
+                if config.may('general.edit_notifications') and user.get("notifications_enabled"):
+                    value = forms.get_input(vs_notification_method, "notification_method")
+                    users[config.user_id]["notification_method"] = value
+
+                # Custom attributes
+                if config.may('general.edit_user_attributes'):
+                    for name, attr in userdb.get_user_attributes():
+                        if attr['user_editable']:
+                            vs = attr['valuespec']
+                            value = vs.from_html_vars('ua_' + name)
+                            vs.validate_value(value, "ua_" + name)
+                            users[config.user_id][name] = value
 
             # Change the password if requested
             if config.may('general.change_password'):
@@ -11197,7 +10859,7 @@ def page_user_profile():
                     else:
                         users[config.user_id]['serial'] += 1
 
-            save_users(users)
+            userdb.save_users(users)
             success = True
 
             if password:
@@ -11219,21 +10881,27 @@ def page_user_profile():
     if html.has_user_errors():
         html.show_user_errors()
 
-    users = load_users()
+    users = userdb.load_users()
     user = users.get(config.user_id)
     if user == None:
         html.warning(_("Sorry, your user account does not exist."))
         html.footer()
         return
 
+    # Returns true if an attribute is locked and should be read only. Is only
+    # checked when modifying an existing user
+    locked_attributes = userdb.locked_attributes(user.get('connector'))
+    def is_locked(attr):
+        return attr in locked_attributes
+
     html.begin_form("profile", method="POST")
     html.write('<div class=wato>')
-    
+
     forms.header(_("Personal Settings"))
     forms.section(_("Name"), simple=True)
     html.write(user["alias"])
 
-    if config.may('general.change_password'):
+    if config.may('general.change_password') and not is_locked('password'):
         forms.section(_("Password"))
         html.password_input('password')
 
@@ -11249,6 +10917,13 @@ def page_user_profile():
                         "other monitoring events."))
             vs_notification_method.render_input("notification_method", user.get("notification_method"))
             # forms.input(vs_notification_method, "notification_method", user.get("notification_method"))
+
+        if config.may('general.edit_user_attributes'):
+            for name, attr in userdb.get_user_attributes():
+                vs = attr['valuespec']
+                forms.section(vs.title())
+                vs.render_input("ua_" + name, user.get(name, vs.default_value()))
+                html.help(vs.help())
 
     # Save button
     forms.end()
@@ -11270,14 +10945,23 @@ def page_user_profile():
 #   | Functions for creating an example configuration                      |
 #   '----------------------------------------------------------------------'
 
-# Create a very basic sample configuration, but only if no host tags
-# or rules have been defined *ever*.
+# Create a very basic sample configuration, but only if none of the 
+# files that we will create already exists. That is e.g. the case
+# after an update from an older version where no sample config had
+# been created.
 def create_sample_config():
     if os.path.exists(multisite_dir + "hosttags.mk") \
-        or os.path.exists(root_dir + "rules.mk"):
+        or os.path.exists(root_dir + "rules.mk") \
+        or os.path.exists(root_dir + "groups.mk"):
         return
 
-    # Example values for host tags
+    # A contact group where everyone is member of
+    groups = {
+        "contact" : { 'all' : u'Everybody' },
+    }
+    save_group_information(groups)
+
+    # Basic setting of host tags
     wato_host_tags = \
     [('agent',
       u'Agent type',
@@ -11304,17 +10988,29 @@ def create_sample_config():
 
     save_hosttags(wato_host_tags, wato_aux_tags)
 
-    # Example values for rules
+    # Rules that match the upper host tag definition
     rulesets = { 
+        # Make the tag 'offline' remove hosts from the monitoring
         'only_hosts': [
-            (['!offline'], ['@all'])],
-         'ping_levels': [
+            (['!offline'], ['@all'],
+            {'comment': u'Do not monitor hosts with the tag "offline"'})],
+
+        # Rule for WAN hosts with adapted PING levels
+        'ping_levels': [
             ({'loss': (80.0, 100.0),
               'packets': 6,
               'rta': (1500.0, 3000.0),
-              'timeout': 20}, ['wan'], ['@all'])],
-         'bulkwalk_hosts': [
-            (['!snmp-v1'], ['@all'])],
+              'timeout': 20}, ['wan'], ['@all'],
+              {'comment': u'Allow longer round trip times when pinging WAN hosts'})],
+
+        # All hosts should use SNMP v2c if not specially tagged
+        'bulkwalk_hosts': [
+            (['!snmp-v1'], ['@all'], {'comment': u'Hosts with the tag "snmp-v1" must not use bulkwalk'})],
+
+        # Put all hosts and the contact group 'all'
+        'host_contactgroups': [
+            ('all', [], ALL_HOSTS, {'comment': u'Put all hosts into the contact group "all"'} ),
+        ]
     }
 
     save_rulesets(g_root_folder, rulesets)
@@ -11556,10 +11252,10 @@ def mode_pattern_editor(phase):
 
 class API:
     def register_hook(self, name, func):
-        g_hooks.setdefault(name, []).append(func)
+        hooks.register(name, func)
 
     def get_all_users(self):
-        return load_users()
+        return userdb.load_users()
 
     # Get a (flat) dictionary containing all hosts with their *effective*
     # attributes (containing all inherited and default values where appropriate)
@@ -11726,55 +11422,32 @@ def collect_hosts(folder):
 
     return hosts
 
-def hook_registered(name):
-    """ Returns True if at least one function is registered for the given hook """
-    return g_hooks.get(name, []) != []
-
-def call_hooks(name, *args):
-    n = 0
-    for hk in g_hooks.get(name, []):
-        n += 1
-        try:
-            hk(*args)
-        except Exception, e:
-            if config.debug:
-                import traceback, StringIO
-                txt = StringIO.StringIO()
-                t, v, tb = sys.exc_info()
-                traceback.print_exception(t, v, tb, None, txt)
-                html.show_error("<h3>" + _("Error executing hook") + " %s #%d: %s</h3><pre>%s</pre>" % (name, n, e, txt.getvalue()))
-            else:
-                raise
-
 def call_hook_snapshot_pushed():
-    if "snapshot-pushed" in g_hooks:
-        call_hooks("snapshot-pushed")
+    hooks.call("snapshot-pushed")
 
 def call_hook_hosts_changed(folder):
-    if "hosts-changed" in g_hooks:
+    if hooks.registered("hosts-changed"):
         hosts = collect_hosts(folder)
-        call_hooks("hosts-changed", hosts)
+        hooks.call("hosts-changed", hosts)
 
     # The same with all hosts!
-    if "all-hosts-changed" in g_hooks:
+    if hooks.registered("all-hosts-changed"):
         hosts = collect_hosts(g_root_folder)
-        call_hooks("all-hosts-changed", hosts)
+        hooks.call("all-hosts-changed", hosts)
 
 def call_hook_folder_created(folder):
-    if 'folder-created' in g_hooks:
-        call_hooks("folder-created", folder)
+    hooks.call("folder-created", folder)
 
 def call_hook_folder_deleted(folder):
-    if 'folder-deleted' in g_hooks:
-        call_hooks("folder-deleted", folder)
+    hooks.call("folder-deleted", folder)
 
 # This hook is executed before distributing changes to the remote
 # sites (in distributed WATO) or before activating them (in single-site
 # WATO). If the hook raises an exception, then the distribution and
 # activation is aborted.
 def call_hook_pre_distribute_changes():
-    if hook_registered('pre-distribute-changes'):
-        call_hooks("pre-distribute-changes", collect_hosts(g_root_folder))
+    if hooks.registered('pre-distribute-changes'):
+        hooks.call("pre-distribute-changes", collect_hosts(g_root_folder))
 
 # This hook is executed when one applies the pending configuration changes
 # from wato but BEFORE the nagios restart is executed.
@@ -11785,8 +11458,8 @@ def call_hook_pre_distribute_changes():
 # holds all available with the hostnames as keys and the attributes of
 # the hosts as values.
 def call_hook_pre_activate_changes():
-    if hook_registered('pre-activate-changes'):
-        call_hooks("pre-activate-changes", collect_hosts(g_root_folder))
+    if hooks.registered('pre-activate-changes'):
+        hooks.call("pre-activate-changes", collect_hosts(g_root_folder))
 
 # This hook is executed when one applies the pending configuration changes
 # from wato.
@@ -11798,33 +11471,26 @@ def call_hook_pre_activate_changes():
 # holds all available with the hostnames as keys and the attributes of
 # the hosts as values.
 def call_hook_activate_changes():
-    if hook_registered('activate-changes'):
+    if hooks.registered('activate-changes'):
         hosts = collect_hosts(g_root_folder)
-        call_hooks("activate-changes", hosts)
-
-# This hook is executed when the save_users() function is called
-def call_hook_users_saved(users):
-    if hook_registered('users-saved'):
-        call_hooks("users-saved", users)
+        hooks.call("activate-changes", hosts)
 
 # This hook is executed when the save_roles() function is called
 def call_hook_roles_saved(roles):
-    if hook_registered('roles-saved'):
-        call_hooks("roles-saved", roles)
+    hooks.call("roles-saved", roles)
 
 # This hook is executed when the save_sites() function is called
 def call_hook_sites_saved(sites):
-    if hook_registered('sites-saved'):
-        call_hooks("sites-saved", sites)
+    hooks.call("sites-saved", sites)
 
 # This hook is called in order to determine if a host has a 'valid'
 # configuration. It used for displaying warning symbols in the
 # host list and in the host detail view.
 def validate_host(host, folder):
-    if hook_registered('validate-host'):
+    if hooks.registered('validate-host'):
         errors = []
         eff = effective_attributes(host, folder)
-        for hk in g_hooks.get('validate-host', []):
+        for hk in hooks.get('validate-host'):
             try:
                 hk(eff)
             except MKUserError, e:
@@ -11838,7 +11504,7 @@ def validate_host(host, folder):
 # symbols in the host list and the host detail view
 # Returns dictionary { hostname: [errors] }
 def validate_all_hosts(hostnames, force_all = False):
-    if hook_registered('validate-all-hosts') and (len(hostnames) > 0 or force_all):
+    if hooks.registered('validate-all-hosts') and (len(hostnames) > 0 or force_all):
         hosts_errors = {}
         all_hosts = collect_hosts(g_root_folder)
         
@@ -11848,7 +11514,7 @@ def validate_all_hosts(hostnames, force_all = False):
         for name in hostnames:
             eff = all_hosts[name]
             errors = []
-            for hk in g_hooks.get('validate-all-hosts', []):
+            for hk in hooks.get('validate-all-hosts'):
                 try:
                     hk(eff, all_hosts)
                 except MKUserError, e:
@@ -12065,7 +11731,12 @@ def render_folder_path(the_folder = 0, link_to_last = False, keepvarnames = ["mo
         html.sorted_select(
             "folder", [ ("", "") ] + options,
             onchange = "folderpath.submit();",
-            attrs = {"class" : "folderpath"}
+            attrs = {
+                "class"   : "folderpath", 
+                # This does not work: it prevents the selection from
+                # being unfolded
+                # "onfhocus" : "if (this.blur) this.blur();",
+            }
         )
         for var in keepvarnames:
             html.hidden_field(var, html.var(var))
@@ -12115,7 +11786,8 @@ modes = {
    "ruleeditor"         : (["rulesets"], mode_ruleeditor),
    "rulesets"           : (["rulesets"], mode_rulesets),
    "edit_ruleset"       : (["rulesets"], mode_edit_ruleset),
-   "edit_rule"          : (["rulesets"], mode_edit_rule),
+   "new_rule"           : (["rulesets"], lambda phase: mode_edit_rule(phase, True)),
+   "edit_rule"          : (["rulesets"], lambda phase: mode_edit_rule(phase, False)),
    "host_groups"        : (["groups"], lambda phase: mode_groups(phase, "host")),
    "service_groups"     : (["groups"], lambda phase: mode_groups(phase, "service")),
    "contact_groups"     : (["users"], lambda phase: mode_groups(phase, "contact")),
@@ -12145,13 +11817,11 @@ def load_plugins():
         return
 
     # Reset global vars
-    global extra_buttons, configured_host_tags, host_attributes, user_attributes, \
-           user_attribute
+    global extra_buttons, configured_host_tags, host_attributes
     extra_buttons = []
     configured_host_tags = None
     host_attributes = []
-    user_attributes = []
-    user_attribute = {}
+    userdb.reset_user_attributes()
 
     global g_configvars, g_configvar_groups
     g_configvars = {}
@@ -12163,8 +11833,7 @@ def load_plugins():
     g_rulespec_group = {}
     g_rulespec_groups = []
 
-    global g_hooks
-    g_hooks = {}
+    hooks.unregister()
 
     # Declare WATO-specific permissions
     config.declare_permission_section("wato", _("WATO - Check_MK's Web Administration Tool"))

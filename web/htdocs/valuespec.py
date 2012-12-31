@@ -554,8 +554,7 @@ class ListOfStrings(ValueSpec):
             self._valuespec.render_input(vp + "_%d" % nr, s)
             html.write('</div>')
         html.write('</div>')
-
-        html.final_javascript("list_of_strings_init('%s');" % vp);
+        html.javascript("list_of_strings_init('%s');" % vp);
 
     def canonical_value(self):
         return []
@@ -1907,7 +1906,7 @@ class Dictionary(ValueSpec):
             return self._empty_text
 
         if not oneline:
-            s = '<table>'
+            s = '<table class=vs_dict_text>'
         else:
             s = ""
         elem = self._get_elements()
@@ -1919,7 +1918,7 @@ class Dictionary(ValueSpec):
                         s += ", "
                     s += "%s: %s" % (vs.title(), text)
                 else:
-                    s += "<tr><td>%s</td><td>%s</td></tr>" % (vs.title(), text)
+                    s += "<tr><td>%s:&nbsp;</td><td>%s</td></tr>" % (vs.title(), text)
         if not oneline:
             s += '</table>'
         return s

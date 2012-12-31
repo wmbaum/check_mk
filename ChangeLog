@@ -4,6 +4,9 @@
       exception to status output and traceback to long output now.
     * Added HOSTTAGS to notification macros which contains all Check_MK-Tags
       separated by spaces
+    * Output better error message in case of old inventory function
+    * Do object cache precompile for monitoring core on cmk -R/-O
+    * Avoid duplicate verification of monitoring config on cmk -R/-O
 
     Notifications:
     * Fix flexible notifications on non-OMD systems
@@ -13,6 +16,7 @@
     * Linux Agent, mk_postgres: Fixed database stats query to be compatible
       with more versions of postgres
     * apache_status: Modified to be usable on python < 2.6 (eg RHEL 5.x)
+    * apache_status: Fixed handling of PIDs with more than 4 numbers
     * FIX: postgres_sessions: handle case of no active/no idle sessions
     * FIX: correct backslash representation of windows logwatch files
     * Add: New Check for Rittal CMC PSM-M devices
@@ -23,13 +27,27 @@
     * Add: Check to monitor Storage System Drive Box Groups attached to HP servers
     * Add: check to monitor the summary status of HP EML tape libraries
     * Add: apc_rackpdu_status - monitor the power consumption on APC rack PDUs
+    * Add: sym_brightmail_queues - monitor the queue levels on Symantec Brightmail mail scanners.
+    * Add: plesk_domains - List domains configured in plesk installations
+    * Add: plesk_backups - Monitor backup spaces configured for domains in plesk
+    * Add: mysql_connections - Monitor number of parallel connections to mysql daemon
+    * FIX: zfsget: fix exception on snapshot volumes (where available is '-')
+    * FIX: zfsget: handle passed-through filesystems (need agent update)
+    * FIX: loading notification scripts in local directory for real
+    * FIX: oracle_version: return valid check result in case of missing agent info
+    * FIX: apache_status: fixed bug with missing 'url', wrote man page
+    * Add: flexible notifcations: filter by hostname
+    * FIX: fixed missing localisation in check_parameteres.py 
+    * FIX: userdb/ldap.py: fixed invalid call site.getsitepackages() for python 2.6
+    * FIX: zpool_status: fixed crash when spare devices were available
+    * FIX: hr_fs: handle negative values in order to larger disks (thanks to Christof Musik)
+
 
     Multisite:
     * Implemented LDAP integration of Multisite. You can now authenticate your
       users using the form based authentication with LDAP. It is also possible
       to synchronize some attributes like mail addresses, names and roles from
       LDAP into multisite.
-    * Modularized the authentication and user management code in WATO
     * Restructured cookie auth cookies (all auth cookies will be invalid
       after update -> all users have to login again)
     * Modularized login and cookie validation
@@ -42,19 +60,38 @@
     * Use pprint when writing global settings (makes files more readable)
     * New script for settings/removing downtimes: doc/treasures/downtime
     * New option when setting host downtimes for also including child hosts
+    * FIX: Fixed changing own password when notifications are disabled
+    * FIX: On page reload, now updating the row field in the headline
+    * FIX: ListOfStrings Fields now correctly autoappend on focus
+    * FIX: Reloading of sidebar after activate changes
+    * FIX: Main Frame without sidebar: reload after activate changes
+    * FIX: output_format json: handle newlines correctly
+    * FIX: handle ldap logins with ',' in distinguished name
+    * FIX: quote HTML variable names, fixes potential JS injection
+    * Option dials (refresh, number of columns) now turnable by mouse wheel
     
     WATO:
     * FIX: Fixed generated manual check definitions for checks without items
       like ntp_time and tcp_conn_stats
+    * FIX: Persisting changing of folder titles when only the title has changed
+    * Add: Creating a new rule immediately opens its edit formular
+    * The rules formular now uses POST as transaction method
+    * Modularized the authentication and user management code
+    * Default config: add contact group 'all' and put all hosts into it
+    * Reverse order of Condition, Value and General options in rule editor
 
     Event Console:
     * FIX: fix exception in rules that use facility local7
     * FIX: fix event icon in case of using TCP access to EC
     * FIX: Allowing ":" in application field (e.g. needed for windows logfiles)
+    * FIX: fix bug in Filter "Hostname/IP-Address of original event"
     * Replication slave can now copy rules from master into local configuration
       via a new button in WATO.
     * Speedup access to event history by earlier filtering and prefiltering with grep
     * New builtin syslog server! Please refer to online docu for details.
+    * Icon to events of host links to view that has context button to host
+    * FIX: remove event pipe on program shutdown, prevents syslog freeze
+    * FIX: hostnames in livestatus query now being utf8 encoded
 
 1.2.1i3:
     Core:
@@ -199,10 +236,16 @@
 
     Checks & Agents:
     * FIX: postgres_sessions: handle case of no active/no idle sessions
+    * FIX: winperf_processor: handle parameters "None" (as WATO creates)
+    * FIX: mssql_counters: remove debug output, fix bytes output
+    * FIX: mssql_tablespaces: gracefully handle garbled agent output
 
     Multisite:
     * FIX: performeter_temparature now returns unicode string, because of °C
     * FIX: output_format json in webservices now using " as quotes
+
+    Livestatus:
+    * FIX: fix two problems when reloading module in Icinga (thanks to Ronny Biering)
 
 1.2.0p3:
     Mulitisite
@@ -262,6 +305,7 @@
     * FIX: netapp_cluster: fix inventory function
     * FIX: ps: avoid exception, when CPU% is missing (Zombies on Solaris)
     * FIX: win_dhcp_pools: fixed calculation of perc_free
+    * FIX: mssql_counters: fixed wrong log size output
 
 1.2.0p3:
     Multisite:

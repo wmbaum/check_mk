@@ -25,23 +25,25 @@
 # Boston, MA 02110-1301 USA.
 
 import config, defaults
-import time
+import time, copy
 
-# FIXME: For some reason mod_python is missing /usr/lib/python2.7/dist-packages
-# in sys.path. Therefor the ldap module can not be found. Need to fix this!
-#import sys ; sys.path.append('/usr/lib/python2.7/dist-packages')
-#
-# details: /usr/lib/python2.7/site.py
-#
-# My assumption is that there is a problem during compilation/execution of mod_python.
-# When starting python as site user, the correct sys.path is set, when printing sys.path
-# from mod_python code for debugging, it misses a lot of paths.
-#
-# mod_python:
-# ['/omd/sites/event/local/share/check_mk/web/htdocs', '/omd/sites/event/share/check_mk/web/htdocs', '/omd/versions/2012.10.25.mk/lib/python', '/omd/sites/event/lib/python', '/omd/sites/event/local/lib/python', '/usr/lib/python2.7/', '/usr/lib/python2.7/plat-linux2', '/usr/lib/python2.7/lib-tk', '/usr/lib/python2.7/lib-old', '/usr/lib/python2.7/lib-dynload']
-#
-# >>> sys.path
-# ['', '/usr/local/lib/python2.7/dist-packages/pip-1.1-py2.7.egg', '/usr/local/lib/python2.7/dist-packages/xhtml2pdf-0.0.4-py2.7.egg', '/usr/local/lib/python2.7/dist-packages/pyPdf-1.13-py2.7.egg', '/usr/local/lib/python2.7/dist-packages/html5lib-0.95-py2.7.egg', '/usr/lib/python2.7/dist-packages/PIL', '/usr/local/lib/python2.7/dist-packages/pisa-3.0.33-py2.7.egg', '/usr/lib/python2.7', '/usr/lib/python2.7/plat-linux2', '/usr/lib/python2.7/lib-tk', '/usr/lib/python2.7/lib-old', '/usr/lib/python2.7/lib-dynload', '/usr/local/lib/python2.7/dist-packages', '/usr/lib/python2.7/dist-packages', '/usr/lib/python2.7/dist-packages/gst-0.10', '/usr/lib/python2.7/dist-packages/gtk-2.0', '/usr/lib/pymodules/python2.7', '/usr/lib/python2.7/dist-packages/ubuntu-sso-client', '/usr/lib/python2.7/dist-packages/ubuntuone-client', '/usr/lib/python2.7/dist-packages/ubuntuone-control-panel', '/usr/lib/python2.7/dist-packages/ubuntuone-couch', '/usr/lib/python2.7/dist-packages/ubuntuone-installer', '/usr/lib/python2.7/dist-packages/ubuntuone-storage-protocol', '/usr/lib/python2.7/dist-packages/wx-2.8-gtk2-unicode']
+# For some reason mod_python is missing /usr/lib/python2.7/dist-packages
+# in sys.path. Therefor the ldap module can not be found at least on current
+# ubuntu and sles releases.
+# There seem to be some initialization problems with mod_pythan as the sys.path
+# is correct when excuting python from the command line as site user.
+# Try to workaround the problem now...
+
+import site, sys
+try:
+    sys.path.extend(site.getsitepackages())
+except: # Workaround, python 2.6 ( debian squeeze ) 
+    sys.path.extend(["/usr/local/lib/python2.6/dist-packages"])
+    sys.path.extend(["/usr/lib/python2.6/dist-packages"])
+    pass
+
+
+
 try:
     # docs: http://www.python-ldap.org/doc/html/index.html
     import ldap
@@ -230,7 +232,7 @@ def ldap_replace_macros(tmpl):
 def ldap_user_id_attr():
     return config.ldap_userspec.get('user_id', ldap_attr('user_id'))
 
-def ldap_get_user_dn(username):
+def ldap_get_user_dn(username, no_escape = False):
     # Check wether or not the user exists in the directory
     # It's only ok when exactly one entry is found.
     # Returns the DN in this case.
@@ -241,7 +243,10 @@ def ldap_get_user_dn(username):
     )
 
     if result:
-        return result[0][0].replace('\\', '\\\\')
+        if no_escape:
+            return result[0][0]
+        else:
+            return result[0][0].replace('\\', '\\\\')
 
 def ldap_get_users(add_filter = None):
     columns = [
@@ -330,9 +335,9 @@ def ldap_needed_attributes():
             attrs.update(plugin['needed_attributes'](params))
     return list(attrs)
 
-def ldap_convert_simple(user_id, ldap_user, user, wato_attr, attr):
+def ldap_convert_simple(user_id, ldap_user, user, user_attr, attr):
     if attr in ldap_user:
-        return {wato_attr: ldap_user[attr][0]}
+        return {user_attr: ldap_user[attr][0]}
     else:
         return {}
 
@@ -340,7 +345,10 @@ def ldap_convert_mail(params, user_id, ldap_user, user):
     mail = ''
     if ldap_user.get(ldap_attr('mail')):
         mail = ldap_user[ldap_attr('mail')][0].lower()
-    return {'email': mail}
+    if mail:
+        return {'email': mail}
+    else:
+        return {}
 
 ldap_attribute_plugins['email'] = {
     'title': _('Email address'),
@@ -448,8 +456,7 @@ def ldap_convert_groups_to_contactgroups(params, user_id, ldap_user, user):
     ldap_groups = ldap_user_groups(user_id)
 
     # 2. Fetch all existing group names in WATO
-    import wato
-    cg_names = wato.load_group_information().get("contact", {}).keys()
+    cg_names = load_group_information().get("contact", {}).keys()
 
     # Only add groups which are already contactgroups in wato
     return {'contactgroups': [ g for g in ldap_groups if g in cg_names]}
@@ -478,11 +485,8 @@ def ldap_convert_groups_to_roles(params, user_id, ldap_user, user):
     return {'roles': roles}
 
 def ldap_list_roles_with_group_dn():
-    import wato
-    roles = wato.load_roles()
-
     elements = []
-    for role_id, role in wato.load_roles().items():
+    for role_id, role in load_roles().items():
         elements.append((role_id, LDAPDistinguishedName(
             title = role['alias'] + ' - ' + _("Specify the Group DN"),
             help  = _("Distinguished Name of the LDAP group to add users this role."),
@@ -515,7 +519,7 @@ def ldap_login(username, password):
     ldap_connect()
     # Returns None when the user is not found or not uniq, else returns the
     # distinguished name of the user as string which is needed for the login.
-    user_dn = ldap_get_user_dn(username)
+    user_dn = ldap_get_user_dn(username, True)
     if not user_dn:
         return None # The user does not exist. Skip this connector.
 
@@ -531,14 +535,19 @@ def ldap_login(username, password):
     return result
 
 def ldap_sync(add_to_changelog, only_username):
+    # Store time of the last sync. Don't store after sync since parallel
+    # requests to e.g. the page hook would cause duplicate calculations
+    file(g_ldap_sync_time_file, 'w').write('%s\n' % time.time())
+
     ldap_connect()
 
-    filt = None
-    if only_username:
-        filt = '(%s=%s)' % (ldap_user_id_attr(), only_username)
+    # Unused at the moment, always sync all users
+    #filt = None
+    #if only_username:
+    #    filt = '(%s=%s)' % (ldap_user_id_attr(), only_username)
 
     import wato
-    users      = wato.load_users()
+    users      = load_users()
     ldap_users = ldap_get_users()
 
     # Remove users which are controlled by this connector but can not be found in
@@ -550,7 +559,7 @@ def ldap_sync(add_to_changelog, only_username):
 
     for user_id, ldap_user in ldap_users.items():
         if user_id in users:
-            user = users[user_id].copy()
+            user = copy.deepcopy(users[user_id])
             mode_create = False
         else:
             user = new_user_template('ldap')
@@ -567,17 +576,25 @@ def ldap_sync(add_to_changelog, only_username):
         if not mode_create and user == users[user_id]:
             continue # no modification. Skip this user.
 
+        # Gather changed attributes for easier debugging
+        if not mode_create:
+            set_new, set_old = set(user.keys()), set(users[user_id].keys())
+            intersect = set_new.intersection(set_old)
+            added = set_new - intersect
+            removed = set_old - intersect
+            changed = set(o for o in intersect if users[user_id][o] != user[o])
+
         users[user_id] = user # Update the user record
 
         if mode_create:
-            wato.log_pending(wato.SYNCRESTART, None, "edit-users", _("LDAP Connector: Created user %s" % user_id))
+            wato.log_pending(wato.SYNCRESTART, None, "edit-users",
+                             _("LDAP Connector: Created user %s" % user_id))
         else:
-            wato.log_pending(wato.SYNCRESTART, None, "edit-users", _("LDAP Connector: Modified user %s" % user_id))
+            wato.log_pending(wato.SYNCRESTART, None, "edit-users",
+                 _("LDAP Connector: Modified user %s (Added: %s, Removed: %s, Changed: %s)" %
+                    (user_id, ', '.join(added), ', '.join(removed), ', '.join(changed))))
 
-    wato.save_users(users)
-
-    # Store time of the last sync
-    file(g_ldap_sync_time_file, 'w').write('%s\n' % time.time())
+    save_users(users)
 
 # Calculates the attributes of the users which are locked for users managed
 # by this connector
@@ -611,10 +628,7 @@ def ldap_page():
         last_sync_time = 0
 
     if last_sync_time + config.ldap_cache_livetime > time.time():
-        html.log('no sync needed (%d > %d)' % (last_sync_time + config.ldap_cache_livetime, time.time()))
         return # No action needed, cache is recent enough
-
-    html.log('sync needed (%d <= %d)' % (last_sync_time + config.ldap_cache_livetime, time.time()))
 
     # ok, cache is too old. Act!
     ldap_sync(False, None)

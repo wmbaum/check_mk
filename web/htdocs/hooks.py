@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/python
 # -*- encoding: utf-8; py-indent-offset: 4 -*-
 # +------------------------------------------------------------------+
 # |             ____ _               _        __  __ _  __           |
@@ -24,12 +24,36 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
-if which mysqladmin > /dev/null
-then
-  # Check if mysqld is running and root password setup
-  echo "<<<mysql_ping>>>"
-  mysqladmin --defaults-extra-file=$MK_CONFDIR/mysql.cfg ping 2>&1
+import config, sys
 
-  mysql --defaults-extra-file=$MK_CONFDIR/mysql.cfg -sN \
-     -e "select '<<<mysql>>>' ; show global status; show global variables; select '<<<mysql_capacity>>>' ; SELECT table_schema, sum( data_length + index_length ), sum( data_free )  FROM information_schema.TABLES GROUP BY table_schema;"
-fi
+hooks = {}
+
+def unregister():
+    global hooks
+    hooks = {}
+
+def register(name, func):
+    hooks.setdefault(name, []).append(func)
+
+def get(name):
+    return hooks.get(name, [])
+
+def registered(name):
+    """ Returns True if at least one function is registered for the given hook """
+    return hooks.get(name, []) != []
+
+def call(name, *args):
+    n = 0
+    for hk in hooks.get(name, []):
+        n += 1
+        try:
+            hk(*args)
+        except Exception, e:
+            if config.debug:
+                import traceback, StringIO
+                txt = StringIO.StringIO()
+                t, v, tb = sys.exc_info()
+                traceback.print_exception(t, v, tb, None, txt)
+                html.show_error("<h1>" + _("Error executing hook") + " %s #%d: %s</h1>"
+                                "<pre>%s</pre>" % (name, n, e, txt.getvalue()))
+            raise

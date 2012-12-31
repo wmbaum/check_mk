@@ -292,6 +292,52 @@ checkgroups.append((
 ))
 
 checkgroups.append((
+    subgroup_applications,
+    "plesk_backups",
+    _("Plesk Backups"),
+    Dictionary(
+         help = _("This check monitors backups configured for domains in plesk."),
+         elements = [
+             ("no_backup_configured_state", MonitoringState(
+                 title = _("State when no backup is configured"),
+                 default_value = 1)
+             ),
+             ("no_backup_found_state", MonitoringState(
+                 title = _("State when no backup can be found"),
+                 default_value = 1)
+             ),
+             ("backup_age",
+               Tuple(
+                   title = _("Maximum age of backups"),
+                   help = _("The maximum age of the last backup."),
+                   elements = [
+                       Age(title = _("Warning at")),
+                       Age(title = _("Critical at")),
+                    ],
+               ),
+             ),
+             ("total_size",
+               Tuple(
+                   title = _("Maximum size of all files on backup space"),
+                   help = _("The maximum size of all files on the backup space. "
+                            "This might be set to the allowed quotas on the configured "
+                            "FTP server to be notified if the space limit is reached."),
+                   elements = [
+                       Filesize(title = _("Warning at")),
+                       Filesize(title = _("Critical at")),
+                    ],
+               ),
+             ),
+         ],
+         optional_keys = ['backup_age', 'total_size']
+    ),
+    TextAscii(
+        title = _("Service descriptions"),
+        allow_empty = False
+    ),
+    None))
+
+checkgroups.append((
     subgroup_storage,
     "brocade_fcport",
     _("Brocade FC FibreChannel ports"),
@@ -895,10 +941,10 @@ checkgroups.append((
                      "Active Remote Delivery<br>Active Mailbox Delivery<br>"
                      "Retry Remote Delivery<br>Poison Queue Length<br>"),
            choices = [
-              ( "Active Remote Delivery",  "Active Remote Delivery" ),
-              ( "Retry Remote Delivery",   "Retry Remote Delivery" ),
-              ( "Active Mailbox Delivery", "Active Mailbox Delivery" ),
-              ( "Poison Queue Length",     "Poison Queue Length" ),
+              ( "Active Remote Delivery",  _("Active Remote Delivery") ), 
+              ( "Retry Remote Delivery",   _("Retry Remote Delivery") ),
+              ( "Active Mailbox Delivery", _("Active Mailbox Delivery") ),
+              ( "Poison Queue Length",     _("Poison Queue Length") ), 
               ],
            otherlabel = _("specify manually ->"),
            explicit = TextAscii(allow_empty = False)),
@@ -1007,7 +1053,7 @@ checkgroups.append((
                             "this setting is used as the assumed speed when it comes to "
                             "traffic monitoring (see below)."),
                   choices = [
-                     ( None,       "ignore speed" ),
+                     ( None,       _("ignore speed") ),
                      ( 10000000,   "10 MBit/s" ),
                      ( 100000000,  "100 MBit/s" ),
                      ( 1000000000, "1 GBit/s" ) ],
@@ -1366,6 +1412,30 @@ checkgroups.append((
 
 checkgroups.append((
     subgroup_applications,
+    "mysql_connections",
+    _("MySQL Connections"),
+    Dictionary(
+        elements = [
+            ( "perc_used",
+                Tuple(
+                    title = _("Max. parallel connections"),
+                    help = _("Compares the the maximum number of connections that have been "
+                             "in use simultaneously since the server started with the maximum parallel "
+                             "connections allowed by the configuration of the server. This threshold "
+                             "makes the check raises warning/critical states if the percentage is equal to "
+                             "or above the configured levels."),
+                    elements = [
+                       Percentage(title = _("Warning at")),
+                       Percentage(title = _("Critical at")),
+                    ]
+                )
+            ),
+        ]),
+    None,
+    "dict"))
+
+checkgroups.append((
+    subgroup_applications,
     "dbsize",
     _("Size of MySQL/PostgresQL databases"),
     Optional(
@@ -1440,8 +1510,8 @@ checkgroups.append((
                 Tuple(
                    title = _("Blocks read"),
                    elements = [
-                      Float(title = "warning at", unit = _("blocks/s")),
-                      Float(title = "critical at", unit = _("blocks/s")),
+                      Float(title = _("Warning at"), unit = _("blocks/s")),
+                      Float(title = _("Critical at"), unit = _("blocks/s")),
                    ],
                 ),
             ),
@@ -1449,8 +1519,8 @@ checkgroups.append((
                 Tuple(
                    title = _("Commits"),
                    elements = [
-                      Float(title = "warning at", unit = _("/s")),
-                      Float(title = "critical at", unit = _("/s")),
+                      Float(title = _("Warning at"), unit = _("/s")),
+                      Float(title = _("Critical at"), unit = _("/s")),
                    ],
                 ),
             ),
@@ -1458,8 +1528,8 @@ checkgroups.append((
                 Tuple(
                    title = _("Fetches"),
                    elements = [
-                      Float(title = "warning at", unit = _("/s")),
-                      Float(title = "critical at", unit = _("/s")),
+                      Float(title = _("Warning at"), unit = _("/s")),
+                      Float(title = _("Critical at"), unit = _("/s")),
                    ],
                 ),
             ),    
@@ -1467,8 +1537,8 @@ checkgroups.append((
                 Tuple(
                    title = _("Deletes"),
                    elements = [
-                      Float(title = "warning at", unit = _("/s")),
-                      Float(title = "critical at", unit = _("/s")),
+                      Float(title = _("Warning at"), unit = _("/s")),
+                      Float(title = _("Critical at"), unit = _("/s")),
                    ],
                 ),
             ),
@@ -1476,8 +1546,8 @@ checkgroups.append((
                 Tuple(
                    title = _("Updates"),
                    elements = [
-                      Float(title = "warning at", unit = _("/s")),
-                      Float(title = "critical at", unit = _("/s")),
+                      Float(title = _("Warning at"), unit = _("/s")),
+                      Float(title = _("Critical at"), unit = _("/s")),
                    ],
                 ),
             ),
@@ -1485,8 +1555,8 @@ checkgroups.append((
                 Tuple(
                    title = _("Inserts"),
                    elements = [
-                      Float(title = "warning at", unit = _("/s")),
-                      Float(title = "critical at", unit = _("/s")),
+                      Float(title = _("Warning at"), unit = _("/s")),
+                      Float(title = _("Critical at"), unit = _("/s")),
                    ],
                 ),
             ),
@@ -1560,10 +1630,10 @@ checkgroups.append((
 
     DropdownChoice(
         title = _("kernel counter"),
-        choices = [ (x,x) for x in [
-           "Context Switches",
-           "Process Creations",
-           "Major Page Faults" ]]),
+        choices = [
+           ( "Context Switches",  _("Context Switches") ),
+           ( "Process Creations", _("Process Creations") ),
+           ( "Major Page Faults", _("Major Page Faults") )]),
     "first"))
 
 checkgroups.append((
@@ -1576,15 +1646,15 @@ checkgroups.append((
               Tuple(
                   title = _("Read throughput"),
                   elements = [
-                      Float(title = "warning at", unit = _("MB/s")),
-                      Float(title = "critical at", unit = _("MB/s"))
+                      Float(title = _("warning at"), unit = _("MB/s")),
+                      Float(title = _("critical at"), unit = _("MB/s"))
                   ])),
             ( "write",
               Tuple(
                   title = _("Write throughput"),
                   elements = [
-                      Float(title = "warning at", unit = _("MB/s")),
-                      Float(title = "critical at", unit = _("MB/s"))
+                      Float(title = _("warning at"), unit = _("MB/s")),
+                      Float(title = _("critical at"), unit = _("MB/s"))
                   ])),
             ( "average",
               Integer(
@@ -1598,8 +1668,8 @@ checkgroups.append((
               Tuple(
                   title = _("IO Latency"),
                   elements = [
-                      Float(title = "warning at",  unit = _("ms"), default_value = 80.0),
-                      Float(title = "critical at", unit = _("ms"), default_value = 160.0),
+                      Float(title = _("warning at"),  unit = _("ms"), default_value = 80.0),
+                      Float(title = _("critical at"), unit = _("ms"), default_value = 160.0),
              ])),
             ( "latency_perfdata",
               Checkbox(
@@ -1613,15 +1683,15 @@ checkgroups.append((
               Tuple(
                   title = _("Read Queue-Length"),
                   elements = [
-                      Float(title = "warning at",  default_value = 80.0),
-                      Float(title = "critical at", default_value = 90.0),
+                      Float(title = _("warning at"),  default_value = 80.0),
+                      Float(title = _("critical at"), default_value = 90.0),
              ])),
             ( "write_ql", 
               Tuple(
                   title = _("Write Queue-Length"),
                   elements = [
-                      Float(title = "warning at",  default_value = 80.0),
-                      Float(title = "critical at", default_value = 90.0),
+                      Float(title = _("warning at"),  default_value = 80.0),
+                      Float(title = _("critical at"), default_value = 90.0),
              ])),
             ( "ql_perfdata",
               Checkbox(
@@ -1866,14 +1936,14 @@ checkgroups.append((
         elements = [
             ( "temp",
               Tuple(
-                  title = _("Temerature"),
+                  title = _("Temperature"),
                   elements = [
                       Integer(title = _("warning at"), unit = u"°C", default_value = 26),
                       Integer(title = _("critical at"), unit = u"°C", default_value = 30),
                   ])),
             ( "remote_temp",
               Tuple(
-                  title = _("Remote Temerature"),
+                  title = _("Remote Temperature"),
                   elements = [
                       Integer(title = _("warning at"), unit = u"°C", default_value = 26),
                       Integer(title = _("critical at"), unit = u"°C", default_value = 30),
@@ -1961,13 +2031,13 @@ checkgroups.append((
             ),
             Float(
                 title = _("Warning at"),
-                unit = _("Miliseconds"),
+                unit = _("Milliseconds"),
                 default_value = 200.0,
                 help = _("The offset in ms at which a warning state is triggered."),
             ),
             Float(
                 title = _("Critical at"),
-                unit = _("Miliseconds"),
+                unit = _("Milliseconds"),
                 default_value = 500.0,
                 help = _("The offset in ms at which a critical state is triggered."),
             ),
