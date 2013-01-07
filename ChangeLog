@@ -8,6 +8,7 @@
     * Do object cache precompile for monitoring core on cmk -R/-O
     * Avoid duplicate verification of monitoring config on cmk -R/-O
     * FIX: Parameter --cleanup-autochecks (long for -u) works now like suggested in help
+    * FIX: Added error handling when trying to --restore with a non existant file
 
     Notifications:
     * Fix flexible notifications on non-OMD systems
@@ -77,6 +78,8 @@
     * Views: Commands/Checkboxes buttons are now activated dynamically (depending on data displayed)
     * FIX: Views: toggling forms does not disable the checkbox button anymore
     * FIX: Dashboard: Fixed wrong display options in links after data reloads
+    * FIX: Fixed "remove all downtimes" button in views when no downtimes to be deleted 
+    * FIX: Services in hosttables now use the service name as header (if no custom title set)
     
     WATO:
     * FIX: Fixed generated manual check definitions for checks without items
@@ -102,6 +105,9 @@
     * Icon to events of host links to view that has context button to host
     * FIX: remove event pipe on program shutdown, prevents syslog freeze
     * FIX: hostnames in livestatus query now being utf8 encoded
+
+    Livestatus:
+    * FIX: Changed logging output "Time to process request" to be debug output
 
 1.2.1i3:
     Core:

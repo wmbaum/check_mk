@@ -1138,6 +1138,7 @@ def prepare_display_options():
         display_options = html.var("_display_options", "")
         display_options = apply_display_option_defaults(display_options)
         html.display_options = display_options
+        html.title_display_options = display_options
 
     # But there is one special case: The sorter links! These links need to know
     # about the provided display_option parameter. The links could use
@@ -2126,7 +2127,10 @@ def core_command(what, row):
                 commands, title = result
                 break
 
-    if not commands:
+    # Use the title attribute to determine if a command exists, since the list
+    # of commands might be empty (e.g. in case of "remove all downtimes" where)
+    # no downtime exists in a selection of rows.
+    if not title:
         raise MKUserError(None, _("Sorry. This command is not implemented."))
 
     # Some commands return lists of commands, others
@@ -2176,15 +2180,19 @@ def do_actions(view, what, action_rows, backurl):
             executor(command, row["site"])
             count += 1
 
+    message = None
     if command:
         message = _("Successfully sent %d commands.") % count
         if config.debug:
             message += _("The last one was: <pre>%s</pre>") % command
+    elif count == 0:
+        message = _("No matching data row. No command sent.")
+
+    if message:
         if html.output_format == "html": # sorry for this hack
             message += '<br><a href="%s">%s</a>' % (backurl, _('Back to view'))
         html.message(message)
-    elif count == 0:
-        html.message(_("No matching data row. No command sent."))
+
     return True
 
 def get_selected_rows(view, rows, sel_var):
@@ -2433,8 +2441,9 @@ def paint_header(view, p):
     t = painter.get("short", painter["title"])
     if len(p) >= 4: # join column
         join_index = p[3]
+        t = p[3] # use join index (service name) as title
     if len(p) >= 5 and p[4]:
-        t = p[4]
+        t = p[4] # use custom defined title
 
     # Optional: Sort link in title cell
     # Use explicit defined sorter or implicit the sorter with the painter name
