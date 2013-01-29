@@ -7,7 +7,7 @@
 # |           | |___| | | |  __/ (__|   <    | |  | | . \            |
 # |            \____|_| |_|\___|\___|_|\_\___|_|  |_|_|\_\           |
 # |                                                                  |
-# | Copyright Mathias Kettner 2012             mk@mathias-kettner.de |
+# | Copyright Mathias Kettner 2013             mk@mathias-kettner.de |
 # +------------------------------------------------------------------+
 #
 # This file is part of Check_MK.
@@ -211,6 +211,23 @@ def pnp_cleanup(s):
         .replace(':', '_') \
         .replace('/', '_') \
         .replace('\\', '_')
+
+warn_marker    = '<b class="stmark state1">WARN</b>'
+crit_marker    = '<b class="stmark state2">CRIT</b>'
+unknown_marker = '<b class="stmark state3">UNKN</b>'
+
+def format_plugin_output(output, row = None):
+    output =  output.replace("(!)", warn_marker) \
+              .replace("(!!)", crit_marker) \
+              .replace("(?)", unknown_marker)
+    if row and "[running on" in output:
+        a = output.index("[running on")
+        e = output.index("]", a)
+        hosts = output[a+12:e].replace(" ","").split(",")
+        css, h = paint_host_list(row["site"], hosts)
+        output = output[:a] + "running on " + h + output[e+1:]
+
+    return output
 
 def format_exception():
     import traceback, StringIO, sys

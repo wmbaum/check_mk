@@ -7,7 +7,7 @@
 # |           | |___| | | |  __/ (__|   <    | |  | | . \            |
 # |            \____|_| |_|\___|\___|_|\_\___|_|  |_|_|\_\           |
 # |                                                                  |
-# | Copyright Mathias Kettner 2012             mk@mathias-kettner.de |
+# | Copyright Mathias Kettner 2013             mk@mathias-kettner.de |
 # +------------------------------------------------------------------+
 #
 # This file is part of Check_MK.
@@ -6677,11 +6677,11 @@ def mode_edit_site(phase):
     
         save_sites(sites)
         
-        # Own site needs SYNCRESTART in any case
+        # Own site needs RESTART in any case
         update_replication_status(our_site_id(), { "need_restart" : True })
-
         if new:
-            update_replication_status(id, { "need_sync" : True, "need_restart" : True })
+            if not site_is_local(id):
+                update_replication_status(id, { "need_sync" : True, "need_restart" : True }) 
             log_pending(AFFECTED, None, "edit-sites", _("Created new connection to site %s" % id))
         else:
             log_pending(AFFECTED, None, "edit-sites", _("Modified site connection %s" % id))
@@ -10947,7 +10947,7 @@ def page_user_profile():
 
     forms.header(_("Personal Settings"))
     forms.section(_("Name"), simple=True)
-    html.write(user["alias"])
+    html.write(user.get("alias", config.user_id))
 
     if config.may('general.change_password') and not is_locked('password'):
         forms.section(_("Password"))

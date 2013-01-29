@@ -7,7 +7,7 @@
 # |           | |___| | | |  __/ (__|   <    | |  | | . \            |
 # |            \____|_| |_|\___|\___|_|\_\___|_|  |_|_|\_\           |
 # |                                                                  |
-# | Copyright Mathias Kettner 2012             mk@mathias-kettner.de |
+# | Copyright Mathias Kettner 2013             mk@mathias-kettner.de |
 # +------------------------------------------------------------------+
 #
 # This file is part of Check_MK.
@@ -28,7 +28,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.61)
-AC_INIT([MK Livestatus], [1.2.1i6], [mk@mathias-kettner.de])
+AC_INIT([MK Livestatus], [1.2.2b1], [mk@mathias-kettner.de])
 AM_INIT_AUTOMAKE([-Wall foreign])
 AC_CONFIG_SRCDIR([config.h.in])
 AC_CONFIG_HEADER([config.h])

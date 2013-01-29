@@ -7,7 +7,7 @@
 # |           | |___| | | |  __/ (__|   <    | |  | | . \            |
 # |            \____|_| |_|\___|\___|_|\_\___|_|  |_|_|\_\           |
 # |                                                                  |
-# | Copyright Mathias Kettner 2012             mk@mathias-kettner.de |
+# | Copyright Mathias Kettner 2013             mk@mathias-kettner.de |
 # +------------------------------------------------------------------+
 #
 # This file is part of Check_MK.
@@ -53,8 +53,15 @@ def check_winperf_util(item, params, info):
             if ticks_per_sec == 0.0:
                 used_perc = 0.0
             else:
+                # We get the value of the PERF_100NSEC_TIMER_INV here.
+                # This counter type shows the average percentage of active time observed
+                # during the sample interval. This is an inverse counter. Counters of this
+                # type calculate active time by measuring the time that the service was
+                # inactive and then subtracting the percentage of active time from 100 percent.
+                #
+                # 1 tick = 100ns, convert to seconds
                 cpusecs_per_sec = ticks_per_sec / 10000000.0
-                used_perc = 100 * (1 - cpusecs_per_sec)
+                used_perc = (100.0 * num_cpus) * (1 - cpusecs_per_sec)
 
             if used_perc < 0:
                 used_perc = 0
@@ -64,13 +71,13 @@ def check_winperf_util(item, params, info):
                 warn, crit = params
             else:
                 warn, crit = None, None
-            perfdata = [ ("util", "%.2f" % used_perc, warn, crit, 0, 100) ]
+            perfdata = [ ("util", "%.2f" % used_perc, warn, crit, 0, num_cpus) ]
             if num_cpus == 1:
                 num_txt = ""
             else:
                 num_txt = " / %d CPUs" % num_cpus
 
-            infotext = " - %d%% used%s (in last %d secs)" % (int(used_perc), num_txt, timedif)
+            infotext = " - %0.2f%% used%s (in last %d secs)" % (used_perc, num_txt, timedif)
 
             if crit != None and used_perc >= crit:
                 return (2, "CRIT" + infotext, perfdata)

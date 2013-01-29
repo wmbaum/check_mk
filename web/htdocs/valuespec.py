@@ -7,7 +7,7 @@
 # |           | |___| | | |  __/ (__|   <    | |  | | . \            |
 # |            \____|_| |_|\___|\___|_|\_\___|_|  |_|_|\_\           |
 # |                                                                  |
-# | Copyright Mathias Kettner 2012             mk@mathias-kettner.de |
+# | Copyright Mathias Kettner 2013             mk@mathias-kettner.de |
 # +------------------------------------------------------------------+
 #
 # This file is part of Check_MK.
@@ -484,13 +484,22 @@ class TextAreaUnicode(TextUnicode):
     def __init__(self, **kwargs):
         TextUnicode.__init__(self, **kwargs)
         self._cols = kwargs.get("cols", 60)
-        self._rows = kwargs.get("rows", 20)
+        self._rows = kwargs.get("rows", 20)  # Allowed: "auto" -> Auto resizing
 
     def value_to_text(self, value):
         return "<pre class=ve_textarea>%s</pre>" % value
 
     def render_input(self, varprefix, value):
-        html.text_area(varprefix, value, rows=self._rows, cols=self._cols)
+        if self._rows == "auto":
+            attrs = { "onkeyup" : 'valuespec_textarea_resize(this);' }
+            if html.has_var(varprefix):
+                rows = len(html.var(varprefix).splitlines())
+            else:
+                rows = len(value.splitlines())
+        else:
+            attrs = {}
+            rows = self._rows 
+        html.text_area(varprefix, value, rows=rows, cols=self._cols, attrs = attrs)
 
     # Overridded because we do not want to strip() here and remove '\r'
     def from_html_vars(self, varprefix):
@@ -656,11 +665,12 @@ class ListOf(ValueSpec):
             value = [None] * count # dummy for the loop
         else:
             filled_in = False
-            html.hidden_field('%s_count' % varprefix,
-                str(len(value)),
-                id = '%s_count' % varprefix,
-                add_var = True
-            )
+            count = len(value)
+
+        html.hidden_field('%s_count' % varprefix,
+            str(count),
+            id = '%s_count' % varprefix,
+            add_var = True)
 
         # Actual table of currently existing entries
         html.write('<table class="valuespec_listof" id="%s_table">' % varprefix)
@@ -2058,13 +2068,19 @@ class Foldable(ValueSpec):
 
     def render_input(self, varprefix, value):
         try:
-            title = self._title_function(value)
+            title_value = value
+            if html.form_submitted():
+                try:
+                    title_value = self._valuespec.from_html_vars(varprefix)
+                except:
+                    pass
+            title = self._title_function(title_value)
         except:
             title = self._valuespec.title()
             if not title:
                 title = _("(no title)")
         html.begin_foldable_container("valuespec_foldable", varprefix, self._open, 
-                        title, False)
+                       title, False)
         html.help(self._valuespec.help())
         self._valuespec.render_input(varprefix, value)
         html.end_foldable_container()

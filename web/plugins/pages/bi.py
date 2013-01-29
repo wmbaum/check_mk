@@ -7,7 +7,7 @@
 # |           | |___| | | |  __/ (__|   <    | |  | | . \            |
 # |            \____|_| |_|\___|\___|_|\_\___|_|  |_|_|\_\           |
 # |                                                                  |
-# | Copyright Mathias Kettner 2012             mk@mathias-kettner.de |
+# | Copyright Mathias Kettner 2013             mk@mathias-kettner.de |
 # +------------------------------------------------------------------+
 #
 # This file is part of Check_MK.
@@ -31,4 +31,5 @@ pagehandlers.update({
     "bi" :                bi.page_all,
     "bi_set_assumption" : bi.ajax_set_assumption,
     "bi_save_treestate" : bi.ajax_save_treestate,
+    "bi_render_tree"    : bi.ajax_render_tree,
 })

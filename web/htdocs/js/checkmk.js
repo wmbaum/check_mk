@@ -5,7 +5,7 @@
 // |           | |___| | | |  __/ (__|   <    | |  | | . \            |
 // |            \____|_| |_|\___|\___|_|\_\___|_|  |_|_|\_\           |
 // |                                                                  |
-// | Copyright Mathias Kettner 2012             mk@mathias-kettner.de |
+// | Copyright Mathias Kettner 2013             mk@mathias-kettner.de |
 // +------------------------------------------------------------------+
 //
 // This file is part of Check_MK.
@@ -1551,6 +1551,10 @@ function valuespec_cascading_change(oSelect, varprefix, count) {
                 oDiv.style.display = "none";
         }
     }
+}
+
+function valuespec_textarea_resize(oArea) {
+    oArea.style.height = oArea.scrollHeight + "px";
 }
 
 function valuespec_listof_add(varprefix, magic) {

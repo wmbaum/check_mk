@@ -1,4 +1,28 @@
 #!/usr/bin/python
+# -*- encoding: utf-8; py-indent-offset: 4 -*-
+# +------------------------------------------------------------------+
+# |             ____ _               _        __  __ _  __           |
+# |            / ___| |__   ___  ___| | __   |  \/  | |/ /           |
+# |           | |   | '_ \ / _ \/ __| |/ /   | |\/| | ' /            |
+# |           | |___| | | |  __/ (__|   <    | |  | | . \            |
+# |            \____|_| |_|\___|\___|_|\_\___|_|  |_|_|\_\           |
+# |                                                                  |
+# | Copyright Mathias Kettner 2013             mk@mathias-kettner.de |
+# +------------------------------------------------------------------+
+#
+# This file is part of Check_MK.
+# The official homepage is at http://mathias-kettner.de/check_mk.
+#
+# check_mk is free software;  you can redistribute it and/or modify it
+# under the  terms of the  GNU General Public License  as published by
+# the Free Software Foundation in version 2.  check_mk is  distributed
+# in the hope that it will be useful, but WITHOUT ANY WARRANTY;  with-
+# out even the implied warranty of  MERCHANTABILITY  or  FITNESS FOR A
+# PARTICULAR PURPOSE. See the  GNU General Public License for more de-
+# ails.  You should have  received  a copy of the  GNU  General Public
+# License along with GNU Make; see the file  COPYING.  If  not,  write
+# to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
+# Boston, MA 02110-1301 USA.
 
 import mkeventd
 
@@ -1523,7 +1547,7 @@ if mkeventd_enabled:
             help = _("When the Multisite GUI or the active check check_mkevents connects "
                      "to the socket of the event daemon in order to retrieve information "
                      "about current and historic events then its connection request might "
-                     "be queued before being processed. This defines the number of unaccepted "
+                     "be queued before being processed. This setting defines the number of unaccepted "
                      "connections to be queued before refusing new connections."),
             minvalue = 1,
             default_value = 10,
@@ -1533,6 +1557,22 @@ if mkeventd_enabled:
         domain = "mkeventd"
     )
 
+    register_configvar(group,
+        "eventsocket_queue_len",
+        Integer(
+            title = _("Max. number of pending connections to the event socket"),
+            help = _("The event socket is an alternative way for sending events "
+                     "to the Event Console. It is used by the Check_MK logwatch check "
+                     "when forwarding log messages to the Event Console. "
+                     "This setting defines the number of unaccepted "
+                     "connections to be queued before refusing new connections."),
+            minvalue = 1,
+            default_value = 10,
+            label = "max.",
+            unit = "pending connections",
+        ),
+        domain = "mkeventd"
+    )
 
 # Settings that should also be avaiable on distributed Sites that
 # do not run an own eventd but want to query one or send notifications
