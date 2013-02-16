@@ -24,7 +24,7 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
-import config, re, pprint, time
+import config, re, pprint, time, views
 import weblib, htmllib
 from lib import *
 
@@ -149,7 +149,7 @@ def load_services(cache, only_hosts):
     html.live.set_auth_domain('bi')
     data = html.live.query("GET hosts\n"
                            +filter_txt+
-                           "Columns: name custom_variable_names custom_variable_values services childs parents\n") 
+                           "Columns: name custom_variable_names custom_variable_values services childs parents\n")
     html.live.set_prepend_site(False)
     html.live.set_auth_domain('read')
 
@@ -306,6 +306,9 @@ def compile_forest(user, only_hosts = None, only_groups = None):
     single_affected_hosts = []
     for aggr_type, aggregations in aggr_list:
         for entry in aggregations:
+            if entry[0] == config.DISABLED:
+                continue
+
             if len(entry) < 3:
                 raise MKConfigError(_("<h1>Invalid aggregation <tt>%s</tt>'</h1>"
                                       "Must have at least 3 entries (has %d)") % (entry, len(entry)))
@@ -680,6 +683,16 @@ def compile_aggregation_rule(aggr_type, rule, args, lvl):
         global g_remaining_refs
         g_remaining_refs = []
 
+    # Convert new dictionary style rule into old tuple based
+    # format
+    if type(rule) == dict:
+        rule = (
+            rule.get("title", _("Untitled BI rule")),
+            rule.get("params", []),
+            rule.get("aggregation", "worst"),
+            rule.get("nodes", [])
+        )
+
     if len(rule) != 4:
         raise MKConfigError(_("<h3>Invalid aggregation rule</h1>"
                 "Aggregation rules must contain four elements: description, argument list, "
@@ -1019,7 +1032,7 @@ def execute_leaf_node(node, status_info):
         return ({"state":MISSING, "output": _("This host has no such service")}, None, node)
 
     else:
-        aggr_state = {0:OK, 1:CRIT, 2:UNKNOWN}[host_state]
+        aggr_state = {0:OK, 1:CRIT, 2:UNKNOWN, -1:PENDING}[host_state]
         state = {"state":aggr_state, "output" : host_output}
         if state_assumption != None:
             assumed_state = {"state": state_assumption,
@@ -1116,7 +1129,7 @@ def get_status_info_filtered(filter_header, only_sites, limit, add_columns, fetc
     html.live.set_prepend_site(True)
 
     data = html.live.query(query)
-    
+
     html.live.set_prepend_site(False)
     html.live.set_only_sites(None)
 
@@ -1331,14 +1344,14 @@ def ajax_render_tree():
     if aggr_group not in g_user_cache["forest"]:
         raise MKGeneralException(_("Unknown BI Aggregation group %s. Available are: %s") % (
             aggr_group, ", ".join(g_user_cache["forest"].keys())))
-        
+
     trees = g_user_cache["forest"][aggr_group]
     for tree in trees:
         if tree["title"] == aggr_title:
             row = create_aggregation_row(tree)
             row["aggr_group"] = aggr_group
             # ZUTUN: omit_root, boxes, only_problems has HTML-Variablen
-            tdclass, htmlcode = render_tree_foldable(row, boxes=boxes, omit_root=omit_root, 
+            tdclass, htmlcode = render_tree_foldable(row, boxes=boxes, omit_root=omit_root,
                                              expansion_level=load_ex_level(), only_problems=only_problems, lazy=False)
             html.write(htmlcode)
             return
@@ -1346,7 +1359,7 @@ def ajax_render_tree():
     raise MKGeneralException(_("Unknown BI Aggregation %s") % aggr_title)
 
 
-    
+
 def render_tree_foldable(row, boxes, omit_root, expansion_level, only_problems, lazy):
     saved_expansion_level = load_ex_level()
     treestate = weblib.get_tree_states('bi')
@@ -1361,6 +1374,10 @@ def render_tree_foldable(row, boxes, omit_root, expansion_level, only_problems, 
         is_open = treestate.get(path_id)
         if is_open == None:
             is_open = len(path) <= expansion_level
+
+        # Make sure that in case of BI Boxes (omit root) the root level is *always* visible
+        if not is_open and omit_root and len(path) == 1:
+           is_open = True
 
         h = ""
         state = tree[0]
@@ -1447,7 +1464,7 @@ def render_tree_foldable(row, boxes, omit_root, expansion_level, only_problems, 
         ( "boxes", boxes and "yes" or ""),
         ( "only_problems", only_problems and "yes" or ""),
     ])
-        
+
     htmlcode = '<div id="%s" class=bi_tree_container>' % htmllib.attrencode(url_id) + \
                render_subtree(tree, [tree[2]["title"]], len(affected_hosts) > 1) + \
                '</div>'
@@ -1512,23 +1529,18 @@ def aggr_render_leaf(tree, show_host, bare = False):
     # (4) CPU load                  (show_host == False, service != None)
 
     if show_host or not service:
-        host_url = html.makeuri([("view_name", "hoststatus"), ("site", site), ("host", host)])
+        host_url = "view.py?" + htmllib.urlencode_vars([("view_name", "hoststatus"), ("site", site), ("host", host)])
 
     if service:
-        service_url = html.makeuri([("view_name", "service"), ("site", site), ("host", host), ("service", service)])
+        service_url = "view.py?" + htmllib.urlencode_vars([("view_name", "service"), ("site", site), ("host", host), ("service", service)])
 
     if show_host:
         content += '<a href="%s">%s</a><b class=bullet>&diams;</b>' % (host_url, host.replace(" ", "&nbsp;"))
 
-    if tree[1] and tree[0] != tree[1]:
-        addclass = ' class="state assumed"'
-    else:
-        addclass = ""
-
     if not service:
-        content += '<a href="%s"%s>%s</a>' % (host_url, addclass, _("Host&nbsp;status"))
+        content += '<a href="%s">%s</a>' % (host_url, _("Host&nbsp;status"))
     else:
-        content += '<a href="%s"%s>%s</a>' % (service_url, addclass, service.replace(" ", "&nbsp;"))
+        content += '<a href="%s">%s</a>' % (service_url, service.replace(" ", "&nbsp;"))
 
     if bare:
         return content
@@ -1561,6 +1573,27 @@ def filter_tree_only_problems(tree):
 
     return state, assumed_state, node, new_subtrees
 
+
+def page_availability():
+    aggr_group = html.var("aggr_group")
+    aggr_name = html.var("aggr_name")
+
+    # First compile the required BI aggregates.
+    if config.bi_precompile_on_demand:
+        compile_forest(config.user_id, only_groups = [ aggr_group ])
+    else:
+        compile_forest(config.user_id)
+
+    # In the resulting collection of BI aggregates find
+    # our tree
+    for tree in g_user_cache["forest"][aggr_group]:
+        if tree["title"] == aggr_name:
+            break
+    else:
+        raise MKGeneralException("No aggregation with the name %s" %
+            aggr_name)
+
+    views.render_bi_availability(tree)
 
 
 #    ____        _
@@ -1701,9 +1734,9 @@ def singlehost_table(columns, add_headers, only_sites, limit, filters, joinbynam
             status_info = None
         else:
             aggrs = g_user_cache["host_aggregations"].get((site, host), [])
-            status_info = { (site, host) : [ 
-                hostrow["state"], 
-                hostrow["plugin_output"], 
+            status_info = { (site, host) : [
+                hostrow["state"],
+                hostrow["plugin_output"],
                 hostrow["services_with_info"] ] }
 
         for group, aggregation in aggrs:

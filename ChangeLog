@@ -1,3 +1,52 @@
+1.2.3i1:
+    Core:
+    * New feature: agents can send data for other hosts
+      "piggyback".
+
+    Event Console:
+    * New rule feature: automatically delete after action
+
+    Checks & Agents:
+    * Add: Memory and Swap for Solaris Agent
+    * Add: Monitoring of ESX (VMware) Hosts
+
+1.2.2b3
+    Checks & Agents:
+    * FIX: Fixed date parsing code ignoring the seconds value in several checks
+           (ad_replication, cups_queues, heartbeat_crm, mssql_backup, smbios_sel)
+    * FIX: Fixed pnp template for apc_symmetra check when using multiple rrds
+
+    Multisite:
+    * FIX: Removed uuid module dependency to be compatible to python < 2.5
+    * FIX: remove Javascript debug popup from multi-string input fields
+    * FIX: list of strings (e.g. host list in rule editor) didn't work anymore
+
+1.2.2b2:
+    Checks & Agents:
+    * Added dynamic thresholds to the oracle_tablespace check depending on the
+      size of the tablespaces.
+
+    BI:
+    * FIX: fix exception in BI-Boxes views of host groups
+    * FIX: fix problem where BI-Boxes were invisible if not previously unfolded
+
+    Event Console:
+    * FIX: support non-Ascii characters in matching expressions. Note:
+           you need to edit and save each affected rule once in order
+           to make the fix work.
+    * FIX: Fixed exception when logging actions exectuted by mkeventd
+    * FIX: etc/init.d/mkeventd flush did not work when mkeventd was stopped
+
+    Multisite:
+    * FIX: Fixed several minor IE7 related layout bugs
+    * FIX: title of pages was truncated and now isn't anymore
+    * Cleanup form for executing commands on hosts/services
+
+    WATO:
+    * FIX: Fixed layout of rulelist table in IE*
+    * FIX: Fixed adding explicit host names to rules in IE7
+    * Add: Improved navigation convenience when plugin output contains [running on ... ]
+
 1.2.2b1:
     Core:
     * cmk --notify: added notification script to generate HTML mails including
@@ -9,6 +58,10 @@
       creation of the files (Thanks to Guido Günther)
     * FIX: Inventory for cluster nodes who are part of multiple clusters 
     * cmk --notify: added plugin for sms notification
+    * FIX: precompiled checks: correct handling of sys.exit() call when using python2.4 
+    * cmk --notify: improved logging on wrong notification type
+    * RPM: Added check_mk-agent-scriptless package (Same as normal agent rpm,
+      but without RPM post scripts)
 
     Checks & Agents:
     * winperf_processor now outputs float usage instead of integer
@@ -19,10 +72,37 @@
     * jolokia_metrics.mem: now supports warn/crit levels for heap, nonheap, totalheap
     * jolokia_metrics.mem: add dedicated PNP graph
     * FIX: logwatch.ec: use UNIX socket instead of Pipe for forwarding into EC 
+    * FIX: logwatch.ec: fixed exception when forwarding "OK" lines
+    * FIX: logwatch.ec: fixed forwarding of single log lines to event console
+    * Improved performance of logwatch.ec check in case of many messages
     * livestatus_status: new check for monitoring performance of monitoring
+    * FIX: diskstat.include: fix computation of queue length on windows
+      (thanks to K.H. Fiebig)
+    * lnx_bonding: new check for bonding interfaces on Linux
+    * ovs_bonding: new check for bonding interfaces on Linux / Open vSwitch
+    * if: Inventory settings can now be set host based
+    * FIX: lnx_bonding/ovs_bonding: correct definition of bonding.include
+    * Add: if check now able to handle interface groups  (if_groups)
+    * Add: New check for DB2 instance memory levels
+    * Add: winperf_phydisk can now output IOPS
+    * Add: oracle_tablespace now with flexible warn/crit levels(magic number)
+    
+    Livestatus:
+    * Add: new column in hosts/services table: comments_with_extra_info
+    Adds the entry type and entry time
 
     Multisite:
     * Added comment painter to notification related views
+    * Added compatibility code to use hashlib.md5() instead of md5.md5(), which
+      is deprecated in python > 2.5 to prevent warning messages in apache error log
+    * Added host filter for "last host state change" and "last host check"
+    * FIX: Preventing autocomplete in password fields of "edit profile" dialog
+    * The ldap member attribute of groups is now configruable via WATO
+    * Added option to enforce lower User-IDs during LDAP sync
+    * Improved debug logging of ldap syncs (Now writing duration of queries to log)
+    * Displaying date/time of comments in comment icon hover menu (Please
+      note: You need to update your livestatus to current version to make this work)
+    * FIX: Making "action" context link unclickable during handling actions / confirms
 
     BI:
     * Use Ajax to delay rendering of invisible parts of the tree (this
@@ -30,15 +110,33 @@
 
     WATO:
     * Added hr_mem check to the memory checkgroup to make it configurable in WATO
+    * Make page_header configurable in global settings
     * FIX: Fixed some typos in ldap error messages
     * FIX: Fixed problem on user profile page when no alias set for a user
     * FIX: list valuespecs could not be extended after once saving
     * FIX: fix title of foldable areas contained in list valuespecs
     * FIX: Fixed bug where pending log was not removed in multisite setup
-    * Make page_header configurable in global settings
+    * FIX: Fixed generation of auth.php (Needed for NagVis Multisite Authorisation)
+    * FIX: Fixed missing general.* permissions in auth.php on slave sites in 
+      case of distributed WATO setups
+    * Added oracle_tablespaces configuration to the application checkgroup
+    * FIX: Fixed synchronisation of mkeventd configs in distributed WATO setups
+    * FIX: "Sync & Restart" did not perform restart in distributed WATO setups
+    * FIX: Fixed exception in editing code of ldap group to rule plugin
+    * FIX: Don't execute ldap sync while performing actions on users page
 
     Event Console:
     * Added UNIX socket for sending events to the EC
+    * Speed up rule matches in some special cases by factor of 100 and more
+    * Init-Script: Improved handling of stale pidfiles
+    * Init-Script: Detecting and reporting already running processes
+    * WATO: Added hook to make the mkeventd reload in distributed WATO setups
+      during "activate changes" process
+    * Added hook mkeventd-activate-changes to add custom actions to the mkeventd
+      "activate changes" GUI function
+    * FIX: When a single rule matching raises an exception, the line is now
+      matched agains the following rules instead of being skipped. The
+      exception is logged to mkeventd.log
 
 1.2.1i5:
     Core:

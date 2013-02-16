@@ -5,7 +5,14 @@
 # and restart the site
 
 import os
+
 send_path = '/usr/bin/sendsms'
+if not os.path.exists(send_path):
+    send_path = '/usr/local/bin/sendsms'
+    if not os.path.exists(send_path):
+        print "SMS Tools not found"
+        os._exit(1)
+
 max_len = 160
 message = os.environ['NOTIFY_HOSTNAME'] + " "
 
@@ -15,7 +22,7 @@ if os.environ['NOTIFY_WHAT'] == 'SERVICE':
     message += os.environ['NOTIFY_SERVICEDESC'][:avail_len] + " "
     avail_len = max_len - len(message)
     message += os.environ['NOTIFY_SERVICEOUTPUT'][:avail_len]
-    
+
 else:
     message += "is " + os.environ['NOTIFY_HOSTSTATE']
 

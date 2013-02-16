@@ -118,7 +118,7 @@ if (isset($DS[2])) {
     }
 
     if (isset($RRD["read_ql"])) {
-        $opt[] = "--vertical-label 'Queue Length' -X0 -u10 -l-10 --title \"Queue Length $hostname / $disk\" ";
+        $opt[] = "--vertical-label 'Queue Length' -X0 -u5 -l-5 --title \"Queue Length $hostname / $disk\" ";
         $def[] = ""
                 . "DEF:read=$RRD[read_ql] "
                 . "DEF:write=$RRD[write_ql] "

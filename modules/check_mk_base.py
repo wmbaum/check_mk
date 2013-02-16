@@ -253,11 +253,10 @@ def submit_check_mk_aggregation(hostname, status, output):
 # and thus do no network activity at all...
 
 def get_host_info(hostname, ipaddress, checkname):
-
     # If the check want's the node info, we add an additional
     # column (as the first column) with the name of the node
     # or None (in case of non-clustered nodes). On problem arises,
-    # if we deal with subchecks. We assume that all subchecks 
+    # if we deal with subchecks. We assume that all subchecks
     # have the same setting here. If not, let's raise an exception.
     add_nodeinfo = check_info.get(checkname, {}).get("node_info", False)
 
@@ -311,6 +310,10 @@ def get_host_info(hostname, ipaddress, checkname):
 # might have to be fetched via SNMP *and* TCP for one host
 # (even if this is unlikeyly)
 #
+# What makes the thing even more tricky is the new piggyback
+# function, that allows one host's agent to send data for another
+# host.
+#
 # This function assumes, that each check type is queried
 # only once for each host.
 def get_realhost_info(hostname, ipaddress, check_type, max_cache_age):
@@ -350,24 +353,109 @@ def get_realhost_info(hostname, ipaddress, check_type, max_cache_age):
         return table
 
     # No SNMP check. Then we must contact the check_mk_agent. Have we already
-    # to get data from the agent? If yes we must not do that again! Even if
-    # no cache file is present
+    # tries to get data from the agent? If yes we must not do that again! Even if
+    # no cache file is present.
     if g_agent_already_contacted.has_key(hostname):
 	raise MKAgentError("")
 
     g_agent_already_contacted[hostname] = True
     store_cached_hostinfo(hostname, []) # leave emtpy info in case of error
 
-    output = get_agent_info(hostname, ipaddress, max_cache_age)
+    # If we have piggyback data for that host from another host,
+    # then we prepend this data and also tolerate a failing
+    # normal Check_MK Agent access.
+    piggy_output = get_piggyback_info(hostname)
+    output = ""
+    agent_failed = False
+    if is_tcp_host(hostname):
+        try:
+            output = get_agent_info(hostname, ipaddress, max_cache_age)
+        except:
+            agent_failed = True
+            # Remove piggybacked information from the host (in the
+            # role of the pig here). Why? We definitely haven't
+            # reached that host so its data from the last time is
+            # not valid any more.
+            remove_piggyback_info_from(hostname)
+
+            if not piggy_output:
+                raise
+
+    output += piggy_output
+
     if len(output) == 0:
         raise MKAgentError("Empty output from agent")
     elif len(output) < 16:
         raise MKAgentError("Too short output from agent: '%s'" % output)
 
     lines = [ l.strip() for l in output.split('\n') ]
-    info = parse_info(lines)
+    info, piggybacked = parse_info(lines, hostname)
+    store_piggyback_info(hostname, piggybacked)
     store_cached_hostinfo(hostname, info)
-    return info.get(check_type, []) # return only data for specified check
+
+    # If the agent has failed and the information we seek is
+    # not contained in the piggy data, raise an exception
+    if check_type not in info:
+        if agent_failed:
+            raise MKAgentError("Cannot get information from agent, processing only piggyback data.")
+        else:
+            return []
+
+    return info[check_type] # return only data for specified check
+
+
+def get_piggyback_info(hostname):
+    output = ""
+    dir = tmp_dir + "/piggyback/" + hostname
+    if os.path.exists(dir):
+        for sourcehost in os.listdir(dir):
+            if sourcehost not in ['.', '..'] \
+                and not sourcehost.startswith(".new."):
+                if opt_debug:
+                    sys.stderr.write("Using piggyback information from host %s.\n" %
+                      sourcehost)
+                output += file(dir + "/" + sourcehost).read()
+    return output
+
+
+def store_piggyback_info(sourcehost, piggybacked):
+    piggyback_path = tmp_dir + "/piggyback/"
+    for backedhost, lines in piggybacked.items():
+        if opt_debug:
+            sys.stderr.write("Storing piggyback data for %s.\n" % backedhost)
+        dir = piggyback_path + backedhost
+        if not os.path.exists(dir):
+            os.makedirs(dir)
+        out = file(dir + "/.new." + sourcehost, "w")
+        for line in lines:
+            out.write("%s\n" % line)
+        os.rename(dir + "/.new." + sourcehost,dir + "/" + sourcehost)
+
+    # Remove piggybacked information that is not
+    # being sent this turn
+    remove_piggyback_info_from(sourcehost, keep=piggybacked)
+
+def remove_piggyback_info_from(sourcehost, keep=[]):
+    removed = 0
+    piggyback_path = tmp_dir + "/piggyback/"
+    if not os.path.exists(piggyback_path):
+        return # Nothing to do
+
+    for backedhost in os.listdir(piggyback_path):
+        if backedhost not in ['.', '..'] and backedhost not in keep:
+            path = piggyback_path + backedhost + "/" + sourcehost
+            if os.path.exists(path):
+                if opt_debug:
+                    sys.stderr.write("Removing stale piggyback file %s\n" % path)
+                os.remove(path)
+                removed += 1
+
+            # Remove directory if empty
+            try:
+                os.rmdir(piggyback_path + backedhost)
+            except:
+                pass
+    return removed
 
 
 def read_cache_file(relpath, max_cache_age):
@@ -469,6 +557,9 @@ def get_agent_info_tcp(hostname, ipaddress):
             s.settimeout(tcp_connect_timeout)
         except:
             pass # some old Python versions lack settimeout(). Better ignore than fail
+        if opt_debug:
+            sys.stderr.write("Connecting via TCP to %s:%d.\n" % (
+                    ipaddress, agent_port_of(hostname)))
         s.connect((ipaddress, agent_port_of(hostname)))
         try:
             s.setblocking(1)
@@ -519,13 +610,21 @@ def store_cached_checkinfo(hostname, checkname, table):
         g_infocache[hostname] = { checkname: table }
 
 # Split agent output in chunks, splits lines by whitespaces
-def parse_info(lines):
+def parse_info(lines, hostname):
     info = {}
+    piggybacked = {} # unparsed info for other hosts
+    host = None
     chunk = []
     chunkoptions = {}
     separator = None
     for line in lines:
-        if line[:3] == '<<<' and line[-3:] == '>>>':
+        if line[:4] == '<<<<' and line[-4:] == '>>>>':
+            host = line[4:-4]
+            if not host or host == hostname:
+                host = None # unpiggybacked "normal" host
+        elif host: # processing data for an other host
+            piggybacked.setdefault(host, []).append(line)
+        elif line[:3] == '<<<' and line[-3:] == '>>>':
             chunkheader = line[3:-3]
             # chunk header has format <<<name:opt1(args):opt2:opt3(args)>>>
             headerparts = chunkheader.split(":")
@@ -550,7 +649,7 @@ def parse_info(lines):
                 separator = None
         elif line != '':
             chunk.append(line.split(separator))
-    return info
+    return info, piggybacked
 
 
 def cachefile_age(filename):
@@ -776,7 +875,7 @@ def convert_check_info():
                 "snmp_info"               : snmp_info.get(check_type),
                 # Sometimes the scan function is assigned to the check_type
                 # rather than to the base name.
-                "snmp_scan_function"      : 
+                "snmp_scan_function"      :
                     snmp_scan_functions.get(check_type,
                         snmp_scan_functions.get(basename)),
                 "default_levels_variable" : check_default_levels.get(check_type),
@@ -809,7 +908,7 @@ def convert_check_info():
                raise MKGeneralException("Invalid check implementation: node_info for %s and %s are different." % (
                    (base_check, check_type)))
 
-    # Now gather snmp_info and snmp_scan_function back to the 
+    # Now gather snmp_info and snmp_scan_function back to the
     # original arrays. Note: these information is tied to a "agent section",
     # not to a check. Several checks may use the same SNMP info and scan function.
     for check_type, info in check_info.iteritems():
@@ -839,11 +938,11 @@ def do_all_checks_on_host(hostname, ipaddress, only_check_types = None):
         period = check_period_of(hostname, description)
         if period and not check_timeperiod(period):
             if opt_debug:
-                sys.stderr.write("Skipping service %s: currently not in timeperiod %s.\n" % 
+                sys.stderr.write("Skipping service %s: currently not in timeperiod %s.\n" %
                         (description, period))
             continue
         elif period and opt_debug:
-            sys.stderr.write("Service %s: timeperiod %s is currently active.\n" % 
+            sys.stderr.write("Service %s: timeperiod %s is currently active.\n" %
                     (description, period))
 
         # In case of a precompiled check table info is the aggrated
@@ -1145,7 +1244,7 @@ def savefloat(f):
 
 # Takes bytes as integer and returns a string which represents the bytes in a
 # more human readable form scaled to GB/MB/KB
-# The unit parameter simply changes the returned string, but does not interfere 
+# The unit parameter simply changes the returned string, but does not interfere
 # with any calcluations
 def get_bytes_human_readable(b, base=1024.0, bytefrac=True, unit="B"):
     # Handle negative bytes correctly
@@ -1157,11 +1256,11 @@ def get_bytes_human_readable(b, base=1024.0, bytefrac=True, unit="B"):
     if b >= base * base * base * base:
         return '%s%.2fT%s' % (prefix, b / base / base / base / base, unit)
     elif b >= base * base * base:
-        return '%s%.2fG%s' % (prefix, b / base / base / base, unit) 
+        return '%s%.2fG%s' % (prefix, b / base / base / base, unit)
     elif b >= base * base:
-        return '%s%.2fM%s' % (prefix, b / base / base, unit) 
+        return '%s%.2fM%s' % (prefix, b / base / base, unit)
     elif b >= base:
-        return '%s%.2fk%s' % (prefix, b / base, unit) 
+        return '%s%.2fk%s' % (prefix, b / base, unit)
     elif bytefrac:
         return '%s%.2f%s' % (prefix, b, unit)
     else: # Omit byte fractions

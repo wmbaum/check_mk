@@ -173,12 +173,12 @@ def pnp_url(row, what, how = 'graph'):
     else:
         svc = pnp_cleanup(row["service_description"])
     site = html.site_status[sitename]["site"]
-    if html.mobile: 
+    if html.mobile:
         url = site["url_prefix"] + ("pnp4nagios/index.php?kohana_uri=/mobile/%s/%s/%s" % \
-            (how, htmllib.urlencode(host), htmllib.urlencode(svc))) 
+            (how, htmllib.urlencode(host), htmllib.urlencode(svc)))
     else:
         url = site["url_prefix"] + ("pnp4nagios/index.php/%s?host=%s&srv=%s" % \
-            (how, htmllib.urlencode(host), htmllib.urlencode(svc))) 
+            (how, htmllib.urlencode(host), htmllib.urlencode(svc)))
 
     if how == 'graph':
         url += "&theme=multisite&baseurl=%scheck_mk/" % \
@@ -318,17 +318,18 @@ multisite_icons.append({
 #   +----------------------------------------------------------------------+
 
 def paint_comments(what, row, tags, custom_vars):
-    comments = row[what+ "_comments_with_info"]
+    comments = row[what+ "_comments_with_extra_info"]
     if len(comments) > 0:
         text = ""
-        for id, author, comment in comments:
-            text += "%s: \"%s\" \n" % (author, comment)
+        for c in comments:
+            id, author, comment, ty, timestamp = c
+            text += "%s %s: \"%s\" \n" % (paint_age(timestamp, True, 0, 'abs')[1], author, comment)
         return link_to_view('<img class=icon title=\'%s\' ' \
                             'src="images/icon_comment.gif">' %
                                  text, row, 'comments_of_' + what)
 
 multisite_icons.append({
-    'columns':         [ 'comments_with_info' ],
+    'columns':         [ 'comments_with_extra_info' ],
     'paint':           paint_comments,
 })
 

@@ -69,6 +69,12 @@ Boston, MA 02110-1301 USA.
     width: 1px;
 }
 
+.wato table.data td.buttons,
+.wato table.data td.buttons a,
+.wato table.data td.buttons img {
+    white-space: nowrap;
+}
+
 .wato th.right {
     border-right-style: none;
     border-radius: 0px 4px 0px 0px;
@@ -609,7 +615,7 @@ table.validationerror img {
     width: 360px;
 }
 
-/* Special styling for Timeperiods editor */ 
+/* Special styling for Timeperiods editor */
 .wato table.timeperiod td.name {
     width: 195px;
 }
@@ -640,9 +646,10 @@ form#form_timeperiod td.vlof_content {
 }
 
 /* main menu */
-.wato div.mainmenu {
-    display: table-cell;
-    margin-bottom: 10px;
+
+form.search {
+    padding-top: 10px;
+    clear: both;
 }
 
 .wato div.mainmenu a {
@@ -665,7 +672,7 @@ form#form_timeperiod td.vlof_content {
 }
 
 .wato div.mainmenu div {
-    text-decoration: none; 
+    text-decoration: none;
     color: white;
 }
 .wato div.mainmenu img {
@@ -1020,8 +1027,62 @@ table.logwatch span.match {
 table.multisite_conn_method td {
     padding: 0px;
     height: 22px;
-    vertical-align: top; 
+    vertical-align: top;
 }
 table.multisite_conn_method td input {
     height: 18px;
 }
+
+/* BI Editor */
+
+.wato .biruletree div {
+    float: none;
+    display: inline-block;
+    vertical-align: top;
+}
+
+.wato .biruletree .birule {
+    background-color: #ccc;
+    border: 1px solid #666;
+    box-shadow: 0.5px 0.5px 2px #000;
+    color: black;
+    width: 150px;
+    border-radius: 4px;
+    padding-left: 4px;
+    height: 20px;
+    margin-bottom: 3px;
+    padding-top: 2px;
+    margin-top: 5px;
+}
+
+.wato .biruletree .birule img {
+    position: relative;
+    top: -1px;
+}
+
+
+.wato .biruletree .birule:hover {
+    background-color: #eee;
+}
+
+.wato .biruletree .birule a {
+    color: black;
+    text-decoration: none;
+    display: block;
+}
+
+.wato .biruletree .arrow {
+    border-style: none none solid solid;
+    border-color: #134;
+    border-width: 2px;
+    margin-left: 40px;
+    margin-right: 3px;
+    width: 50px;
+    height: 16px;
+    border-radius: 0px 10px;
+}
+
+.wato .biruletree .node {
+    margin-top: 0px;
+}
+

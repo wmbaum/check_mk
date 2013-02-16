@@ -1,3 +1,5 @@
+#!/usr/bin/python
+# -*- encoding: utf-8; py-indent-offset: 4 -*-
 # +------------------------------------------------------------------+
 # |             ____ _               _        __  __ _  __           |
 # |            / ___| |__   ___  ___| | __   |  \/  | |/ /           |
@@ -22,28 +24,24 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
-include ../../Makefile.omd
+# {
+#     'tcp_port': 4711,
+#     'secret': 'wef',
+#     'infos': ['hostsystem', 'virtualmachine'],
+#     'user': 'wefwef'
+# }
 
-NAME = mkeventd
-VERSION = foobar
-DIR = $(NAME)-$(VERSION)
+def agent_vsphere_arguments(params, ipaddress):
+    args = ''
+    if "tcp_port" in params:
+        args += " -p %d" % params["tcp_port"]
+    if "lower" in params:
+        args += " -lower"
 
-build:
-	tar xzf $(DIR).tar.gz
-	cd $(DIR)/src ; make
+    args += " -u " + quote_shell_string(params["user"])
+    args += " -s " + quote_shell_string(params["secret"])
+    args += " -i " + ",".join(params["infos"])
+    args += " " + quote_shell_string(ipaddress)
+    return args
 
-install:
-	mkdir -p $(DESTDIR)$(OMD_ROOT)/bin
-	install -m 755 $(DIR)/bin/* $(DESTDIR)$(OMD_ROOT)/bin
-	install -m 755 $(DIR)/src/mkevent $(DESTDIR)$(OMD_ROOT)/bin
-	install -m 755 $(DIR)/src/mkeventd_open514 $(DESTDIR)$(OMD_ROOT)/bin
-	mkdir -p $(DESTDIR)$(OMD_ROOT)/lib/nagios/plugins
-	install -m 755 $(DIR)/lib/* $(DESTDIR)$(OMD_ROOT)/lib/nagios/plugins
-	mkdir -p $(DESTDIR)$(OMD_ROOT)/share/check_mk/checks
-	install -m 644 $(DIR)/checks/* $(DESTDIR)$(OMD_ROOT)/share/check_mk/checks
-	mkdir -p $(DESTDIR)$(OMD_ROOT)/share/check_mk/web
-	cp -pr $(DIR)/web/* $(DESTDIR)$(OMD_ROOT)/share/check_mk/web
-
-clean:
-	rm -rf mk-eventd-*.*.*
-
+special_agent_info['vsphere'] = agent_vsphere_arguments

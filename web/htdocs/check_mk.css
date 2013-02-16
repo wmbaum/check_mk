@@ -72,6 +72,10 @@ button, input, td, th, select, textarea {
     font-size: 9pt;
 }
 
+input.number {
+    text-align: right;
+}
+
 /* Styling for input elements */
 input, select, textarea {
     padding: 3px;
@@ -106,7 +110,7 @@ select.icon option {
 input.buttonlink {
     padding: 1px;
     font-size: 8pt;
-} 
+}
 
 input.button {
     border-color: #86A9B8 #22404D #22414D #86A9B8;
@@ -188,10 +192,10 @@ label.image_button input:active {
 }
 label.image_button input[type="submit"]::-moz-focus-inner {
     border: 0px;
-} 
+}
 /*for IE8 */
 input[type="submit"]:focus {
-    outline: none; 
+    outline: none;
 }
 
 input:hover, select:hover, textarea:hover {
@@ -351,7 +355,7 @@ div.warning a {
 |           \ \ / / _` | | | | |/ _ \___ \| '_ \ / _ \/ __|                |
 |            \ V / (_| | | |_| |  __/___) | |_) |  __/ (__                 |
 |             \_/ \__,_|_|\__,_|\___|____/| .__/ \___|\___|                |
-|                                         |_|                              | 
+|                                         |_|                              |
 +--------------------------------------------------------------------------+
 | Styles needed for HTML code produced by valuespec.py.                    |
 '-------------------------------------------------------------------------*/
@@ -393,6 +397,14 @@ table.data tr td table.vs_dict_text > tbody > tr > td {
     vertical-align: top;
 }
 
+table.valuespec_tuple {
+    border-spacing: 2px;
+}
+
+table.valuespec_tuple td {
+    padding: 0px;
+}
+
 table.valuespec_tuple td.tuple_left {
     padding-right: 8px;
     padding-top: 5px;
@@ -400,7 +412,7 @@ table.valuespec_tuple td.tuple_left {
 
 table.valuespec_tuple td.tuple_right,
 table.valuespec_tuple td.tuple_left {
-    padding-bottom: 3px;
+    /* padding-bottom: 3px; */
 }
 
 table.valuespec_tuple span.title {
@@ -409,6 +421,8 @@ table.valuespec_tuple span.title {
 
 table.vs_date {
     border-spacing: 0px;
+    display: inline-block;
+    vertical-align: middle;
 }
 
 table.vs_date td {

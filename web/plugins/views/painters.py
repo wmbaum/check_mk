@@ -103,14 +103,14 @@ multisite_painter_options["ts_date"] = {
               ("%m/%d",    "12/18") ]
 }
 
-# This helper function returns the value of the given custom var 
+# This helper function returns the value of the given custom var
 def paint_custom_host_var(what, row):
     custom_vars = dict(zip(row["host_custom_variable_names"],
                            row["host_custom_variable_values"]))
 
     if what in custom_vars:
         return what, custom_vars[what]
-    return what,  "" 
+    return what,  ""
 
 
 #    ___
@@ -804,7 +804,7 @@ multisite_painters["host_check_command_expanded"] = {
     "title"   : _("Host check command expanded"),
     "short"   : _("Check command expanded"),
     "columns" : ["host_check_command_expanded"],
-    "paint"   : lambda row: (None, row["host_check_command_expanded"]), 
+    "paint"   : lambda row: (None, row["host_check_command_expanded"]),
 }
 
 multisite_painters["host_state_age"] = {
@@ -1104,20 +1104,6 @@ multisite_painters["host_services"] = {
     "columns" : [ "host_name", "host_services_with_state" ],
     "paint"   : lambda row: paint_service_list(row, "host_services_with_state"),
 }
-
-def paint_host_list(site, hosts):
-    h = ""
-    first = True
-    for host in hosts:
-        if first:
-            first = False
-        else:
-            h += ", "
-        link = "view.py?view_name=hoststatus&site=%s&host=%s" % (htmllib.urlencode(site), htmllib.urlencode(host))
-        if html.var("display_options"):
-            link += "&display_options=%s" % html.var("display_options")
-        h += "<a href=\"%s\">%s</a></div>" % (link, host)
-    return "", h
 
 multisite_painters["host_parents"] = {
     "title"   : _("Host's parents"),

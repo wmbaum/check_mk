@@ -32,15 +32,15 @@ except:
     mkeventd_enabled = False
 
 # main_config_file = defaults.check_mk_configdir + "/mkeventd.mk"
-config_dir       = defaults.default_config_dir + "/mkeventd.d/wato/"
+mkeventd_config_dir  = defaults.default_config_dir + "/mkeventd.d/wato/"
 if defaults.omd_root:
-    status_file      = defaults.omd_root + "/var/mkeventd/status"
+    mkeventd_status_file = defaults.omd_root + "/var/mkeventd/status"
 
 # Include rule configuration into backup/restore/replication. Current
 # status is not backed up.
 if mkeventd_enabled:
-    replication_paths.append(( "dir", "mkeventd", config_dir ))
-    backup_paths.append(( "dir", "mkeventd", config_dir ))
+    replication_paths.append(( "dir", "mkeventd", mkeventd_config_dir ))
+    backup_paths.append(( "dir", "mkeventd", mkeventd_config_dir ))
 
 #.
 #   .--ValueSpecs----------------------------------------------------------.
@@ -234,7 +234,7 @@ vs_mkeventd_rule = Dictionary(
           Checkbox(
             title = _("Drop Message"),
             help = _("With this option all messages matching this rule will be silently dropped."),
-            label = _("Silently drop messages, do no actions"),
+            label = _("Silently drop message, do no actions"),
           )
         ),
         ( "state",
@@ -255,6 +255,12 @@ vs_mkeventd_rule = Dictionary(
             title = _("Actions"),
             help = _("Actions to automatically perform when this event occurs"),
             choices = mkeventd.action_choices,
+          )
+        ),
+        ( "autodelete",
+          Checkbox(
+            title = _("Automatic Deletion"),
+            label = _("Delete event immediately after the actions"),
           )
         ),
         ( "count",
@@ -456,8 +462,8 @@ vs_mkeventd_rule = Dictionary(
                   Age(),
                   ListChoice(
                     choices = [
-                      ( "open", _("Expire events that are in state <i>open</i>") ),
-                      ( "ack", _("Expire events thar are in state <i>acknowledged</i>") ),
+                      ( "open", _("Expire events that are in the state <i>open</i>") ),
+                      ( "ack", _("Expire events that are in the state <i>acknowledged</i>") ),
                     ],
                     default_value = [ "open" ],
                   )
@@ -465,7 +471,7 @@ vs_mkeventd_rule = Dictionary(
           ),
         ),
         ( "match",
-          RegExp(
+          RegExpUnicode(
             title = _("Text to match"),
             help = _("The rules does only apply when the given regular expression matches "
                      "the message text (infix search)."),
@@ -473,7 +479,7 @@ vs_mkeventd_rule = Dictionary(
           ) 
         ),
         ( "match_host",
-          RegExp(
+          RegExpUnicode(
             title = _("Match host"),
             help = _("The rules does only apply when the given regular expression matches "
                      "the host name the message originates from. Note: in some cases the "
@@ -481,7 +487,7 @@ vs_mkeventd_rule = Dictionary(
           ) 
         ),
         ( "match_application",
-          RegExp(
+          RegExpUnicode(
               title = _("Match syslog application (tag)"),
               help = _("Regular expression for matching the syslog tag (case insenstive)"),
           )
@@ -521,7 +527,7 @@ vs_mkeventd_rule = Dictionary(
           ),
         ),
         ( "match_ok",
-          RegExp(
+          RegExpUnicode(
             title = _("Text to cancel event"),
             help = _("If a matching message appears with this text, then an event created "
                      "by this rule will automatically be cancelled (if host, application and match groups match). "),
@@ -613,7 +619,7 @@ vs_mkeventd_rule = Dictionary(
         ( _("General Properties"), [ "id", "description", "disabled" ] ),
         ( _("Matching Criteria"), [ "match", "match_host", "match_application", "match_priority", "match_facility", 
                                     "match_sl", "match_ok", "cancel_priority" ]),
-        ( _("Outcome &amp; Action"), [ "state", "sl", "actions", "drop" ]),
+        ( _("Outcome &amp; Action"), [ "state", "sl", "actions", "drop", "autodelete" ]),
         ( _("Counting &amp; Timing"), [ "count", "expect", "delay", "livetime", ]),
         ( _("Rewriting"), [ "set_text", "set_host", "set_application", "set_comment", "set_contact" ]),
     ],
@@ -680,7 +686,7 @@ vs_mkeventd_event = Dictionary(
 #   '----------------------------------------------------------------------'
 
 def load_mkeventd_rules():
-    filename = config_dir + "rules.mk"
+    filename = mkeventd_config_dir + "rules.mk"
     if not os.path.exists(filename):
         return []
     try:
@@ -689,8 +695,8 @@ def load_mkeventd_rules():
         # If we are running on OMD then we know the path to
         # the state retention file of mkeventd and can read
         # the rule statistics directly from that file.
-        if defaults.omd_root and os.path.exists(status_file):
-            mkeventd_status = eval(file(status_file).read())
+        if defaults.omd_root and os.path.exists(mkeventd_status_file):
+            mkeventd_status = eval(file(mkeventd_status_file).read())
             rule_stats = mkeventd_status["rule_stats"]
             for rule in vars["rules"]:
                 rule["hits"] = rule_stats.get(rule["id"], 0)
@@ -712,8 +718,8 @@ def load_mkeventd_rules():
 
 def save_mkeventd_rules(rules):
     make_nagios_directory(defaults.default_config_dir + "/mkeventd.d")
-    make_nagios_directory(config_dir)
-    out = create_user_file(config_dir + "rules.mk", "w")
+    make_nagios_directory(mkeventd_config_dir)
+    out = create_user_file(mkeventd_config_dir + "rules.mk", "w")
     out.write("# Written by WATO\n# encoding: utf-8\n\n")
     try:
         if config.mkeventd_pprint_rules:
@@ -1078,6 +1084,21 @@ def mode_mkeventd_edit_rule(phase):
     html.hidden_fields()
     html.end_form()
 
+def mkeventd_reload():
+    mkeventd.query("COMMAND RELOAD")
+    try:
+        os.remove(log_dir + "mkeventd.log")
+    except OSError:
+        pass # ignore not existing logfile
+    log_audit(None, "mkeventd-activate", _("Activated changes of event console configuration"))
+
+# This hook is executed when one applies the pending configuration changes
+# related to the mkeventd via WATO on the local system. The hook is called
+# without parameters.
+def call_hook_mkeventd_activate_changes():
+    if hooks.registered('mkeventd-activate-changes'):
+        hooks.call("mkeventd-activate-changes")
+
 def mode_mkeventd_changes(phase):
     if phase == "title":
         return _("Event Console - Pending Changes")
@@ -1088,14 +1109,13 @@ def mode_mkeventd_changes(phase):
         if config.may("mkeventd.activate") and parse_audit_log("mkeventd") and mkeventd.daemon_running():
             html.context_button(_("Activate Changes!"),
                     html.makeactionuri([("_activate", "now")]), "apply", hot=True)
-    
+
     elif phase == "action":
         if html.check_transaction():
-            mkeventd.query("COMMAND RELOAD")
-            os.remove(log_dir + "mkeventd.log")
-            log_audit(None, "mkeventd-activate", _("Activated changes of event console configuration"))
+            mkeventd_reload()
+            call_hook_mkeventd_activate_changes()
             return "mkeventd_rules", _("Changes successfully activated.")
-                
+
     else:
         if not mkeventd.daemon_running():
             warning = _("The Event Console Daemon is currently not running. ")
@@ -1260,7 +1280,7 @@ if mkeventd_enabled:
 
 
 if mkeventd_enabled:
-    register_configvar_domain("mkeventd", config_dir, lambda msg: log_mkeventd('config-change', msg))
+    register_configvar_domain("mkeventd", mkeventd_config_dir, lambda msg: log_mkeventd('config-change', msg))
     group = _("Event Console")
 
     register_configvar(group,
@@ -1863,4 +1883,8 @@ define command {
 """ % { "group" : contactgroup, "facility" : facility, "remote" : remote_console })
 
 api.register_hook("pre-activate-changes", mkeventd_update_notifiation_configuration)
+
+# Only register the reload hook when mkeventd is enabled
+if mkeventd_enabled:
+    api.register_hook("activate-changes", lambda hosts: mkeventd_reload())
 

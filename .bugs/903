@@ -1,0 +1,28 @@
+Title: Umlauts in regexes never match
+Component: ec
+Class: bug
+State: done
+Date: 2013-01-31 11:14:47
+Targetversion: 1.2.2
+
+When adding umlauts like ä to regex patterns, they do never match.
+
+Was machen wir eigentlich, wenn die Enkodierung der eingehenden
+Events nicht klar ist? Vorschlag:
+
+Wir kodieren grundsatzlich von UTF-8 nach intern Unicode. Dabei
+dann aufpassen, dass auch die Konfiguration der Regeln immer
+Unicode verwendet (nicht TextAscii, sondern TextUnicode()).
+
+Wenn beim Enkodieren ein Fehler auftritt, dann nehmen wir 
+latin1 an (bzw. Einstellbar als globale Option).
+
+try:
+    text = text.decode('utf-8'
+except:
+    text = text.decode(conifg.ec_fallback_encoding)
+
+
+2013-02-12 16:51:02: changed state open -> done
+Die mit dem try/except war eh schon drin. Allerdings hart-kodiert
+auf latin1.Denke wir lassen das vorerst so.

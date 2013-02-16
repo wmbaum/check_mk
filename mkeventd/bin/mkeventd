@@ -6,7 +6,7 @@ import socket, os, time, sys, getopt, signal, thread, pprint, re, \
 from pwd import getpwnam
 from grp import getgrnam
 
-VERSION="1.2.2b1"
+VERSION="1.2.3i1"
 
 #   .--Declarations--------------------------------------------------------.
 #   |       ____            _                 _   _                        |
@@ -171,12 +171,15 @@ def regex(reg):
 # neccessary to use regular expression logic in order
 # to match it.
 def is_regex(text):
-    return text != text.translate(None, ".*?[](){}\\^$+|")
+    for c in text:
+        if c in ".*?[](){}\\^$+|":
+            return True
+    return False
 
 def match(pattern, text, complete = True):
     if pattern == None:
         return True
-    elif type(pattern) == str:
+    elif type(pattern) in [ str, unicode ]:
         if complete:
             return pattern == text.lower()
         else:
@@ -857,7 +860,7 @@ class EventServer:
                     pass
 
             # Read events from builtin syslog server
-            if self._syslog.fileno() in readable:
+            if self._syslog != None and self._syslog.fileno() in readable:
                 self.process_event_data(self._syslog.recv(4096))
 
             if opt_profile.get("event"):
@@ -958,6 +961,10 @@ class EventServer:
                     log_event_history(event, "DELAYOVER")
                     if rule:
                         do_rule_actions(rule, event)
+                        if rule.get("autodelete"):
+                            events_to_delete.append(nr)
+                            log_event_history(event, "AUTODELETE")
+                            
                     else:
                         log("Cannot do rule action: rule %s not present anymore." % event["rule_id"])
 
@@ -1081,7 +1088,6 @@ class EventServer:
                 "last"         : now,
                 "comment"      : "",
                 "host"         : "",
-                "contact"      : "",
                 "application"  : "", 
                 "pid"          : 0,
                 "priority"     : 3,
@@ -1092,6 +1098,10 @@ class EventServer:
             g_event_status.new_event(event)
             log_event_history(event, "COUNTFAILED")
             do_rule_actions(rule, event)
+            if rule.get("autodelete"):
+                log_event_history(event, "AUTODELETE")
+                g_event_status.remove_event(event)
+
 
 
     # Precompile regular expressions and similar stuff
@@ -1122,6 +1132,11 @@ class EventServer:
                     for key in [ "match", "match_ok", "match_host", "match_application" ]:
                         if key in rule:
                             value = rule[key].strip()
+                            # Remote leading .* from regex. This is redundant and 
+                            # dramatically destroys performance when doing an infix search.
+                            if key in [ "match", "match_ok" ]:
+                                while value.startswith(".*") and not value.startswith(".*?"):
+                                    value = value[2:]
                             if not value:
                                 del rule[key]
                                 continue
@@ -1130,9 +1145,11 @@ class EventServer:
                             else:
                                 rule[key] = rule[key].lower()
                 except Exception, e:
+                    if opt_debug:
+                        raise
                     rule["disabled"] = True
                     count_disabled += 1
-                    log("Ignoring rule %s because of an invalid regex (%s)." % 
+                    log("Ignoring rule '%s' because of an invalid regex (%s)." % 
                             (rule["id"], e))
 
                 if g_config["rule_optimizer"]:
@@ -1213,7 +1230,11 @@ class EventServer:
            rule_candidates = self._rules
         
         for rule in rule_candidates:
-            result = self.event_rule_matches(rule, event)
+            try:
+                result = self.event_rule_matches(rule, event)
+            except Exception:
+                log('  Exception during matching:\n%s' % format_exception())
+                result = False
             if result:
                 g_perfcounters.count("rule_hits")
                 cancelling, groups = result
@@ -1222,7 +1243,7 @@ class EventServer:
 
                 g_event_status.count_rule_match(rule["id"])
                 if g_config["log_rulehits"]:
-                    log("Rule %s hit by message %s/%s - '%s'." % (
+                    log("Rule '%s' hit by message %s/%s - '%s'." % (
                         rule["id"],
                         syslog_facilities[event["facility"]], syslog_priorities[event["priority"]],
                         event["text"]))
@@ -1256,7 +1277,14 @@ class EventServer:
                                 existing_event["phase"] = "delayed"
                             else:
                                 do_rule_actions(rule, existing_event)
+
                             log_event_history(existing_event, "COUNTREACHED")
+
+                            if "delay" not in rule and rule.get("autodelete"):
+                                log_event_history(existing_event, "AUTODELETE")
+                                with lock_eventstatus:
+                                    g_event_status.remove_event(existing_event)
+
 
                     elif "expect" in rule:
                         g_event_status.count_expected_event(event)
@@ -1273,8 +1301,11 @@ class EventServer:
                             g_event_status.new_event(event)
                         if event["phase"] == "open":
                             do_rule_actions(rule, event)
+                            if rule.get("autodelete"):
+                                log_event_history(event, "AUTODELETE")
+                                with lock_eventstatus:
+                                    g_event_status.remove_event(event)
                     return
-
 
     # Checks if an event matches a rule. Returns either False (no match)
     # or a pair of matchtype, groups, where matchtype is False for a
@@ -1302,7 +1333,7 @@ class EventServer:
                     log("  did not match because of wrong application '%s' (need '%s')" % 
                             (event["application"], pattern(rule.get("match_application"))))
                 return False
-            
+
             if "match_facility" in rule and event["facility"] != rule["match_facility"]:
                 if debug:
                     log("  did not match because of wrong syslog facility")
@@ -2102,6 +2133,13 @@ class EventStatus():
         self._events.append(event)
         log_event_history(event, "NEW")
 
+    def remove_event(self, event):
+        try:
+            self._events.remove(event);
+        except Exception, e:
+            log("Cannot remove event %d: not present" % event["id"])
+        
+
     # Cancel all events the belong to a certain rule id and are
     # of the same "breed" as a new event.
     def cancel_events(self, new_event, match_groups, rule_id):
@@ -2288,13 +2326,13 @@ def do_rule_action(action, event, user=""):
             log_event_history(event, "EMAIL", user, "%s|%s" % (to, subject))
         elif action_type == 'script':
             execute_script(substitute_event_tags(settings["script"], event))
-            log_event_history(event, "SCRIPT", user, action)
+            log_event_history(event, "SCRIPT", user, action['id'])
         else:
             log("Cannot execute action %s: invalid action type %s" % (action["id"], action_type))
-    except Exception, e:
+    except Exception:
         if opt_debug:
             raise
-        log("Error during execution of action %s: %s" % (action["id"], e))
+        log("Error during execution of action %s: %s" % (action["id"], format_exception()))
 
 def substitute_event_tags(text, event):
     groups = [("match_group_%d" % (nr+1), g) for (nr, g) in enumerate(event.get("match_groups", ()))]
@@ -2314,7 +2352,19 @@ def send_email(to, subject, body):
     os.popen("mail -s '%s' '%s'" % (shell_escape(subject), shell_escape(to)), "w").write(body)
 
 def execute_script(body):
-    os.popen("/bin/bash", "w").write(body)
+    p = subprocess.Popen(
+        body.encode('utf-8'),
+        shell = True,
+        executable = '/bin/bash',
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+    )
+    output = p.stdout.read()
+    exitcode = p.wait()
+
+    if g_config["debug_rules"]:
+        if output:
+            log('  Output: %s' % output)
+        log('  Exitcode: %d' % exitcode)
 
 
 #.

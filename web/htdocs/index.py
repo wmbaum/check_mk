@@ -35,7 +35,7 @@ from mod_python import apache, util, Cookie
 import sys, os, pprint
 from lib import *
 import livestatus
-import defaults, config, htmllib, login, userdb, default_permissions
+import defaults, config, htmllib, login, userdb, hooks, default_permissions
 
 # Load page handlers
 pagehandlers = {}
@@ -161,13 +161,13 @@ def connect_to_livestatus(html):
         if config.may("general.see_all") and not config.user.get("force_authuser"):
             use_livestatus_auth = False
     else:
-        if config.may("general.see_all") and not config.user.get("force_authuser_webservice"): 
+        if config.may("general.see_all") and not config.user.get("force_authuser_webservice"):
             use_livestatus_auth = False
-            
+
     if use_livestatus_auth == True:
         html.live.set_auth_user('read',   config.user_id)
         html.live.set_auth_user('action', config.user_id)
-        
+
 
     # May the user see all objects in BI aggregations or only some?
     if not config.may("bi.see_all"):
@@ -178,7 +178,7 @@ def connect_to_livestatus(html):
 
 # Call the load_plugins() function in all modules
 def load_all_plugins():
-    for module in [ userdb, views, sidebar, dashboard, wato, bi, mobile ]:
+    for module in [ hooks, userdb, views, sidebar, dashboard, wato, bi, mobile ]:
         try:
             module.load_plugins # just check if this function exists
             module.load_plugins()
@@ -257,6 +257,12 @@ def handler(req, profiling = True):
         # Get page handler
         handler = pagehandlers.get(req.myfile, page_not_found)
 
+        # First initialization of the default permissions. Needs to be done before the auth_file
+        # (auth.php) ist written (it's done during showing the login page for the first time).
+        # Must be loaded before the "automation" call to have the general.* permissions available
+        # during automation action processing (e.g. hooks triggered by restart)
+        default_permissions.load()
+
         # Special handling for automation.py. Sorry, this must be hardcoded
         # here. Automation calls bybass the normal authentication stuff
         if req.myfile == "automation":
@@ -269,10 +275,6 @@ def handler(req, profiling = True):
         # Prepare output format
         output_format = html.var("output_format", "html")
         html.set_output_format(output_format)
-
-        # First initialization of the default permissions. Needs to be done before the auth_file
-        # (auth.php) ist written (it's done during showing the login page for the first time).
-        default_permissions.load()
 
         # Is the user set by the webserver? otherwise use the cookie based auth
         if not req.user or type(req.user) != str:

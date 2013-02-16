@@ -25,7 +25,7 @@
 # Boston, MA 02110-1301 USA.
 
 import config, defaults, livestatus, htmllib, time, os, re, pprint, time, copy
-import weblib, traceback, forms
+import weblib, traceback, forms, valuespec
 from lib import *
 from pagefunctions import *
 
@@ -103,7 +103,7 @@ def show_filter(f):
 
 def show_filter_form(is_open, filters):
     # Table muss einen anderen Namen, als das Formular
-    html.write('<div class="view_form" id="filters" %s>' 
+    html.write('<div class="view_form" id="filters" %s>'
             % (not is_open and 'style="display: none"' or '') )
 
     html.begin_form("filter")
@@ -382,11 +382,11 @@ def page_edit_views(msg=None):
 
             # Edit
             if owner == config.user_id:
-                html.icon_button("edit_view.py?load_view=%s" % viewname, _("Edit"), "edit") 
+                html.icon_button("edit_view.py?load_view=%s" % viewname, _("Edit"), "edit")
 
             # Clone / Customize
             buttontext = not owner and _("Customize this view") \
-                         or _("Create a clone of this view") 
+                         or _("Create a clone of this view")
             backurl = htmllib.urlencode(html.makeuri([]))
             clone_url = "edit_view.py?clonefrom=%s&load_view=%s&back=%s" \
                         % (owner, viewname, backurl)
@@ -394,16 +394,16 @@ def page_edit_views(msg=None):
 
             # Delete
             if owner == config.user_id:
-                html.icon_button("edit_views.py?_delete=%s" 
+                html.icon_button("edit_views.py?_delete=%s"
                                  % viewname, _("Delete this view!"), "delete")
             html.write('</td>')
 
             # Link name
-            html.write('<td>%s</td>' % viewname) 
+            html.write('<td>%s</td>' % viewname)
 
             # Title
             html.write('<td>')
-            if not view["hidden"]: 
+            if not view["hidden"]:
                 html.write("<a href=\"view.py?view_name=%s\">%s</a>"
                            % (viewname, view["title"]))
             else:
@@ -575,7 +575,7 @@ def page_edit_view():
     html.write("<br />\n")
     html.checkbox("mustsearch", label=_('show data only on search') + "<br>")
     html.checkbox("hidebutton", label=_('do not show a context button to this view'))
-    
+
     forms.section(_("Browser reload"))
     html.write(_("Reload page every "))
     html.number_input("browser_reload", 0)
@@ -623,7 +623,7 @@ def page_edit_view():
         if not shown_help:
             html.help(_("Please configure, which of the available filters will be used in this "
                   "view. <br><br><b>Show to user</b>: the user will be able to see and modify these "
-                  "filters. You can define default values. <br><br><b>Hardcode</b>: these filters " 
+                  "filters. You can define default values. <br><br><b>Hardcode</b>: these filters "
                   "will be in effect but not visible to the user. <br><br><b>Use for linking</b>: "
                   "These filters (usually site, host name and service) are needed for views "
                   "that have a context (such as a host or a service). Such views can be used "
@@ -711,9 +711,9 @@ def page_edit_view():
     if html.var("column_headers") == 'perpage':
         html.set_var("column_headers", 'pergroup')
 
-    html.select("column_headers", [ 
-        ("off",      _("off")), 
-        ("pergroup", _("once per group")), 
+    html.select("column_headers", [
+        ("off",      _("off")),
+        ("pergroup", _("once per group")),
         ("repeat",   _("repeat every 20'th row")) ])
 
     forms.section(_('Sortable by user'), simple=True)
@@ -1207,6 +1207,19 @@ def show_view(view, show_heading = False, show_buttons = True,
         else:
             filterheaders += header
 
+    # Prepare limit:
+    # We had a problem with stats queries on the logtable where
+    # the limit was not applied on the resulting rows but on the
+    # lines of the log processed. This resulted in wrong stats.
+    # For these datasources we ignore the query limits.
+    limit = None
+    if not datasource.get('ignore_limit', False):
+        limit = get_limit()
+
+
+    if html.var("mode") == "availability":
+        return render_availability(view, datasource, filterheaders, display_options, only_sites, limit)
+
     query = filterheaders + view.get("add_headers", "")
 
     # Sorting - use view sorters and URL supplied sorters
@@ -1216,7 +1229,7 @@ def show_view(view, show_heading = False, show_buttons = True,
     else:
         sorters = []
 
-    # Prepare gropuing information
+    # Prepare grouping information
     group_painters = [ (multisite_painters[e[0]],) + e[1:] for e in view["group_painters"] ]
 
     # Prepare columns to paint
@@ -1253,14 +1266,6 @@ def show_view(view, show_heading = False, show_buttons = True,
     if "site" in colset:
         colset.remove("site")
     columns = list(colset)
-
-    # We had a problem with stats queries on the logtable where
-    # the limit was not applied on the resulting rows but on the
-    # lines of the log processed. This resulted in wrong stats.
-    # For these datasources we ignore the query limits.
-    limit = None
-    if not datasource.get('ignore_limit', False):
-        limit = get_limit()
 
     # Get list of painter options we need to display (such as PNP time range
     # or the format being used for timestamp display)
@@ -1316,7 +1321,7 @@ def show_view(view, show_heading = False, show_buttons = True,
             layout = multisite_layouts["json"]
 
     # Until now no single byte of HTML code has been output.
-    # Now let's render the view. The render_function will be 
+    # Now let's render the view. The render_function will be
     # replaced by the mobile interface for an own version.
     if not render_function:
         render_function = render_view
@@ -1364,7 +1369,11 @@ def render_view(view, rows, datasource, group_painters, painters,
                        # Take into account: permissions, display_options
                        row_count > 0 and command_form,
                        # Take into account: layout capabilities
-                       can_display_checkboxes, show_checkboxes)
+                       can_display_checkboxes, show_checkboxes,
+                       # Show link to availability. This exists only for plain hosts
+                       # and services table. The grouping tables have columns that statehist
+                       # is missing. That way some of the filters might fail.
+                       datasource["table"] in [ "hosts", "services"] )
 
     # User errors in filters
     html.show_user_errors()
@@ -1429,13 +1438,17 @@ def render_view(view, rows, datasource, group_painters, painters,
             if show_buttons:
                 update_context_links(
                     # don't take display_options into account here ('c' is set during reload)
-                    row_count > 0 and should_show_command_form('C', datasource),
+                    row_count > 0 and should_show_command_form('C', datasource) \
+                    and not html.do_actions(),
                     can_display_checkboxes
                 )
 
         # Play alarm sounds, if critical events have been displayed
         if 'S' in display_options and view.get("play_sounds"):
             play_alarm_sounds()
+    else:
+        # Always hide action related context links in this situation
+        update_context_links(False, False)
 
     # In multi site setups error messages of single sites do not block the
     # output and raise now exception. We simply print error messages here.
@@ -1453,7 +1466,7 @@ def render_view(view, rows, datasource, group_painters, painters,
     if show_footer:
         pid = os.getpid()
         if html.live.successfully_persisted():
-            html.add_status_icon("persist", _("Reused persistent livestatus connection from earlier request (PID %d)") % pid) 
+            html.add_status_icon("persist", _("Reused persistent livestatus connection from earlier request (PID %d)") % pid)
         if bi.reused_compilation():
             html.add_status_icon("aggrcomp", _("Reused cached compiled BI aggregations (PID %d)") % pid)
 
@@ -1601,16 +1614,6 @@ def view_optiondial(view, option, choices, help):
 def view_optiondial_off(option):
     html.write('<div class="optiondial off %s"></div>' % option)
 
-
-def view_option_toggler(id, view, option, icon, help, hidden = False):
-    vo = view_options(view["name"])
-    value = vo.get(option, view.get(option, False))
-    html.begin_context_buttons() # just to be sure
-    hide = hidden and ' style="display:none"' or ''
-    html.write('<div id="%s_on" title="%s" class="togglebutton %s %s" '
-       'onclick="view_switch_option(this, \'%s\', \'%s\');"%s></div>' % (
-        id, help, icon, value and "down" or "up", view["name"], option, hide))
-
 def toggler(id, icon, help, onclick, value, hidden = False):
     html.begin_context_buttons() # just to be sure
     hide = hidden and ' style="display:none"' or ''
@@ -1653,8 +1656,9 @@ def togglebutton(id, isopen, icon, help, hidden = False):
     html.write('<div id="%s_on" class="togglebutton %s %s" title="%s" '
                'onclick="view_toggle_form(this, \'%s\');"%s></div>' % (id, icon, cssclass, help, id, hide))
 
-def show_context_links(thisview, active_filters, show_filters, display_options, 
-                       painter_options, enable_commands, enable_checkboxes, show_checkboxes):
+def show_context_links(thisview, active_filters, show_filters, display_options,
+                       painter_options, enable_commands, enable_checkboxes, show_checkboxes,
+                       show_availability):
     # html.begin_context_buttons() called automatically by html.context_button()
     # That way if no button is painted we avoid the empty container
     if 'B' in display_options:
@@ -1700,7 +1704,7 @@ def show_context_links(thisview, active_filters, show_filters, display_options,
 
         if 'R' in display_options and config.may("general.view_option_refresh"):
             choices = [ [x, {0:_("off")}.get(x,str(x) + "s") + (x and "" or "")] for x in config.view_option_refreshes ]
-            view_optiondial(thisview, "refresh", choices, _("Change the refresh rate")) 
+            view_optiondial(thisview, "refresh", choices, _("Change the refresh rate"))
         else:
             view_optiondial_off("refresh")
 
@@ -1733,7 +1737,10 @@ def show_context_links(thisview, active_filters, show_filters, display_options,
         else:
             url = "edit_view.py?clonefrom=%s&load_view=%s&back=%s" % \
                   (thisview["owner"], thisview["name"], backurl)
-        html.context_button(_("Edit View"), url, "edit", id="edit", bestof=config.context_buttons_to_show) 
+        html.context_button(_("Edit View"), url, "edit", id="edit", bestof=config.context_buttons_to_show)
+
+        if show_availability:
+            html.context_button(_("Availability"), html.makeuri([("mode", "availability")]), "availability")
 
     if 'B' in display_options:
         execute_hooks('buttons-end')
@@ -1841,8 +1848,12 @@ def query_data(datasource, columns, add_columns, add_headers, only_sites = [], l
 
     # Remove columns which are implicitely added by the datasource
     columns = [ c for c in columns if c not in add_columns ]
-
     query = "GET %s\n" % tablename
+    return do_query_data(query, columns, add_columns, merge_column,
+                         add_headers, only_sites, limit)
+
+def do_query_data(query, columns, add_columns, merge_column,
+                  add_headers, only_sites, limit):
     query += "Columns: %s\n" % " ".join(columns)
     query += add_headers
     html.live.set_prepend_site(True)
@@ -1869,6 +1880,7 @@ def query_data(datasource, columns, add_columns, add_headers, only_sites = [], l
     rows = [ dict(zip(columns, row)) for row in data ]
 
     return rows
+
 
 
 # Merge all data rows with different sites but the same value
@@ -2061,20 +2073,22 @@ def show_command_form(is_open, datasource):
     html.hidden_field("_do_actions", "yes")
     html.hidden_field("actions", "yes")
     html.hidden_fields() # set all current variables, exception action vars
-    # html.write('<table class="form">')
-    forms.header(_("Commands"), narrow=True)
 
-    # Commands are defined in plugins/views/commands.py. Iterate
-    # over all command definitions and render HTML input fields.
+    # Show command forms, grouped by (optional) command group
+    by_group = {}
     for command in multisite_commands:
         if what in command["tables"] and config.may(command["permission"]):
-            forms.section(command["title"])
-            # html.write('<tr><td class=legend>%s</td>\n' % command["title"])
-            # html.write('<td class=content>')
-            command["render"]()
-            # html.write('</td></tr>')
+            group = command.get("group", _("Various Commands"))
+            by_group.setdefault(group, []).append(command)
 
-    # html.write("</table>")
+    groups = by_group.keys()
+    groups.sort()
+    for group in groups:
+        forms.header(group, narrow=True)
+        for command in by_group[group]:
+            forms.section(command["title"])
+            command["render"]()
+
     forms.end()
     html.end_form()
     html.write("</div>")

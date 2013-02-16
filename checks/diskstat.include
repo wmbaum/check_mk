@@ -35,7 +35,7 @@ diskstat_default_levels = {
 }
 
 # Rule for controlling diskstat inventory more fine grained
-diskstat_inventory = [] 
+diskstat_inventory = []
 
 # Example
 # diskstat_inventory = [
@@ -55,7 +55,7 @@ def inventory_diskstat_generic(info):
             modes = hits[0]
         else:
             modes = [ "summary" ]
-    
+
     elif diskstat_inventory_mode == "single":
         modes = [ "physical" ]
     elif diskstat_inventory_mode == "summary":
@@ -71,18 +71,18 @@ def inventory_diskstat_generic(info):
         inventory += [ ( "read", None ), ( "write", None ) ]
 
     if "physical" in modes:
-        inventory += [ (line[0], "diskstat_default_levels") 
-                       for line in info 
+        inventory += [ (line[0], "diskstat_default_levels")
+                       for line in info
                        if not ' ' in line[0] ]
 
     if "lvm" in modes:
-        inventory += [ (line[0], "diskstat_default_levels") 
-                       for line in info 
+        inventory += [ (line[0], "diskstat_default_levels")
+                       for line in info
                        if line[0].startswith("LVM ") ]
 
     if "vxvm" in modes:
-        inventory += [ (line[0], "diskstat_default_levels") 
-                       for line in info 
+        inventory += [ (line[0], "diskstat_default_levels")
+                       for line in info
                        if line[0].startswith("VxVM ") ]
 
     return inventory
@@ -95,7 +95,7 @@ def check_diskstat_line(this_time, item, params, line):
     infos = []
     status = 0
     for what, ctr in [ ("read",  line[1]), ("write", line[2]) ]:
-        countername = "diskstat.%s.%s" % (item, what) 
+        countername = "diskstat.%s.%s" % (item, what)
 
         # unpack levels now, need also for perfdata
         levels = params.get(what)
@@ -130,17 +130,25 @@ def check_diskstat_line(this_time, item, params, line):
     if average_range != None:
         perfdata = [ perfdata[0], perfdata[2], perfdata[1], perfdata[3] ]
 
-    # Do Latency computation if this information is available:
-    if len(line) >= 6 and line[3] >= 0:
-        reads, writes, timems = map(int, line[3:6])
-        ios = reads + writes 
+    # Process IOs when available
+    if line[3] >= 0 and line[4] > 0:
+        reads, writes = map(int, line[3:5])
+        ios = reads + writes
         timedif, ios_per_sec = get_counter(countername + ".ios", this_time, ios)
+        infos.append("IOs: %.2f/sec" % ios_per_sec)
+
+        if params.get("latency_perfdata"):
+            perfdata.append(("ios", ios_per_sec))
+
+    # Do Latency computation if this information is available:
+    if len(line) >= 6 and line[5] >= 0:
+        timems = int(line[5])
         timedif, timems_per_sec = get_counter(countername + ".time", this_time, timems)
         if not ios_per_sec:
             latency = 0.0
         else:
             latency = timems_per_sec / ios_per_sec
-        infos.append("IOs: %.2f/sec, Latency: %.2fms" % (ios_per_sec, latency))
+        infos.append("Latency: %.2fms" % latency)
         if "latency" in params:
             warn, crit = params["latency"]
             if latency >= crit:
@@ -153,14 +161,13 @@ def check_diskstat_line(this_time, item, params, line):
             warn, crit = None, None
 
         if params.get("latency_perfdata"):
-            perfdata.append(("ios", ios_per_sec))
             perfdata.append(("latency", latency, warn, crit))
 
     # Queue Lengths (currently only Windows). Windows uses counters here.
     # I have not understood, why....
     if len(line) >= 8:
         for what, ctr in [ ("read",  line[6]), ("write", line[7]) ]:
-            countername = "diskstat.%s.ql.%s" % (item, what) 
+            countername = "diskstat.%s.ql.%s" % (item, what)
             levels = params.get(what + "_ql")
             if levels:
                 warn, crit = levels
@@ -168,8 +175,8 @@ def check_diskstat_line(this_time, item, params, line):
                 warn, crit = None, None
 
             timedif, qlx = get_counter(countername, this_time, int(ctr))
-            ql = qlx / 100000.0
-            infos.append(what.title() + " Queue: %.1f%%" % ql)
+            ql = qlx / 10000000.0
+            infos.append(what.title() + " Queue: %.2f" % ql)
 
             # check levels
             if levels != None:

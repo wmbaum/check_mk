@@ -125,30 +125,6 @@ snapshot_dir       = var_dir + "snapshots/"
 sync_snapshot_file = defaults.tmp_dir + "/sync_snapshot.tar.gz"
 repstatus_file     = var_dir + "replication_status.mk"
 
-# Directories and files to synchronize during replication
-replication_paths = [
-  ( "dir",  "check_mk",   root_dir ),
-  ( "dir",  "multisite",  multisite_dir ),
-  ( "file", "htpasswd",   defaults.htpasswd_file ),
-  ( "file", "auth.secret",  '%s/auth.secret' % os.path.dirname(defaults.htpasswd_file) ),
-  ( "file", "auth.serials", '%s/auth.serials' % os.path.dirname(defaults.htpasswd_file) ),
-  # Also replicate the user-settings of Multisite? While the replication
-  # as such works pretty well, the count of pending changes will not
-  # know.
-  ( "dir", "usersettings", defaults.var_dir + "/web" ),
-]
-
-
-# Directories and files for backup & restore
-backup_paths = replication_paths + [
-  ( "file", "sites",      sites_mk)
-  # autochecks are a site-local ressource. This does only make
-  # sense for single-site installations. How should we handle
-  # this?
-  # ( "dir", "autochecks", defaults.autochecksdir ),
-
-]
-
 
 ALL_HOSTS    = [ '@all' ]
 ALL_SERVICES = [ "" ]
@@ -432,8 +408,8 @@ def save_folder_and_hosts(folder):
         save_hosts(folder)
 
 
-# Removed in version 1.2.1i2 - unused, and might cause 
-# trouble when saving locked folders 
+# Removed in version 1.2.1i2 - unused, and might cause
+# trouble when saving locked folders
 ## Save a folder and all of its subfolders (recursively)
 #def save_folders(folder):
 #    save_folder(folder)
@@ -634,14 +610,14 @@ def load_hosts_file(folder):
 def save_hosts(folder = None):
     if folder == None:
         folder = g_folder
-    
+
     if folder.get(".lock_hosts"):
-        raise MKAuthException(_("Sorry, you cannot edit hosts in this folder. They are locked.")) 
+        raise MKAuthException(_("Sorry, you cannot edit hosts in this folder. They are locked."))
 
     folder_path = folder[".path"]
     dirname = root_dir + folder_path
     filename = dirname + "/hosts.mk"
-    
+
     if not os.path.isdir(dirname):
         make_nagios_directories(dirname)
 
@@ -729,7 +705,7 @@ def save_hosts(folder = None):
     if len(clusters) > 0:
         out.write("\nclusters.update({")
         for entry, nodes in clusters:
-            out.write('\n  %s : %s,\n' % (entry, repr(nodes))) 
+            out.write('\n  %s : %s,\n' % (entry, repr(nodes)))
         out.write("})\n")
 
     if len(ipaddresses) > 0:
@@ -817,7 +793,6 @@ def mode_folder(phase):
 
     elif phase == "buttons":
         global_buttons()
-        # html.write("<br><br><hr>")
         if config.may("wato.rulesets") or config.may("wato.seeall"):
             html.context_button(_("Rulesets"),        make_link([("mode", "ruleeditor")]), "rulesets")
         html.context_button(_("Folder Properties"), make_link_to([("mode", "editfolder")], g_folder), "edit")
@@ -827,7 +802,7 @@ def mode_folder(phase):
             html.context_button(_("New host"),    make_link([("mode", "newhost")]), "new")
             html.context_button(_("New cluster"), make_link([("mode", "newcluster")]), "new_cluster")
         if config.may("wato.services"):
-            html.context_button(_("Bulk Inventory"), make_link([("mode", "bulkinventory"), ("all", "1")]), 
+            html.context_button(_("Bulk Inventory"), make_link([("mode", "bulkinventory"), ("all", "1")]),
                         "inventory")
         if not g_folder.get(".lock_hosts") and config.may("wato.parentscan"):
             html.context_button(_("Parent scan"), make_link([("mode", "parentscan"), ("all", "1")]),
@@ -844,7 +819,7 @@ def mode_folder(phase):
         ### Operations on SUBFOLDERS
 
         if html.var("_delete_folder"):
-            if html.transaction_valid(): 
+            if html.transaction_valid():
                 delname = html.var("_delete_folder")
                 del_folder = g_folder[".folders"][delname]
                 config.need_permission("wato.manage_folders")
@@ -943,7 +918,7 @@ def mode_folder(phase):
         lock_messages = []
         if g_folder.get(".lock_hosts"):
             if g_folder[".lock_hosts"] == True:
-                lock_messages.append(_("Hosts attributes locked (You cannot create, edit or delete hosts in this folder)")) 
+                lock_messages.append(_("Hosts attributes locked (You cannot create, edit or delete hosts in this folder)"))
             else:
                 lock_messages.append(g_folder[".lock_hosts"])
         if g_folder.get(".lock"):
@@ -953,7 +928,7 @@ def mode_folder(phase):
                 lock_messages.append(g_folder[".lock"])
         if g_folder.get(".lock_subfolders"):
             if g_folder[".lock_subfolders"] == True:
-                lock_messages.append(_("Folder is locked (You cannot create or remove folders in this folder)")) 
+                lock_messages.append(_("Folder is locked (You cannot create or remove folders in this folder)"))
             else:
                 lock_messages.append(g_folder[".lock_subfolders"])
 
@@ -1173,7 +1148,7 @@ def show_subfolders(folder):
                     html.write('<span>%s</span>' % _('Move this folder to:'))
                     move_to_folder_combo("folder", entry, False, multiple = True)
                     html.write('</div>')
-    
+
                 if auth_write and config.may("wato.manage_folders"):
                     html.icon_button(
                         delete_url,
@@ -1343,7 +1318,7 @@ def show_hosts(folder):
     html.write("</tr>\n")
     odd = "odd"
 
-    host_errors = validate_all_hosts(hostnames) 
+    host_errors = validate_all_hosts(hostnames)
     rendered_hosts = []
     # Now loop again over all hosts and display them
     for hostname in hostnames:
@@ -1361,7 +1336,7 @@ def show_hosts(folder):
         # Column with actions (buttons)
         edit_url     = make_link([("mode", "edithost"), ("host", hostname)])
         services_url = make_link([("mode", "inventory"), ("host", hostname)])
-        clone_url    = make_link([("mode", host.get(".nodes") and "newcluster" or "newhost"), 
+        clone_url    = make_link([("mode", host.get(".nodes") and "newcluster" or "newhost"),
                                  ("clone", hostname)])
         delete_url   = make_action_link([("mode", "folder"), ("_delete_host", hostname)])
 
@@ -1452,7 +1427,7 @@ def show_hosts(folder):
         bulk_actions(at_least_one_imported, False, not search_shown, colspan, odd, show_checkboxes)
     html.write("</table>\n")
 
-    html.hidden_fields() 
+    html.hidden_fields()
     html.end_form()
 
     selected = weblib.get_rowselection('wato-folder-/'+g_folder['.path'])
@@ -1496,7 +1471,7 @@ def move_to_folder_combo(what, thing = None, top = False, multiple = False):
                     # avoid naming conflict!
                     or thing[".name"] in afolder[".folders"])):
                 os_path = afolder[".path"]
-                title_path = folder_title_path(os_path) 
+                title_path = folder_title_path(os_path)
                 if len(title_path) > 1:
                     del title_path[0] # remove name of main folder
                 msg = " / ".join(title_path)
@@ -1548,7 +1523,7 @@ def move_hosts_to(hostnames, path):
     # read hosts currently in target file
     load_hosts(target_folder)
     target_hosts = target_folder[".hosts"]
-    
+
     if g_folder.get(".lock_hosts"):
         raise MKUserError(None, _("Cannot move selected hosts: Hosts in this folder are locked."))
     if target_folder.get(".lock_hosts"):
@@ -1707,12 +1682,12 @@ def mode_editfolder(phase, new):
     elif phase == "action":
         if new:
             if g_folder.get(".lock_subfolders"):
-                raise MKUserError("title", _("Folder is locked. You cannot create or remove a folders "  
-                                             "in this folder.")) 
+                raise MKUserError("title", _("Folder is locked. You cannot create or remove a folders "
+                                             "in this folder."))
             config.need_permission("wato.manage_folders")
         else:
             if g_folder.get(".lock"):
-                raise MKUserError("title", _("Folder attributes locked. You cannot change the attributes of this folder.")) 
+                raise MKUserError("title", _("Folder attributes locked. You cannot change the attributes of this folder."))
             config.need_permission("wato.edit_folders")
 
         if not html.check_transaction():
@@ -1808,7 +1783,7 @@ def mode_editfolder(phase, new):
     else:
         render_folder_path()
         check_folder_permissions(g_folder, "read")
-        
+
         lock_message = ""
         if g_folder.get(".lock"):
             if g_folder[".lock"] == True:
@@ -2036,7 +2011,7 @@ def mode_edithost(phase, new, cluster):
                 return go_to_services and "inventory" or "folder"
 
     else:
-        # Show outcome of host validation. Do not validate new hosts 
+        # Show outcome of host validation. Do not validate new hosts
         errors = None
         if new:
             render_folder_path()
@@ -2047,8 +2022,8 @@ def mode_edithost(phase, new, cluster):
             html.write("<div class=info>")
             html.write('<table class=validationerror border=0 cellspacing=0 cellpadding=0><tr><td class=img>')
             html.write('<img src="images/icon_validation_error.png"></td><td>')
-            html.write('<p><h3>%s</h3><ul>%s</ul></p>' % 
-                (_("Warning: This host has an invalid configuration!"), 
+            html.write('<p><h3>%s</h3><ul>%s</ul></p>' %
+                (_("Warning: This host has an invalid configuration!"),
                  "".join(["<li>%s</li>" % error for error in errors])))
 
             if html.form_submitted():
@@ -2061,7 +2036,7 @@ def mode_edithost(phase, new, cluster):
             if g_folder[".lock_hosts"] == True:
                 lock_message = _("Host attributes locked (You cannot edit this host)")
             else:
-                lock_message = g_folder[".lock_hosts"] 
+                lock_message = g_folder[".lock_hosts"]
         if len(lock_message) > 0:
             html.write("<div class=info>" + lock_message + "</div>")
 
@@ -2081,7 +2056,7 @@ def mode_edithost(phase, new, cluster):
         if cluster:
             vs = ListOfStrings(valuespec = TextAscii(size = 19), orientation="horizontal")
             forms.section(_("Nodes"))
-            vs.render_input("nodes", host[".nodes"]) 
+            vs.render_input("nodes", host[".nodes"])
             html.help(_('Enter the host names of the cluster nodes. These '
                        'hosts must be present in WATO. '))
 
@@ -2195,7 +2170,7 @@ def show_service_table(host, firsttime):
     # Read current check configuration
     cache_options = not html.var("_scan") and [ '--cache' ] or []
 
-    # We first try using the Cache (if the user has not pressed Full Scan). 
+    # We first try using the Cache (if the user has not pressed Full Scan).
     # If we do not find any data, we omit the cache and immediately try
     # again without using the cache.
     try:
@@ -2423,7 +2398,7 @@ def search_hosts_in_folder(folder, crit):
         render_folder_path(folder, True)
         found.sort()
 
-        table.begin(""); 
+        table.begin("");
         for hostname, host, effective in found:
             host_url =  make_link_to([("mode", "edithost"), ("host", hostname)], folder)
             table.row()
@@ -2676,13 +2651,13 @@ def mode_bulk_inventory(phase):
         html.radiobutton("how", "remove",  False, _("Remove obsolete services") + "<br>")
         html.radiobutton("how", "fixall",  False, _("Find new &amp; remove obsolete") + "<br>")
         html.radiobutton("how", "refresh", False, _("Refresh all services (tabula rasa)") + "<br>")
-        
+
         forms.section(_("Selection"))
         if complete_folder:
             html.checkbox("recurse", True, label=_("Include all subfolders"))
             html.write("<br>")
         html.checkbox("only_failed", False, label=_("Only include hosts that failed on previous inventory"))
-        
+
         # Start button
         forms.end()
         html.button("_start", _("Start"))
@@ -2712,7 +2687,7 @@ def mode_bulk_edit(phase):
     elif phase == "action":
         if html.check_transaction():
             config.need_permission("wato.edit_hosts")
-                
+
             changed_attributes = collect_attributes()
             if "contactgroups" in changed_attributes:
                  if True != check_folder_permissions(g_folder, "write", False):
@@ -2936,14 +2911,14 @@ def mode_parentscan(phase):
 
                 # Possible values for state are:
                 # failed, dnserror, garbled, root, direct, notfound, gateway
-                counts = [ 'continue', 
+                counts = [ 'continue',
                     1,                                           # Total hosts
                     gateway and 1 or 0,                          # Gateways found
                     state in [ "direct", "root" ] and 1 or 0,    # Directly reachable hosts
                     skipped_gateways,                            # number of failed PING probes
                     state == "notfound" and 1 or 0,              # No gateway found
                     pconf and 1 or 0,                            # New parents configured
-                    gwcreat and 1 or 0,                          # Gateway hosts created 
+                    gwcreat and 1 or 0,                          # Gateway hosts created
                     state in [ "failed", "dnserror", "garbled" ] and 1 or 0, # Errors
                 ]
                 result = "%r\n%s: %s<br>\n" % (counts, hostname, message)
@@ -3040,7 +3015,7 @@ def mode_parentscan(phase):
         html.write("<p>")
         if not complete_folder:
             html.write(_("You have selected <b>%d</b> hosts for parent scan. ") % len(items))
-        html.write("<p>" + 
+        html.write("<p>" +
                    _("The parent scan will try to detect the last gateway "
                    "on layer 3 (IP) before a host. This will be done by "
                    "calling <tt>traceroute</tt>. If a gateway is found by "
@@ -3049,7 +3024,7 @@ def mode_parentscan(phase):
                    "parent. If no such host exists, an artifical ping-only "
                    "gateway host will be created if you have not disabled "
                    "this feature.") + "</p>")
-         
+
         forms.header(_("Settings for Parent Scan"))
 
         settings = config.load_user_file("parentscan", {
@@ -3063,17 +3038,17 @@ def mode_parentscan(phase):
             "max_ttl"        : 10,
             "force_explicit" : False,
         })
-        
+
         # Selection
         forms.section(_("Selection"))
         if complete_folder:
             html.checkbox("recurse", settings["recurse"], label=_("Include all subfolders"))
             html.write("<br>")
-        html.radiobutton("select", "noexplicit", settings["select"] == "noexplicit",  
+        html.radiobutton("select", "noexplicit", settings["select"] == "noexplicit",
                 _("Skip hosts with explicit parent definitions (even if empty)") + "<br>")
-        html.radiobutton("select", "no",  settings["select"] == "no", 
+        html.radiobutton("select", "no",  settings["select"] == "no",
                 _("Skip hosts hosts with non-empty parents (also if inherited)") + "<br>")
-        html.radiobutton("select", "ignore",  settings["select"] == "ignore", 
+        html.radiobutton("select", "ignore",  settings["select"] == "ignore",
                 _("Scan all hosts") + "<br>")
 
         # Performance
@@ -3103,16 +3078,16 @@ def mode_parentscan(phase):
 
         # Configuring parent
         forms.section(_("Configuration"))
-        html.checkbox("force_explicit", 
+        html.checkbox("force_explicit",
             settings["force_explicit"], label=_("Force explicit setting for parents even if setting matches that of the folder"))
 
         # Gateway creation
         forms.section(_("Creation of gateway hosts"))
         html.write(_("Create gateway hosts in<ul>"))
-        html.radiobutton("where", "subfolder", settings["where"] == "subfolder", 
+        html.radiobutton("where", "subfolder", settings["where"] == "subfolder",
                 _("in the subfolder <b>%s/Parents</b>") % g_folder["title"])
         html.write("<br>")
-        html.radiobutton("where", "here", settings["where"] == "here", 
+        html.radiobutton("where", "here", settings["where"] == "here",
                 _("directly in the folder <b>%s</b>") % g_folder["title"])
         html.write("<br>")
         html.radiobutton("where", "there", settings["where"] == "there",
@@ -3139,7 +3114,7 @@ def configure_gateway(state, site_id, folder, host, effective, gateway):
     # host name from our configuration. If there is none,
     # we can create one, if the users wants this. The automation
     # for the parent scan already tries to find such a host
-    # within the site. 
+    # within the site.
     gwcreat = False
 
     if gateway:
@@ -3148,7 +3123,7 @@ def configure_gateway(state, site_id, folder, host, effective, gateway):
             if where == "nowhere":
                 return _("No host %s configured, parents not set") % gw_ip, \
                     False, False
-            
+
             # Determine folder where to create the host.
             elif where == "here": # directly in current folder
                 gw_folder = g_folder
@@ -3176,8 +3151,8 @@ def configure_gateway(state, site_id, folder, host, effective, gateway):
                     g_folder[".folders"]["parent"] = gw_folder
                     save_folder(gw_folder)
                     call_hook_folder_created(gw_folder)
-                    log_pending(AFFECTED, gw_folder, "new-folder", 
-                               _("Created new folder %s during parent scant") 
+                    log_pending(AFFECTED, gw_folder, "new-folder",
+                               _("Created new folder %s during parent scant")
                                  % gw_folder[".path"])
             elif where == "there": # In same folder as host
                 gw_folder = folder
@@ -3196,7 +3171,7 @@ def configure_gateway(state, site_id, folder, host, effective, gateway):
             new_host = {
                 ".name" :     gw_host,
                 "ipaddress" : gw_ip,
-                ".folder" :   gw_folder, 
+                ".folder" :   gw_folder,
             }
             if alias:
                 new_host["alias"] = alias
@@ -3448,9 +3423,9 @@ def mode_changelog(phase):
                    (config.alias_of_user(user_id), count, _("changes"))
             table += '</table>'
             c = wato_confirm(_("Confirm activating foreign changes"),
-              '<img class=foreignchanges src="images/icon_foreign_changes.png">' + 
+              '<img class=foreignchanges src="images/icon_foreign_changes.png">' +
               _("There are some changes made by your collegues that you will "
-                "activate if you proceed:") + table + 
+                "activate if you proceed:") + table +
               _("Do you really want to proceed?"))
             if c == False:
                 return ""
@@ -3486,7 +3461,7 @@ def mode_changelog(phase):
                     # can be optimized in future but is the save way for now.
                     site = config.site(site_id)
                     if action in [ "sync", "sync_restart" ]:
-                        response = synchronize_site(site, restart = action == "restart")
+                        response = synchronize_site(site, restart = action == "sync_restart")
                     else:
                         try:
                             restart_site(site)
@@ -3950,7 +3925,7 @@ def display_paged((start_time, end_time, previous_log_time, next_log_time)):
         html.empty_icon_button()
 
     if previous_log_time is not None:
-        html.icon_button(html.makeuri([('start', previous_log_time)]), 
+        html.icon_button(html.makeuri([('start', previous_log_time)]),
                         '%s: %s' % (_("Older events"), fmt_date(previous_log_time)),
                         "forth")
     else:
@@ -3996,7 +3971,7 @@ def render_audit_log(log, what, with_filename = False, hilite_others=False):
             htmlcode += '<img class=icon src="images/icon_foreign_changes.png" title="%s">' \
                      % _("This change has been made by another user")
         htmlcode += user + '</td>'
-        
+
         htmlcode += '</td><td width="100%%">%s</td></tr>\n' % text
     htmlcode += "</table>"
 
@@ -4487,7 +4462,7 @@ class HostTagAttribute(Attribute):
                 value = value + "|" + "|".join(secondary_tags)
 
         if len(choices) == 1:
-            html.checkbox(varname, value != "", cssclass = '', onclick='wato_fix_visibility();', 
+            html.checkbox(varname, value != "", cssclass = '', onclick='wato_fix_visibility();',
                           add_attr = ["tags=%s"%choices[0][0]], label = choices[0][1])
         else:
             html.select(varname, choices, value, onchange='wato_fix_visibility();')
@@ -4561,7 +4536,7 @@ class ValueSpecAttribute(Attribute):
 
 # Attribute for selecting the name of an other host
 class HostSelectionAttribute(Attribute):
-    def __init__(self, name, title, help=None, hostfilter = lambda h: True): 
+    def __init__(self, name, title, help=None, hostfilter = lambda h: True):
         Attribute.__init__(self, name, title, help)
         self._hostfilter = hostfilter
 
@@ -4571,7 +4546,7 @@ class HostSelectionAttribute(Attribute):
     def render_input(self, value):
         hosts = api.get_all_hosts().items()
         hosts.sort()
-        selections = [("", _("-- not connected --"))] 
+        selections = [("", _("-- not connected --"))]
         for n, h in hosts:
             if self._hostfilter(h):
                 selections.append((n, n))
@@ -4820,7 +4795,7 @@ def configure_attributes(new, hosts, for_what, parent, myself=None, without_attr
             if attrname in without_attributes:
                 continue # e.g. needed to skip ipaddress in CSV-Import
 
-            # Hide invisible attributes 
+            # Hide invisible attributes
             hide_attribute = False
             if for_what in [ "host", "bulk" ] and not attr.show_in_form():
                 hide_attribute = True
@@ -4840,7 +4815,7 @@ def configure_attributes(new, hosts, for_what, parent, myself=None, without_attr
                     dependency_mapping_roles[attrname] = depends_on_roles
 
                 if not depends_on_tags and not depends_on_roles:
-                    # One attribute is always shown -> topic is always visible 
+                    # One attribute is always shown -> topic is always visible
                     topic_is_volatile = False
             else:
                 hide_attributes.append(attr.name())
@@ -5216,19 +5191,19 @@ def mode_snapshot(phase):
         for name in snapshots:
             table.row()
             # Buttons
-            table.cell(_("Actions"), css="buttons") 
+            table.cell(_("Actions"), css="buttons")
             html.icon_button(make_action_link(
                [("mode","snapshot"),("_restore_snapshot", name)]), _("Restore"), "restore")
             html.icon_button(make_action_link(
                [("mode","snapshot"),("_delete_file", name)]), _("Delete"), "delete")
             # Snapshot name
-            table.cell(_("Filename"), '<a href="%s">%s</a>' % 
-                       (make_action_link([("mode","snapshot"),("_download_file", name)]), name)) 
+            table.cell(_("Filename"), '<a href="%s">%s</a>' %
+                       (make_action_link([("mode","snapshot"),("_download_file", name)]), name))
             # Age and Size
             st = os.stat(snapshot_dir + name)
             age = time.time() - st.st_mtime
             table.cell(_("Age"), html.age_text(age), css="number")
-            table.cell(_("Size"), "%d" % st.st_size, css="number"), 
+            table.cell(_("Size"), "%d" % st.st_size, css="number"),
         table.end()
 
         html.write("<h3>" + _("Restore from uploaded file") + "</h3>")
@@ -5267,8 +5242,8 @@ def factory_reset():
         if id != config.user_id:
             del users[id]
 
-    to_delete = [ path for c,n,path 
-                  in backup_paths 
+    to_delete = [ path for c,n,path
+                  in backup_paths
                   if n != "auth.secret" ] + [ log_dir ]
     for path in to_delete:
         if os.path.isdir(path):
@@ -5310,7 +5285,7 @@ class CheckTypeSelection(ListChoice):
 
 
 def edit_value(valuespec, value, title=""):
-    if title: 
+    if title:
         title = title + "<br>"
     help = valuespec.help() or ""
     html.write('<tr>')
@@ -5429,7 +5404,7 @@ def mode_globalvars(phase):
                     current_settings[varname] = not current_settings[varname]
                 else:
                     current_settings[varname] = not def_value
-                msg = _("Changed Configuration variable %s to %s." % (varname, 
+                msg = _("Changed Configuration variable %s to %s." % (varname,
                     current_settings[varname] and "on" or "off"))
                 save_configuration_settings(current_settings)
                 pending_func  = g_configvar_domains[domain].get("pending")
@@ -5479,11 +5454,11 @@ def mode_globalvars(phase):
                 simple = False
             forms.section(title, simple=simple)
 
-            toggle_url = make_action_link([("mode", "globalvars"), 
+            toggle_url = make_action_link([("mode", "globalvars"),
                     ("_action", "toggle"), ("_varname", varname)])
             if varname in current_settings:
                 if isinstance(valuespec, Checkbox):
-                    html.icon_button(toggle_url, _("Immediately toggle this setting"), 
+                    html.icon_button(toggle_url, _("Immediately toggle this setting"),
                         "snapin_switch_" + (current_settings[varname] and "on" or "off"),
                         cssclass="modified")
                 else:
@@ -5553,11 +5528,11 @@ def mode_edit_configvar(phase):
     html.begin_form("value_editor")
     forms.header(valuespec.title())
     if not config.wato_hide_varnames:
-        forms.section(_("Variable for <tt>%s.mk</tt>" % 
+        forms.section(_("Variable for <tt>%s.mk</tt>" %
             { "check_mk" : "main" }.get(domain, domain)))
         html.write("<tt>%s</tt>" % varname)
 
-    forms.section(_("Current setting")) 
+    forms.section(_("Current setting"))
     valuespec.render_input("ve", value)
     valuespec.set_focus("ve")
     html.help(valuespec.help())
@@ -5590,7 +5565,7 @@ g_configvar_domains = {
     "check_mk" : {
         "configdir" : root_dir,
     },
-    "multisite" : { 
+    "multisite" : {
         "configdir" : multisite_dir,
     },
 }
@@ -5686,7 +5661,7 @@ def mode_groups(phase, what):
         global_buttons()
         html.context_button(_("New group"), make_link([("mode", "edit_%s_group" % what)]), "new")
         if what == "contact":
-            html.context_button(_("Rules"), make_link([("mode", "rulesets"), 
+            html.context_button(_("Rules"), make_link([("mode", "rulesets"),
                 ("filled_in", "search"), ("search", "contact group")]), "rulesets")
         else:
             varname = what + "_groups"
@@ -5766,7 +5741,7 @@ def mode_groups(phase, what):
         html.icon_button(edit_url, _("Properties"), "edit")
         html.icon_button(clone_url, _("Create a copy of this group"), "clone")
         html.icon_button(delete_url, _("Delete"), "delete")
-        
+
         table.cell(_("Name"), name)
         table.cell(_("Alias"), alias)
 
@@ -5879,7 +5854,7 @@ class GroupSelection(ElementSelection):
         elements = [ (k, t and t or k) for (k, t) in this_group.items() ]
         if self._no_selection:
             # Beware: ElementSelection currently can only handle string
-            # keys, so we cannot take 'None' as a value. 
+            # keys, so we cannot take 'None' as a value.
             elements.append(('', self._no_selection))
         return dict(elements)
 
@@ -5954,7 +5929,7 @@ def mode_timeperiods(phase):
     names.sort()
     for name in names:
         table.row()
-        
+
         timeperiod = timeperiods[name]
         edit_url     = make_link([("mode", "edit_timeperiod"), ("edit", name)])
         delete_url   = html.makeactionuri([("_delete", name)])
@@ -6043,7 +6018,7 @@ class MultipleTimeRanges(ValueSpec):
         for c, v in enumerate(value):
             self._rangevs.validate_value(v, varprefix + "_%d" % c)
 
-# Check, if timeperiod tpa excludes or is tpb 
+# Check, if timeperiod tpa excludes or is tpb
 def timeperiod_excludes(timeperiods, tpa_name, tpb_name):
     if tpa_name == tpb_name:
         return True
@@ -6055,7 +6030,7 @@ def timeperiod_excludes(timeperiods, tpa_name, tpb_name):
         if timeperiod_excludes(timeperiods, ex, tpb_name):
             return True
     return False
- 
+
 
 def mode_edit_timeperiod(phase):
     num_columns = 3
@@ -6076,11 +6051,11 @@ def mode_edit_timeperiod(phase):
         add_label = _("Add Exception"))
 
     # ValueSpec for excluded Timeperiods. We offer the list of
-    # all other timeperiods - but only those that do not 
+    # all other timeperiods - but only those that do not
     # exclude the current timeperiod (in order to avoid cycles)
     other_tps = []
     for tpname, tp in timeperiods.items():
-        if not new and not timeperiod_excludes(timeperiods, tpname, name): 
+        if not new and not timeperiod_excludes(timeperiods, tpname, name):
             other_tps.append((tpname, tp.get("alias") or name))
 
     vs_excl = ListChoice(choices = other_tps)
@@ -6089,7 +6064,7 @@ def mode_edit_timeperiod(phase):
     def convert_from_tod(tod):
         # "00:30" -> (0, 30)
         return tuple(map(int, tod.split(":")))
-    
+
     def convert_from_range(range):
         # ("00:30", "10:17") -> ((0,30),(10,17))
         return tuple(map(convert_from_tod, range))
@@ -6293,7 +6268,7 @@ def find_usage_of_timeperiod(tpname):
     # Part 3: Other Timeperiods
     for tpn, tp in load_timeperiods().items():
         if tpname in tp.get("exclude", []):
-            used_in.append(("%s: %s (%s)" % (_("Timeperiod"), tp.get("alias", tpn), 
+            used_in.append(("%s: %s (%s)" % (_("Timeperiod"), tp.get("alias", tpn),
                     _("excluded")),
                     make_link([("mode", "edit_timeperiod"), ("edit", tpn)])))
 
@@ -6459,7 +6434,7 @@ def mode_sites(phase):
         # Buttons
         edit_url = make_link([("mode", "edit_site"), ("edit", id)])
         delete_url = html.makeactionuri([("_delete", id)])
-        table.cell(_("Actions"), css="buttons") 
+        table.cell(_("Actions"), css="buttons")
         html.icon_button(edit_url, _("Properties"), "edit")
         html.icon_button(delete_url, _("Delete"), "delete")
 
@@ -6467,7 +6442,7 @@ def mode_sites(phase):
         table.cell(_("Site-ID"), id)
 
         # Alias
-        table.cell(_("Alias"), site.get("alias", "")) 
+        table.cell(_("Alias"), site.get("alias", ""))
 
         # Socket
         socket = site.get("socket", _("local site"))
@@ -6478,7 +6453,7 @@ def mode_sites(phase):
         # Status host
         if "status_host" in site:
             sh_site, sh_host = site["status_host"]
-            table.cell(_("Status host"), "%s/%s" % (sh_site, sh_host)) 
+            table.cell(_("Status host"), "%s/%s" % (sh_site, sh_host))
         else:
             table.cell(_("Status host"))
 
@@ -6510,7 +6485,7 @@ def mode_sites(phase):
         table.cell(_("Replication"), repl)
 
         # Replication Priority
-        table.cell(_("Prio"), (site.get("replication") != "slave" and 
+        table.cell(_("Prio"), (site.get("replication") != "slave" and
                     str(site.get("repl_priority", 0)) or ""), css="number")
 
         # Login-Button for Replication
@@ -6522,7 +6497,7 @@ def mode_sites(phase):
             else:
                 login_url = make_action_link([("mode", "sites"), ("_login", id)])
                 html.buttonlink(login_url, _("Login"))
-    
+
     table.end()
 
 def mode_edit_site(phase):
@@ -6651,16 +6626,16 @@ def mode_edit_site(phase):
         multisiteurl = html.var("multisiteurl", "").strip()
         if repl:
             if not multisiteurl:
-                raise MKUserError("multisiteurl", 
+                raise MKUserError("multisiteurl",
                     _("Please enter the Multisite URL of the slave/peer site."))
             if not multisiteurl.endswith("/check_mk/"):
-                raise MKUserError("multisiteurl", 
+                raise MKUserError("multisiteurl",
                     _("The Multisite URL must end with /check_mk/"))
             if not multisiteurl.startswith("http://") and not multisiteurl.startswith("https://"):
-                raise MKUserError("multisiteurl", 
+                raise MKUserError("multisiteurl",
                     _("The Multisites URL must begin with <tt>http://</tt> or <tt>https://</tt>."))
             if "socket" not in new_site:
-                raise MKUserError("replication", 
+                raise MKUserError("replication",
                     _("You cannot do replication with the local site."))
 
         # Save Multisite-URL even if replication is turned off. That way that
@@ -6674,14 +6649,14 @@ def mode_edit_site(phase):
         if not new and "secret" in old_site:
             new_site["secret"] = old_site["secret"]
 
-    
+
         save_sites(sites)
-        
+
         # Own site needs RESTART in any case
         update_replication_status(our_site_id(), { "need_restart" : True })
         if new:
             if not site_is_local(id):
-                update_replication_status(id, { "need_sync" : True, "need_restart" : True }) 
+                update_replication_status(id, { "need_sync" : True, "need_restart" : True })
             log_pending(AFFECTED, None, "edit-sites", _("Created new connection to site %s" % id))
         else:
             log_pending(AFFECTED, None, "edit-sites", _("Modified site connection %s" % id))
@@ -6789,7 +6764,7 @@ def mode_edit_site(phase):
     # Replication
     forms.header(_("Configuration Replication (Distributed WATO)"))
     forms.section(_("Replication method"))
-    html.select("replication", 
+    html.select("replication",
         [ ("none",  _("No replication with this site")),
           ("peer",  _("Peer: synchronize configuration with this site")),
           ("slave", _("Slave: push configuration to this site"))
@@ -6800,13 +6775,13 @@ def mode_edit_site(phase):
                 "replication pool for sake of redundancy.<br><br>Note: Slave sites "
                 "do not need any replication configuration. They will be remote-controlled "
                 "by the master sites."))
-    
+
     forms.section(_("Peer replication priority"))
     html.number_input("repl_priority", site.get("repl_priority", 0), size=2)
     html.help(_("The replication priority is used to determine the master site "
                 "from the available peers and local sites. "
                 "The site with the highest number takes precedence."))
-    
+
 
     forms.section(_("Multisite-URL of remote site"))
     html.text_input("multisiteurl", site.get("multisiteurl", ""), size=60)
@@ -7004,7 +6979,7 @@ def do_remote_automation(site, command, vars):
                ("debug",   config.debug and '1' or '')
         ])
     vars_encoded = htmllib.urlencode_vars(vars)
-    response = get_url(url, site.get('insecure', False), 
+    response = get_url(url, site.get('insecure', False),
                        post_data=vars_encoded)
     if not response:
         raise MKAutomationException("Empty output from remote site.")
@@ -7225,8 +7200,8 @@ def synchronize_site(site, restart):
 # Isolated restart without prior synchronization. Currently this
 # is only being called for the local site.
 def restart_site(site):
-    start = time.time() 
-    check_mk_automation(site["id"], config.wato_activation_method) 
+    start = time.time()
+    check_mk_automation(site["id"], config.wato_activation_method)
     duration = time.time() - start
     update_replication_status(site["id"],
         { "need_restart" : False }, { "restart" : duration })
@@ -7281,7 +7256,7 @@ def ajax_activation():
 
         # html.message
         html.write('OK: ')
-        html.write('<div class=act_success><img src="images/icon_apply.png" /> %s</div>' % 
+        html.write('<div class=act_success><img src="images/icon_apply.png" /> %s</div>' %
                   _("Configuration successfully activated."))
     except Exception, e:
         html.show_error(str(e))
@@ -7321,7 +7296,7 @@ def preferred_peer():
     local_site = None
     best_peer = None
     best_working_peer = None
-    
+
     for site_id, site in config.allsites().items():
         if site.get("replication") == "slave":
             continue # Ignore slave sites
@@ -7509,6 +7484,8 @@ def automation_push_snapshot():
                 raise MKGeneralException(message)
 
         tarcontent = html.var('snapshot')
+        if not tarcontent:
+            raise MKGeneralException(_('Invalid call: The snapshot is missing.'))
         multitar.extract_from_buffer(tarcontent, replication_paths)
         log_commit_pending() # pending changes are lost
 
@@ -7537,7 +7514,7 @@ def create_distributed_wato_file(siteid, mode):
 def delete_distributed_wato_file():
     p = defaults.check_mk_configdir + "/distributed_wato.mk"
     # We do not delete the file but empty it. That way
-    # we do not need write permissions to the conf.d 
+    # we do not need write permissions to the conf.d
     # directory!
     if os.path.exists(p):
         create_user_file(p, "w").write("")
@@ -7610,7 +7587,7 @@ vs_notification_method = \
         title = _("Notification Method"),
         choices = [
             ( "email", _("Plain Text Email (using configured templates)") ),
-            ( "flexible", 
+            ( "flexible",
               _("Flexible Custom Notifications"),
                 ListOf(
                     Foldable(
@@ -7619,7 +7596,7 @@ vs_notification_method = \
                             columns = 1,
                             headers = True,
                             elements = [
-                                (  "plugin", 
+                                (  "plugin",
                                    DropdownChoice(
                                         title = _("Notification Plugin"),
                                         choices = load_notification_scripts,
@@ -7736,8 +7713,10 @@ def mode_users(phase):
         return
 
     # Execute all connectors synchronisations of users. This must be done before
-    # loading the users, because it might modify the users list
-    userdb.hook_sync(add_to_changelog = True)
+    # loading the users, because it might modify the users list. But don't execute
+    # it during actions, this should save some time.
+    if phase != "action":
+        userdb.hook_sync(add_to_changelog = True)
 
     roles = userdb.load_roles()
     users = filter_hidden_users(userdb.load_users())
@@ -7748,6 +7727,9 @@ def mode_users(phase):
         delid = html.var("_delete")
         if delid == config.user_id:
             raise MKUserError(None, _("You cannot delete your own account!"))
+
+        if delid not in users:
+            return None # The account does not exist (anymore), no deletion needed
 
         c = wato_confirm(_("Confirm deletion of user %s" % delid),
                          _("Do you really want to delete the user %s?" % delid))
@@ -7939,8 +7921,8 @@ def mode_edit_user(phase):
             increase_serial = True # password changed, reflect in auth serial
 
         else:
-            password = html.var("password").strip()
-            password2 = html.var("password2").strip()
+            password = html.var("password", '').strip()
+            password2 = html.var("password2", '').strip()
 
             # Detect switch back from automation to password
             if "automation_secret" in new_user:
@@ -7962,14 +7944,14 @@ def mode_edit_user(phase):
             new_user['serial'] = new_user.get('serial', 0) + 1
 
         # Email address
-        email = html.var("email").strip()
+        email = html.var("email", '').strip()
         regex_email = '^[-a-zäöüÄÖÜA-Z0-9_.+%]+@[-a-zäöüÄÖÜA-Z0-9]+(\.[-a-zäöüÄÖÜA-Z0-9]+)*$'
         if email and not re.match(regex_email, email):
             raise MKUserError("email", _("'%s' is not a valid email address." % email))
         new_user["email"] = email
 
         # Pager
-        pager = html.var("pager").strip()
+        pager = html.var("pager", '').strip()
         new_user["pager"] = pager
 
         # Roles
@@ -8403,11 +8385,11 @@ def mode_roles(phase):
         table.cell(_("Type"), role.get("builtin") and _("builtin") or _("custom"))
 
         # Modifications
-        table.cell(_("Modifications"), "<span title='%s'>%s</span>" % ( 
-            _("That many permissions do not use the factory defaults."), len(role["permissions"]))) 
+        table.cell(_("Modifications"), "<span title='%s'>%s</span>" % (
+            _("That many permissions do not use the factory defaults."), len(role["permissions"])))
 
         # Users
-        table.cell(_("Users"), 
+        table.cell(_("Users"),
           ", ".join([ '<a href="%s">%s</a>' % (make_link([("mode", "edit_user"), ("edit", user_id)]),
              user.get("alias", user_id))
             for (user_id, user) in users.items() if (id in user["roles"])]))
@@ -8416,11 +8398,11 @@ def mode_roles(phase):
     # Possibly we could also display the following information
     # - number of set permissions (needs loading users)
     # - number of users with this role
-    table.end() 
+    table.end()
 
 
 
-    
+
 
 def mode_edit_role(phase):
     id = html.var("edit")
@@ -8538,7 +8520,7 @@ def mode_edit_role(phase):
 
             html.help(perm["description"])
 
-    forms.end() 
+    forms.end()
     html.button("save", _("Save"))
     html.hidden_fields()
     html.end_form()
@@ -8750,7 +8732,7 @@ def mode_hosttags(phase):
     if len(hosttags) + len(auxtags) == 0:
         render_main_menu([
             ("edit_hosttag", _("Create new tag group"), "new", "hosttags",
-                _("Each host tag group will create one dropdown choice in the host configuration.")), 
+                _("Each host tag group will create one dropdown choice in the host configuration.")),
             ("edit_auxtag", _("Create new auxiliary tag"), "new", "hosttags",
                 _("You can have these tags automatically added if certain primary tags are set.")),
             ])
@@ -8768,7 +8750,7 @@ def mode_hosttags(phase):
         if hosttags:
             for nr, entry in enumerate(hosttags):
                 tag_id, title, choices = entry[:3] # forth: dependency information
-                table.row() 
+                table.row()
                 edit_url     = make_link([("mode", "edit_hosttag"), ("edit", tag_id)])
                 delete_url   = html.makeactionuri([("_delete", tag_id)])
                 table.cell(_("Actions"), css="buttons")
@@ -8786,7 +8768,7 @@ def mode_hosttags(phase):
                 html.icon_button(delete_url, _("Delete this tag group"), "delete")
 
                 table.cell(_("ID"), tag_id)
-                table.cell(_("Title"), title) 
+                table.cell(_("Title"), title)
                 table.cell(_("Type"), (len(choices) == 1 and _("Checkbox") or _("Dropdown")))
                 table.cell(_("Choices"), str(len(choices)))
                 table.cell(_("Demonstration"))
@@ -9051,7 +9033,7 @@ def mode_edit_hosttag(phase):
                 # in use by folders, hosts and rules. First we create a
                 # kind of "patch" from the old to the new tags. The renaming
                 # of a tag is detected by comparing the titles. Addition
-                # of new tags is not a problem and need not be handled. 
+                # of new tags is not a problem and need not be handled.
                 # Result of this is the dict 'operations': it's keys are
                 # current tag names, its values the corresponding new names
                 # or False in case of tag removals.
@@ -9135,7 +9117,7 @@ def load_hosttags():
     if not os.path.exists(filename):
         return [], []
     try:
-        vars = { 
+        vars = {
             "wato_host_tags" : [],
             "wato_aux_tags" : []}
         execfile(filename, vars, vars)
@@ -9485,10 +9467,10 @@ def mode_ruleeditor(phase):
                 make_link([("mode", "edithost"), ("host", only_host)]), "host")
 
         return
-    
+
     elif phase == "action":
         return
-    
+
     if not only_host:
         render_folder_path(keepvarnames = ["mode", "local"])
     else:
@@ -9503,7 +9485,7 @@ def mode_ruleeditor(phase):
             groupnames.append(main_group)
     menu = []
     for groupname in groupnames + ["used"]:
-        url = make_link([("mode", "rulesets"), ("group", groupname), 
+        url = make_link([("mode", "rulesets"), ("group", groupname),
                          ("host", only_host), ("local", only_local)])
         if groupname == "used":
             title = _("Used Rulesets")
@@ -9515,7 +9497,7 @@ def mode_ruleeditor(phase):
         help = help.split('\n')[0] # Take only first line as button text
         menu.append((url, title, icon, "rulesets", help))
     render_main_menu(menu)
-    
+
     html.write("<BR>")
     rule_search_form()
 
@@ -9667,10 +9649,10 @@ def mode_rulesets(phase):
             view_url = make_link(url_vars)
 
             html.write('<div class=ruleset><div class=text>')
-            html.write('<a class="%s" href="%s">%s</a>' % 
+            html.write('<a class="%s" href="%s">%s</a>' %
                       (num_rules and "nonzero" or "zero", view_url, rulespec["title"]))
             html.write('<span class=dots>%s</span></div>' % ("." * 100))
-            html.write('<div class="rulecount %s" title="%s">%d</div>' % 
+            html.write('<div class="rulecount %s" title="%s">%d</div>' %
                     (num_rules and "nonzero" or "zero", title, num_rules))
             html.write('</div>')
 
@@ -9819,8 +9801,6 @@ def mode_edit_ruleset(phase):
         html.write("<div class=info>" + _("There are no rules defined in this set.") + "</div>")
 
     else:
-        html.write('<table class="data ruleset">')
-
         alread_matched = False
         match_keys = set([]) # in case if match = "dict"
         last_folder = None
@@ -9839,7 +9819,7 @@ def mode_edit_ruleset(phase):
 
             last_in_group = (rulenr == len(ruleset) - 1 or \
                 ruleset[rulenr+1][0] != folder)
-            
+
             value, tag_specs, host_list, item_list, rule_options = parse_rule(rulespec, rule)
             disabled = rule_options.get("disabled")
             table.row(disabled and "disabled" or None)
@@ -10116,7 +10096,7 @@ def construct_rule(ruleset, value, tag_specs, host_list, item_list, rule_options
     if item_list != None:
         rule.append(item_list)
 
-    # Append rule options, but only if they are not trivial. That way we 
+    # Append rule options, but only if they are not trivial. That way we
     # keep as close as possible to the original Check_MK in rules.mk so that
     # command line users will feel at home...
     ro = {}
@@ -10179,7 +10159,7 @@ def render_conditions(ruleset, tagspecs, host_list, item_list, varname, folder):
     if host_list != ALL_HOSTS:
         condition = None
         if host_list == []:
-            condition = _("This rule does <b>never</b> apply!")
+            condition = _("This rule does <b>never</b> apply due to an empty list of explicit hosts!")
         elif host_list[-1] != ALL_HOSTS[0]:
             tt_list = []
             for h in host_list:
@@ -10283,8 +10263,8 @@ def mode_edit_rule(phase, new = False):
         return _("%s rule %s") % (new and _("New") or _("Edit"), rulespec["title"])
 
     elif phase == "buttons":
-        var_list = [("mode", "edit_ruleset"), ("varname", varname), ("host", html.var("host",""))] 
-        if html.var("item"):        
+        var_list = [("mode", "edit_ruleset"), ("varname", varname), ("host", html.var("host",""))]
+        if html.var("item"):
             var_list.append( ("item", html.var("item")) )
         html.context_button(_("Abort"), make_link(var_list), "abort")
         return
@@ -10298,14 +10278,14 @@ def mode_edit_rule(phase, new = False):
         item = NO_ITEM
         if html.has_var("_new_host_rule"):
             host = html.var("host")
-            item = html.has_var("item") and mk_eval(html.var("item")) or NO_ITEM 
+            item = html.has_var("item") and mk_eval(html.var("item")) or NO_ITEM
         try:
             rule     = create_rule(rulespec, host, item)
         except Exception, e:
             if phase != "action":
                 html.message(_("Cannot create rule: %s") % e)
             return
-        rulenr   = len(rules) 
+        rulenr   = len(rules)
     else:
         rulenr   = int(html.var("rulenr"))
         rule     = rules[rulenr]
@@ -10342,13 +10322,13 @@ def mode_edit_rule(phase, new = False):
                 mark_affected_sites_dirty(folder)
 
                 if new:
-                    log_pending(AFFECTED, None, "edit-rule", _("Created new rule in ruleset %s in folder %s") % 
+                    log_pending(AFFECTED, None, "edit-rule", _("Created new rule in ruleset %s in folder %s") %
                                (rulespec["title"], new_rule_folder["title"]))
                 else:
                     log_pending(AFFECTED, None, "edit-rule", _("Changed properties of rule %s in folder %s") %
                                (rulespec["title"], new_rule_folder["title"]))
             else: # Move rule to new folder
-                if not new: 
+                if not new:
                     del rules[rulenr]
                 save_rulesets(folder, rulesets)
                 rulesets = load_rulesets(new_rule_folder)
@@ -10363,7 +10343,7 @@ def mode_edit_rule(phase, new = False):
         else:
             return "edit_ruleset"
 
-        return ("edit_ruleset",  _("%s rule in ruleset '%s' in folder %s") % 
+        return ("edit_ruleset",  _("%s rule in ruleset '%s' in folder %s") %
                                   (new and _("Created new") or _("Edited"), rulespec["title"], new_rule_folder["title"]))
 
     if rulespec.get("help"):
@@ -10402,7 +10382,7 @@ def mode_edit_rule(phase, new = False):
         orientation = "horizontal",
         valuespec = TextAscii(size = 30)).render_input("hostlist", explicit_hosts)
 
-    html.checkbox("negate_hosts", negate_hosts, label = 
+    html.checkbox("negate_hosts", negate_hosts, label =
                  _("<b>Negate:</b> make rule apply for <b>all but</b> the above hosts"))
     html.write("</div>")
     html.help(_("You can enter a number of explicit host names that rule should or should "
@@ -10490,7 +10470,10 @@ def mode_edit_rule(phase, new = False):
     html.end_form()
 
 # Render HTML input fields for editing a tag based condition
-def render_condition_editor(tag_specs):
+def render_condition_editor(tag_specs, varprefix=""):
+    if varprefix:
+        varprefix += "_"
+
     if len(config.wato_aux_tags) + len(config.wato_host_tags) == 0:
         html.write(_("You have not configured any <a href=\"wato.py?mode=hosttags\">host tags</a>."))
         return
@@ -10522,18 +10505,20 @@ def render_condition_editor(tag_specs):
     # of div that is switched visible by is/isnot
     def tag_condition_dropdown(tagtype, deflt, id):
         html.write("<td>")
-        html.select(tagtype + "_" + id, [
+        html.select(varprefix + tagtype + "_" + id, [
             ("ignore", _("ignore")),
             ("is",     _("is")),
             ("isnot",  _("isnot"))], deflt,
-            onchange="valuespec_toggle_dropdownn(this, 'tag_sel_%s');" % id)
+            onchange="valuespec_toggle_dropdownn(this, '%stag_sel_%s');" % \
+                    (varprefix, id)
+        )
         html.write("</td><td class=\"tag_sel\">")
         if html.form_submitted():
             div_is_open = html.var(tagtype + "_" + id, "ignore") != "ignore"
         else:
             div_is_open = deflt != "ignore"
-        html.write('<div id="tag_sel_%s" style="%s">' % (
-            id, not div_is_open and "display: none;" or ""))
+        html.write('<div id="%stag_sel_%s" style="%s">' % (
+            varprefix, id, not div_is_open and "display: none;" or ""))
 
     # Show main tags
     html.write("<table>")
@@ -10543,7 +10528,7 @@ def render_condition_editor(tag_specs):
             html.write("<tr><td>%s: &nbsp;</td>" % title)
             default_tag, deflt = current_tag_setting(choices)
             tag_condition_dropdown("tag", deflt, id)
-            html.select("tagvalue_" + id, 
+            html.select(varprefix + "tagvalue_" + id,
                 [t[0:2] for t in choices if t[0] != None], deflt=default_tag)
             html.write("</div>")
             html.write("</td></tr>")
@@ -10563,13 +10548,15 @@ def render_condition_editor(tag_specs):
 
 
 # Retrieve current tag condition settings from HTML variables
-def get_tag_conditions():
+def get_tag_conditions(varprefix=""):
+    if varprefix:
+        varprefix += "_"
     # Main tags
     tag_list = []
     for entry in config.wato_host_tags:
         id, title, tags = entry[:3]
-        mode = html.var("tag_" + id)
-        tagvalue = html.var("tagvalue_" + id)
+        mode = html.var(varprefix + "tag_" + id)
+        tagvalue = html.var(varprefix + "tagvalue_" + id)
         if mode == "is":
             tag_list.append(tagvalue)
         elif mode == "isnot":
@@ -10577,7 +10564,7 @@ def get_tag_conditions():
 
     # Auxiliary tags
     for id, title in config.wato_aux_tags:
-        mode = html.var("auxtag_" + id)
+        mode = html.var(varprefix + "auxtag_" + id)
         if mode == "is":
             tag_list.append(id)
         elif mode == "isnot":
@@ -10800,7 +10787,7 @@ def register_check_parameters(subgroup, checkgroup, title, valuespec, itemspec, 
     elements.append(valuespec)
 
     register_rule(
-        "static/" + subgroup, 
+        "static/" + subgroup,
         "static_checks:%s" % checkgroup,
         title = title,
         valuespec = Tuple(
@@ -10809,7 +10796,7 @@ def register_check_parameters(subgroup, checkgroup, title, valuespec, itemspec, 
         ),
         match = "all")
 
-    
+
 
 
 
@@ -10919,8 +10906,8 @@ def page_user_profile():
         except MKUserError, e:
             html.add_user_error(e.varname, e.message)
 
-    html.header(_("Edit user profile"), 
-                javascripts = ['wato'], 
+    html.header(_("Edit user profile"),
+                javascripts = ['wato'],
                 stylesheets = ['check_mk', 'pages', 'wato', 'status'])
 
     if success:
@@ -10951,10 +10938,10 @@ def page_user_profile():
 
     if config.may('general.change_password') and not is_locked('password'):
         forms.section(_("Password"))
-        html.password_input('password')
+        html.password_input('password', autocomplete = "off")
 
         forms.section(_("Password confirmation"))
-        html.password_input('password2')
+        html.password_input('password2', autocomplete = "off")
 
     if config.may('general.edit_profile'):
         select_language(config.get_language(''))
@@ -10982,7 +10969,7 @@ def page_user_profile():
     html.footer()
 
 #.
-#   .--Sampleconfig--------------------------------------------------------.
+#   .-Sampleconfig---------------------------------------------------------.
 #   |   ____                        _                       __ _           |
 #   |  / ___|  __ _ _ __ ___  _ __ | | ___  ___ ___  _ __  / _(_) __ _     |
 #   |  \___ \ / _` | '_ ` _ \| '_ \| |/ _ \/ __/ _ \| '_ \| |_| |/ _` |    |
@@ -10993,7 +10980,7 @@ def page_user_profile():
 #   | Functions for creating an example configuration                      |
 #   '----------------------------------------------------------------------'
 
-# Create a very basic sample configuration, but only if none of the 
+# Create a very basic sample configuration, but only if none of the
 # files that we will create already exists. That is e.g. the case
 # after an update from an older version where no sample config had
 # been created.
@@ -11017,7 +11004,7 @@ def create_sample_config():
        ('snmp-only', u'SNMP (Networking device, Appliance)', ['snmp']),
        ('snmp-v1', u'Legacy SNMP device (using V1)', ['snmp']),
        ('snmp-tcp', u'Dual: Check_MK Agent + SNMP', ['snmp', 'tcp']),
-       ('ping', u'Only PING this device', [])]),
+       ('ping', u'No Agent', [])]),
      ('criticality',
       u'Criticality',
       [('prod', u'Productive system', []),
@@ -11031,13 +11018,13 @@ def create_sample_config():
        ('dmz', u'DMZ (low latency, secure access)', [])])]
 
     wato_aux_tags = \
-    [('snmp', u'monitor via SNMP'), 
+    [('snmp', u'monitor via SNMP'),
      ('tcp', u'monitor via Check_MK Agent')]
 
     save_hosttags(wato_host_tags, wato_aux_tags)
 
     # Rules that match the upper host tag definition
-    rulesets = { 
+    rulesets = {
         # Make the tag 'offline' remove hosts from the monitoring
         'only_hosts': [
             (['!offline'], ['@all'],
@@ -11064,7 +11051,7 @@ def create_sample_config():
     save_rulesets(g_root_folder, rulesets)
 
 #.
-#   .--Pattern Editor------------------------------------------------------.
+#   .-Pattern Editor-------------------------------------------------------.
 #   |   ____       _   _                    _____    _ _ _                 |
 #   |  |  _ \ __ _| |_| |_ ___ _ __ _ __   | ____|__| (_) |_ ___  _ __     |
 #   |  | |_) / _` | __| __/ _ \ '__| '_ \  |  _| / _` | | __/ _ \| '__|    |
@@ -11279,7 +11266,831 @@ def mode_pattern_editor(phase):
         html.write('</table>\n')
         html.end_foldable_container()
 
+#.
+#   .--BI Rules------------------------------------------------------------.
+#   |                 ____ ___   ____        _                             |
+#   |                | __ )_ _| |  _ \ _   _| | ___  ___                   |
+#   |                |  _ \| |  | |_) | | | | |/ _ \/ __|                  |
+#   |                | |_) | |  |  _ <| |_| | |  __/\__ \                  |
+#   |                |____/___| |_| \_\\__,_|_|\___||___/                  |
+#   |                                                                      |
+#   +----------------------------------------------------------------------+
+#   |  Editor for the Rules of BI                                          |
+#   '----------------------------------------------------------------------'
+def mode_bi_rules(phase):
+    if phase == "title":
+        return _("BI - Business Intelligence")
 
+    aggregations, aggregation_rules = load_bi_rules()
+
+    if phase == "buttons":
+        html.context_button(_("Main Menu"), make_link([("mode", "main")]), "home")
+        if aggregation_rules:
+            html.context_button(_("New Aggregation"),
+                      make_link([("mode", "bi_edit_aggregation")]), "new")
+        html.context_button(_("New Rule"),
+                  make_link([("mode", "bi_edit_rule")]), "new")
+        return
+
+    if phase == "action":
+        if html.var("_del_rule"):
+            ruleid = html.var("_del_rule")
+            c = wato_confirm(_("Confirm rule deletion"),
+                _("Do you really want to delete the rule with "
+                  "the id <b>%s</b>?") % ruleid)
+            if c:
+                del aggregation_rules[ruleid]
+                log_audit(None, "bi-delete-rule", _("Deleted BI rule with id %s") % ruleid)
+                save_bi_rules(aggregations, aggregation_rules)
+            elif c == False: # not yet confirmed
+                return ""
+            else:
+                return None # browser reload
+        elif html.var("_del_aggr"):
+            nr = int(html.var("_del_aggr"))
+            c = wato_confirm(_("Confirm aggregation deletion"),
+                _("Do you really want to delete the aggregation number <b>%s</b>") % (nr+1))
+            if c:
+                del aggregations[nr]
+                log_audit(None, "bi-delete-aggregation", _("Deleted BI aggregation number %d") % (nr+1))
+                save_bi_rules(aggregations, aggregation_rules)
+            elif c == False: # not yet confirmed
+                return ""
+            else:
+                return None # browser reload
+
+        return
+
+    if not aggregations and not aggregation_rules:
+        menu_items = [
+            ("bi_edit_rule", _("Create aggregation rule"), "new", "bi_rules",
+              _("Rules are the nodes in BI aggregations. "
+                "Each aggregation has one rule as its root."))
+        ]
+        render_main_menu(menu_items)
+        return
+
+
+    table.begin(_("Aggregations"))
+    for nr, aggregation in enumerate(aggregations):
+        table.row()
+        table.cell(_("Actions"), css="buttons")
+        edit_url = make_link([("mode", "bi_edit_aggregation"), ("id", nr)])
+        html.icon_button(edit_url, _("Edit this aggregation"), "edit")
+        delete_url = make_action_link([("mode", "bi_rules"), ("_del_aggr", nr)])
+        html.icon_button(delete_url, _("Delete this aggregation"), "delete")
+        table.cell(_("Nr."), nr+1, css="number")
+        table.cell(_(""), css="buttons")
+        if aggregation["disabled"]:
+            html.icon(_("This aggregation is currently disabled."), "disabled")
+        if aggregation["single_host"]:
+            html.icon(_("This aggregation covers only data from a single host."), "host")
+        table.cell(_("Groups"), ", ".join(aggregation["groups"]))
+        ruleid, description = bi_called_rule(aggregation["node"])
+        edit_url = make_link([("mode", "bi_edit_rule"), ("id", ruleid)])
+        table.cell(_("Rule"), '<a href="%s">%s</a>' % (edit_url, ruleid))
+        table.cell(_("Note"), description)
+
+    table.end()
+
+    rules = aggregation_rules.items()
+    # Sort rules according to nesting level, and then to id
+    rules_refs = [ (ruleid, rule, count_bi_rule_references(aggregations, aggregation_rules, ruleid))
+                   for (ruleid, rule) in rules ]
+    rules_refs.sort(cmp = lambda a,b: cmp(a[2][2], b[2][2]) or cmp(a[1]["title"], b[1]["title"]))
+
+    table.begin(_("Rules"))
+    for ruleid, rule, (aggr_refs, rule_refs, level) in rules_refs:
+        table.row()
+        table.cell(_("Actions"), css="buttons")
+        edit_url = make_link([("mode", "bi_edit_rule"), ("id", ruleid)])
+        html.icon_button(edit_url, _("Edit this rule"), "edit")
+        if rule_refs == 0:
+            tree_url = make_link([("mode", "bi_rule_tree"), ("id", ruleid)])
+            html.icon_button(tree_url, _("This is a top-level rule. Show rule tree"), "aggr")
+        refs = aggr_refs + rule_refs
+        if refs == 0:
+            delete_url = make_action_link([("mode", "bi_rules"), ("_del_rule", ruleid)])
+            html.icon_button(delete_url, _("Delete this rule"), "delete")
+        table.cell(_("Lvl"), level, css="number")
+        table.cell(_("ID"), '<a href="%s">%s</a>' % (edit_url, ruleid))
+        table.cell(_("Parameters"), " ".join(rule["params"]))
+        table.cell(_("Title"), rule["title"])
+        table.cell(_("Aggregation"),  "/".join([rule["aggregation"][0]] + map(str, rule["aggregation"][1])))
+        table.cell(_("Nodes"), len(rule["nodes"]), css="number")
+        table.cell(_("Usages"), refs, css="number")
+        table.cell(_("Comment"), rule.get("comment", ""))
+    table.end()
+
+def mode_bi_rule_tree(phase):
+    ruleid = html.var("id")
+
+    if phase == "title":
+        return _("BI - Rule Tree of") + " " + ruleid
+
+    aggregations, aggregation_rules = load_bi_rules()
+
+    if phase == "buttons":
+        html.context_button(_("Main Menu"), make_link([("mode", "main")]), "home")
+        html.context_button(_("Back"), make_link([("mode", "bi_rules")]), "back")
+        return
+
+    if phase == "action":
+        return
+
+    aggr_refs, rule_refs, level = count_bi_rule_references(aggregations, aggregation_rules, ruleid)
+    if rule_refs == 0:
+        render_rule_tree(aggregation_rules, ruleid)
+
+def render_rule_tree(aggregation_rules, ruleid):
+    rule = aggregation_rules[ruleid]
+    html.write('<div class=biruletree><div class=birule>')
+    edit_url = make_link([("mode", "bi_edit_rule"), ("id", ruleid)])
+    html.write('<a href="%s">' % edit_url)
+    html.icon(rule.get("comment", rule["title"]), "aggr")
+    html.write(" " + ruleid + "</a>")
+    html.write('</div>')
+    for node in rule["nodes"]:
+        r = bi_called_rule(node)
+        if r:
+            subnode_id = r[0]
+            html.write('<br><div class=arrow></div>')
+            html.write('<div class=node>')
+            render_rule_tree(aggregation_rules, subnode_id)
+            html.write('</div>')
+    html.write('</div>')
+
+
+
+def bi_called_rule(node):
+    if node[0] == "call":
+        if node[1][1]:
+            args = _("with arguments: %s") % ", ".join(node[1][1])
+        else:
+            args = _("without arguments")
+        return node[1][0], _("Explicit call ") + args
+    elif node[0] == "foreach_host":
+        subnode = node[1][-1]
+        if subnode[0] == 'call':
+            if node[1][0] == 'host':
+                info = _("Called for all hosts...")
+            elif node[1][0] == 'child':
+                info = _("Called for each child of...")
+            else:
+                info = _("Called for each parent of...")
+            return subnode[1][0], info
+    elif node[0] == "foreach_service":
+        subnode = node[1][-1]
+        return subnode[1][0], _("Called for each service...")
+
+def count_bi_rule_references(aggregations, aggregation_rules, ruleid):
+    aggr_refs = 0
+    for aggregation in aggregations:
+        called_rule_id, info = bi_called_rule(aggregation["node"])
+        if called_rule_id == ruleid:
+            aggr_refs += 1
+
+    level = 0
+    rule_refs = 0
+    for rid, rule in aggregation_rules.items():
+        l = bi_rule_uses_rule(aggregation_rules, rule, ruleid)
+        level = max(l, level)
+        if l == 1:
+            rule_refs += 1
+
+    return aggr_refs, rule_refs, level
+
+# Checks if the rule 'rule' uses either directly
+# or indirectly the rule with the id 'ruleid'. In
+# case of success, returns the nesting level
+def bi_rule_uses_rule(aggregation_rules, rule, ruleid, level=0):
+    for node in rule["nodes"]:
+        r = bi_called_rule(node)
+        if r:
+            ru_id, info = r
+            if ru_id == ruleid: # Rule is directly being used
+                return level + 1
+            # Check if lower rules use it
+            else:
+                l = bi_rule_uses_rule(aggregation_rules, aggregation_rules[ru_id], ruleid, level + 1)
+                if l:
+                    return l
+    return False
+
+
+# ValueSpec for editing a tag-condition
+class HostTagCondition(ValueSpec):
+    def __init__(self, **kwargs):
+        ValueSpec.__init__(self, **kwargs)
+
+    def render_input(self, varprefix, value):
+        render_condition_editor(value, varprefix)
+
+    def from_html_vars(self, varprefix):
+        return get_tag_conditions(varprefix=varprefix)
+
+    def canonical_value(self):
+        return []
+
+    def value_to_text(self, value):
+        return "|".join(value)
+
+    def validate_datatype(self, value, varprefix):
+        if type(value) != list:
+            raise MKUserError(varprefix, _("The list of host tags must be a list, but "
+                                           "is %r") % type(value))
+        for x in value:
+            if type(x) != str:
+                raise MKUserError(varprefix, _("The list of host tags must only contain strings "
+                                           "but also contains %r") % x)
+
+
+
+    def validate_value(self, value, varprefix):
+        pass
+
+
+
+
+
+
+# We need to replace the BI constants internally with something
+# that we can replace back after writing the BI-Rules out
+# with pprint.pformat
+bi_constants = {
+  'ALL_HOSTS'       : 'ALL_HOSTS-f41e728b-0bce-40dc-82ea-51091d034fc3',
+  'HOST_STATE'      : 'HOST_STATE-f41e728b-0bce-40dc-82ea-51091d034fc3',
+  'HIDDEN'          : 'HIDDEN-f41e728b-0bce-40dc-82ea-51091d034fc3',
+  'FOREACH_HOST'    : 'FOREACH_HOST-f41e728b-0bce-40dc-82ea-51091d034fc3',
+  'FOREACH_CHILD'   : 'FOREACH_CHILD-f41e728b-0bce-40dc-82ea-51091d034fc3',
+  'FOREACH_PARENT'  : 'FOREACH_PARENT-f41e728b-0bce-40dc-82ea-51091d034fc3',
+  'FOREACH_SERVICE' : 'FOREACH_SERVICE-f41e728b-0bce-40dc-82ea-51091d034fc3',
+  'REMAINING'       : 'REMAINING-f41e728b-0bce-40dc-82ea-51091d034fc3',
+  'DISABLED'        : 'DISABLED-f41e728b-0bce-40dc-82ea-51091d034fc3',
+}
+
+# returns aggregations, aggregation_rules
+def load_bi_rules():
+    filename = multisite_dir + "bi.mk"
+    try:
+        vars = { "aggregation_rules" : {},
+                 "aggregations"      : [],
+                 "host_aggregations" : [],
+               }
+        vars.update(bi_constants)
+        if os.path.exists(filename):
+            execfile(filename, vars, vars)
+        else:
+            exec(bi_example, vars, vars)
+
+        # Convert rules from old-style tuples to new-style dicts
+        rules = {}
+        for ruleid, rule in vars["aggregation_rules"].items():
+            rules[ruleid] = convert_rule_from_bi(rule, ruleid)
+        aggregations = []
+        for aggregation in vars["aggregations"]:
+            aggregations.append(convert_aggregation_from_bi(aggregation, single_host = False))
+        for aggregation in vars["host_aggregations"]:
+            aggregations.append(convert_aggregation_from_bi(aggregation, single_host = True))
+        return aggregations, rules
+
+    except Exception, e:
+        if config.debug:
+            raise
+
+        raise MKGeneralException(_("Cannot read configuration file %s: %s" %
+                          (filename, e)))
+
+def save_bi_rules(aggregations, aggregation_rules):
+    def replace_constants(s):
+        for name, uuid in bi_constants.items():
+            while True:
+                n = s.replace("'%s'" % uuid, name)
+                if n != s:
+                    s = n
+                else:
+                    break
+        return s[0] + '\n ' + s[1:-1] + '\n' + s[-1]
+
+    make_nagios_directory(multisite_dir)
+    out = create_user_file(multisite_dir + "bi.mk", "w")
+    out.write("# Written by WATO\n# encoding: utf-8\n\n")
+    for ruleid, rule in aggregation_rules.items():
+        rule = convert_rule_to_bi(rule)
+        out.write('aggregation_rules["%s"] = %s\n\n' %
+                ( ruleid, replace_constants(pprint.pformat(rule, width=50))))
+    out.write('\n')
+    for aggregation in aggregations:
+        if aggregation["single_host"]:
+            out.write("host_aggregations.append(\n")
+        else:
+            out.write("aggregations.append(\n")
+        out.write(replace_constants(pprint.pformat(convert_aggregation_to_bi(aggregation))))
+        out.write(")\n")
+
+bi_aggregation_functions = {}
+
+# Make some conversions so that the format of the
+# valuespecs is matched
+def convert_rule_from_bi(rule, ruleid):
+    if type(rule) == tuple:
+        rule = {
+            "title"       : rule[0],
+            "params"      : rule[1],
+            "aggregation" : rule[2],
+            "nodes"       : rule[3],
+        }
+    crule = {}
+    crule.update(rule)
+    crule["nodes"] = map(convert_node_from_bi, rule["nodes"])
+    parts = rule["aggregation"].split("!")
+    crule["aggregation"] = (parts[0], tuple(map(saveint, parts[1:])))
+    crule["id"] = ruleid
+    return crule
+
+def convert_rule_to_bi(rule):
+    brule = {}
+    brule.update(rule)
+    if "id" in brule:
+        del brule["id"]
+    brule["nodes"] = map(convert_node_to_bi, rule["nodes"])
+    brule["aggregation"] = "!".join(
+                [ rule["aggregation"][0] ] + map(str, rule["aggregation"][1]))
+    return brule
+
+# Convert node-Tuple into format used by CascadingDropdown
+def convert_node_from_bi(node):
+    if len(node) == 2:
+        if type(node[1]) == list:
+            return ("call", node)
+        elif node[1] == bi_constants['HOST_STATE']:
+            return ("host", (node[0],))
+        elif node[1] == bi_constants['REMAINING']:
+            return ("remaining", (node[0],))
+        else:
+            return ("service", node)
+
+    else: # FOREACH_...
+
+        if type(node[1]) == list:
+            tags = node[1]
+            node = node[0:1] + node[2:]
+        else:
+            tags = []
+        spec = node[1]
+        if spec == bi_constants['ALL_HOSTS']:
+            spec = None
+        if node[0] == bi_constants['FOREACH_SERVICE']:
+            service = node[2]
+            subnode = convert_node_from_bi(node[3:])
+            return ("foreach_service", (tags, spec, service, subnode))
+        else:
+            subnode = convert_node_from_bi(node[2:])
+            if node[0] == bi_constants['FOREACH_HOST']:
+                what = "host"
+            elif node[0] == bi_constants['FOREACH_CHILD']:
+                what = "child"
+            elif node[0] == bi_constants['FOREACH_PARENT']:
+                what = "parent"
+            return ("foreach_host", (what, tags, spec, subnode))
+
+
+def convert_node_to_bi(node):
+    if node[0] == "call":
+        return node[1]
+    elif node[0] == "host":
+        return (node[1][0], bi_constants['HOST_STATE'])
+    elif node[0] == "remaining":
+        return (node[1][0], bi_constants['REMAINING'])
+    elif node[0] == "service":
+        return node[1]
+    elif node[0] == "foreach_host":
+        what = node[1][0]
+        tags = node[1][1]
+        if node[1][2]:
+            spec = node[1][2]
+        else:
+            spec = bi_constants['ALL_HOSTS']
+        return (bi_constants["FOREACH_" + what.upper()], tags, spec) + convert_node_to_bi(node[1][3])
+    elif node[0] == "foreach_service":
+        tags = node[1][0]
+        if node[1][1]:
+            spec = node[1][1]
+        else:
+            spec = bi_constants['ALL_HOSTS']
+        service = node[1][2]
+        return (bi_constants["FOREACH_SERVICE"], tags, spec, service) + convert_node_to_bi(node[1][3])
+
+def convert_aggregation_from_bi(aggr, single_host):
+    if aggr[0] == bi_constants["DISABLED"]:
+        disabled = True
+        aggr = aggr[1:]
+    else:
+        disabled = False
+
+    if type(aggr[0]) != list:
+        groups = [aggr[0]]
+    else:
+        groups = aggr[0]
+    node = convert_node_from_bi(aggr[1:])
+    return {
+        "disabled"    : disabled,
+        "groups"      : groups,
+        "node"        : node,
+        "single_host" : single_host,
+    }
+
+def convert_aggregation_to_bi(aggr):
+    if len(aggr["groups"]) == 1:
+        conv = (aggr["groups"][0],)
+    else:
+        conv = (aggr["groups"],)
+    node = convert_node_to_bi(aggr["node"])
+    convaggr = conv + node
+    if aggr["disabled"]:
+        convaggr = (bi_constants["DISABLED"],) + convaggr
+    return convaggr
+
+# Not in global context, so that l10n will happen again
+def declare_bi_valuespecs(aggregation_rules):
+    global vs_aggregation, aggregation_choices, vs_bi_node
+
+    rule_choices = [
+           (key, key + " - " + rule["title"])
+           for (key, rule)
+           in aggregation_rules.items() ]
+
+
+    vs_call_rule = Tuple(
+        elements = [
+            DropdownChoice(
+                title = _("Rule:"),
+                choices = rule_choices,
+            ),
+            ListOfStrings(
+                orientation = "horizontal",
+                size = 12,
+                title = _("Arguments:"),
+            ),
+        ]
+    )
+
+    host_re_help = _("Either an exact host name or a regular expression exactly matching the host "
+                     "name. Example: <tt>srv.*p</tt> will match <tt>srv4711p</tt> but not <tt>xsrv4711p2</tt>. ")
+    vs_host_re = TextUnicode(
+        title = _("Host:"),
+        help = host_re_help,
+        allow_empty = False,
+    )
+
+    # Configuration of leaf nodes
+    vs_bi_node_simplechoices = [
+        ( "host", _("State of a host"),
+           Tuple(
+               help = _("Will create child nodes representing the state of hosts (usually the "
+                        "host check is done via ping)."),
+               elements = [ vs_host_re, ]
+           )
+        ),
+        ( "service", _("State of a service"),
+          Tuple(
+              help = _("Will create child nodes representing the state of services."),
+              elements = [
+                  vs_host_re,
+                  TextUnicode(
+                      title = _("Service:"),
+                      help = _("A regular expression matching the <b>beginning</b> of a service description. You can "
+                               "use a trailing <tt>$</tt> in order to define an exact match. For each "
+                               "matching service on the specified hosts one child node will be created. "),
+                  ),
+              ]
+          ),
+        ),
+        ( "remaining", _("State of remaining services"),
+          Tuple(
+              help = _("Create a child node for each service on the specified hosts that is not "
+                       "contained in any other node of the aggregation."),
+              elements = [ vs_host_re ],
+          )
+        ),
+    ]
+
+    # Configuration of explicit rule call
+    vs_bi_node_call_choices = [
+          ( "call", _("Call a Rule"), vs_call_rule ),
+    ]
+
+    # Configuration of FOREACH_...-type nodes
+    def foreach_choices(subnode_choices):
+        return [
+          ( "foreach_host", _("Create nodes based on a host search"),
+             Tuple(
+                 elements = [
+                    DropdownChoice(
+                        title = _("Refer to:"),
+                        choices = [
+                            ( 'host',   _("The found hosts themselves") ),
+                            ( 'child',  _("The found hosts' childs") ),
+                            ( 'parent', _("The found hosts' parents") ),
+                        ]
+                    ),
+                    HostTagCondition(
+                        title = _("Host Tags:")
+                    ),
+                    OptionalDropdownChoice(
+                        title = _("Host Name:"),
+                        choices = [
+                            ( None, _("All Hosts")),
+                        ],
+                        explicit = TextAscii(),
+                        otherlabel = _("Regex for host name"),
+                        default_value = None,
+                    ),
+                    CascadingDropdown(
+                        title = _("Nodes to create:"),
+                        choices = subnode_choices,
+                    ),
+                 ]
+            )
+          ),
+          ( "foreach_service", _("Create nodes based on a service search"),
+             Tuple(
+                 elements = [
+                    HostTagCondition(
+                        title = _("Host Tags:")
+                    ),
+                    OptionalDropdownChoice(
+                        title = _("Host Name:"),
+                        choices = [
+                            ( None, _("All Hosts")),
+                        ],
+                        explicit = TextAscii(),
+                        otherlabel = _("Regex for host name"),
+                        default_value = None,
+                    ),
+                    TextAscii(
+                        title = _("Service Regex:"),
+                        help = _("Subexpressions enclosed in <tt>(</tt> and <tt>)</tt> will be available "
+                                 "as arguments <tt>$2$</tt>, <tt>$3$</tt>, etc."),
+                    ),
+                    CascadingDropdown(
+                        title = _("Nodes to create:"),
+                        choices = subnode_choices,
+                    ),
+                 ]
+            )
+          )
+        ]
+
+    vs_bi_node = CascadingDropdown(
+       choices = vs_bi_node_simplechoices + vs_bi_node_call_choices \
+              + foreach_choices(vs_bi_node_simplechoices + vs_bi_node_call_choices)
+    )
+
+    aggregation_choices = []
+    for aid, ainfo in bi_aggregation_functions.items():
+        aggregation_choices.append((
+            aid,
+            ainfo["title"],
+            ainfo["valuespec"],
+        ))
+
+    vs_aggregation = Dictionary(
+        title = _("Aggregation Properties"),
+        optional_keys = False,
+        render = "form",
+        elements = [
+        ( "groups",
+          ListOfStrings(
+              title = _("Aggregation Groups"),
+              help = _("List of groups in which to show this aggregation. Usually "
+                       "each aggregation is only in one group. Group names are arbitrary "
+                       "texts. At least one group is mandatory."),
+              valuespec = TextUnicode(),
+          ),
+        ),
+        ( "node",
+          CascadingDropdown(
+              title = _("Rule to call"),
+              choices = vs_bi_node_call_choices + foreach_choices(vs_bi_node_call_choices)
+          )
+        ),
+        ( "disabled",
+          Checkbox(
+              title = _("Disabled"),
+              label = _("Currently disable this aggregation"),
+          )
+        ),
+        ( "single_host",
+          Checkbox(
+              title = _("Optimization"),
+              label = _("The aggregation covers data from only one host and its parents."),
+              help = _("If you have a large number of aggregations that cover only one host and "
+                       "maybe its parents (such as Check_MK cluster hosts), "
+                       "then please enable this optimization. It reduces the time for the "
+                       "computation. Do <b>not</b> enable this for aggregations that contain "
+                       "data of more than one host!"),
+          ),
+        ),
+      ]
+    )
+
+
+
+def mode_bi_edit_aggregation(phase):
+    nr = int(html.var("id", "-1")) # In case of Aggregations: index in list
+    new = nr == -1
+
+    if phase == "title":
+        if new:
+            return _("BI - Create New Aggregation")
+        else:
+            return _("BI - Edit Aggregation")
+
+    elif phase == "buttons":
+        html.context_button(_("Abort"), make_link([("mode", "bi_rules")]), "abort")
+        return
+
+    aggregations, aggregation_rules = load_bi_rules()
+    declare_bi_valuespecs(aggregation_rules)
+
+    if phase == "action":
+        if html.check_transaction():
+            new_aggr = vs_aggregation.from_html_vars('aggr')
+            vs_aggregation.validate_value(new_aggr, 'aggr')
+            if len(new_aggr["groups"]) == 0:
+                raise MKUserError('rule_p_groups_0', _("Please define at least one aggregation group"))
+            if new:
+                aggregations.append(new_aggr)
+                log_audit(None, "bi-new-aggregation", _("Created new BI aggregation %d") % (len(aggregations)))
+            else:
+                aggregations[nr] = new_aggr
+                log_audit(None, "bi-new-aggregation", _("Modified BI aggregation %d") % (nr + 1))
+            save_bi_rules(aggregations, aggregation_rules)
+        return "bi_rules"
+
+    if new:
+        value = { "groups" : [ _("Main") ] }
+    else:
+        value = aggregations[nr]
+
+    html.begin_form("biaggr")
+    vs_aggregation.render_input("aggr", value)
+    forms.end()
+    html.hidden_fields()
+    html.button("_save", new and _("Create") or _("Save"), "submit")
+    html.set_focus("rule_p_groups_0")
+    html.end_form()
+
+def mode_bi_edit_rule(phase):
+    ruleid = html.var("id") # In case of Aggregations: index in list
+    new = not ruleid
+
+    if phase == "title":
+        if new:
+            return _("BI - Create New Rule")
+        else:
+            return _("BI - Edit Rule") + " " + ruleid
+
+
+    elif phase == "buttons":
+        html.context_button(_("Abort"), make_link([("mode", "bi_rules")]), "abort")
+        return
+
+    aggregations, aggregation_rules = load_bi_rules()
+    declare_bi_valuespecs(aggregation_rules)
+
+    elements = [
+        ( "title",
+           TextUnicode(
+               title = _("Rule Title"),
+               help = _("The title of the BI nodes that are created from that rule. This will be "
+                        "displayed as the name of the node in the BI view. For "
+                        "top level nodes this title must be unique. You can insert "
+                        "rule parameters like <tt>$FOO$</tt> or <tt>$BAR$</tt> here."),
+               allow_empty = False,
+               size = 64,
+           ),
+        ),
+
+        ( "comment",
+           TextUnicode(
+               title = _("Comment"),
+               help = _("An arbitrary comment of this rule for you."),
+               size = 64,
+           ),
+        ),
+        ( "params",
+          ListOfStrings(
+              title = _("Parameters"),
+              help = _("Parameters are used in order to make rules more flexible. The must "
+                       "be named like variables in programming languages. For example you can "
+                       "make your rule have the two parameters <tt>HOST</tt> and <tt>INST</tt>. "
+                       "When calling the rule - from an aggergation or a higher level rule - "
+                       "you will then specify two arbitrary values for that parameters. In the "
+                       "title of the rule, the host and service names you can then insert the "
+                       "actual value of the parameters by <tt>$HOST$</tt> and <tt>$INST$</tt> "
+                       "(enclosed in dollar signs)."),
+              orientation = "horizontal",
+              valuespec = TextAscii(
+                size = 12,
+                regex = '[A-Za-z_][A-Za-z0-9_]*',
+                regex_error = _("Parameters must contain only A-Z, a-z, 0-9 and _ "
+                                "and must not begin with a digit."),
+              )
+          )
+        ),
+        ( "aggregation",
+          CascadingDropdown(
+            title = _("Aggregation Function"),
+            help = _("The aggregation function decides how the status of a node "
+                     "is constructed from the states of the child nodes."),
+            html_separator = "",
+            choices = aggregation_choices,
+          )
+        ),
+        ( "nodes",
+          ListOf(
+              vs_bi_node,
+              add_label = _("Add child node generator"),
+              title = _("Nodes that are aggregated by this rule"),
+          ),
+        ),
+    ]
+
+
+    if new:
+        elements = [
+        ( "id",
+          TextAscii(
+              title = _("Unique Rule ID"),
+              help = _("The ID of the rule must be a unique text. It will be used as an internal key "
+                       "when rules refer to each other. The rule IDs will not be visible in the status "
+                       "GUI. They are just used within the configuration."),
+              allow_empty = False,
+              size = 12,
+          ),
+        )] + elements
+
+    vs_rule = Dictionary(
+        title = _("Rule Properties"),
+        optional_keys = False,
+        render = "form",
+        elements = elements,
+        headers = [
+            ( _("General Properties"),     [ "id", "title", "comment", "params" ]),
+            ( _("Aggregation Function"),   [ "aggregation" ], ),
+            ( _("Child Node Generation"),  [ "nodes" ] ),
+        ]
+    )
+
+
+    if phase == "action":
+        if html.check_transaction():
+            new_rule = vs_rule.from_html_vars('rule')
+            vs_rule.validate_value(new_rule, 'rule')
+            if new:
+                ruleid = new_rule["id"]
+
+            if new and ruleid in aggregation_rules:
+                raise MKUserError('rule_p_id',
+                    _("There is already a rule with the id <b>%s</b>" % ruleid))
+            if not new_rule["nodes"]:
+                raise MKUserError(None,
+                    _("Please add at least one child node. Empty rules are useless."))
+
+            if new:
+                del new_rule["id"]
+                aggregation_rules[ruleid] = new_rule
+                log_audit(None, "bi-new-rule", _("Create new BI rule %s") % ruleid)
+            else:
+                aggregation_rules[ruleid].update(new_rule)
+                new_rule["id"] = ruleid
+                if bi_rule_uses_rule(aggregation_rules, new_rule, new_rule["id"]):
+                    raise MKUserError(None, _("There is a cycle in your rules. This rule calls itself - "
+                                              "either directly or indirectly."))
+                log_audit(None, "bi-edit-rule", _("Modified BI rule %s") % ruleid)
+
+            save_bi_rules(aggregations, aggregation_rules)
+        return "bi_rules"
+
+    if new:
+        value = {}
+    else:
+        value = aggregation_rules[ruleid]
+
+    html.begin_form("birule", method="POST")
+    vs_rule.render_input("rule", value)
+    forms.end()
+    html.hidden_fields()
+    html.button("_save", new and _("Create") or _("Save"), "submit")
+    if new:
+        html.set_focus("rule_p_id")
+    else:
+        html.set_focus("rule_p_title")
+    html.end_form()
+
+#.
 #   .-Hooks-&-API----------------------------------------------------------.
 #   |       _   _             _           ___        _    ____ ___         |
 #   |      | | | | ___   ___ | | _____   ( _ )      / \  |  _ \_ _|        |
@@ -11555,7 +12366,7 @@ def validate_all_hosts(hostnames, force_all = False):
     if hooks.registered('validate-all-hosts') and (len(hostnames) > 0 or force_all):
         hosts_errors = {}
         all_hosts = collect_hosts(g_root_folder)
-        
+
         if force_all:
             hostnames = all_hosts.keys()
 
@@ -11765,7 +12576,7 @@ def render_folder_path(the_folder = 0, link_to_last = False, keepvarnames = ["mo
             bc_el_start(z_index = 100 + num)
         html.write('<div class=content>%s</div>\n' % part)
 
-        bc_el_end(num == len(parts)-1 
+        bc_el_end(num == len(parts)-1
                   and not (
                     len(subfolders) > 0 and not link_to_last)
                   and "end" or "")
@@ -11780,7 +12591,7 @@ def render_folder_path(the_folder = 0, link_to_last = False, keepvarnames = ["mo
             "folder", [ ("", "") ] + options,
             onchange = "folderpath.submit();",
             attrs = {
-                "class"   : "folderpath", 
+                "class"   : "folderpath",
                 # This does not work: it prevents the selection from
                 # being unfolded
                 # "onfhocus" : "if (this.blur) this.blur();",
@@ -11854,7 +12665,11 @@ modes = {
    "hosttags"           : (["hosttags"], mode_hosttags),
    "edit_hosttag"       : (["hosttags"], mode_edit_hosttag),
    "edit_auxtag"        : (["hosttags"], mode_edit_auxtag),
-   "pattern_editor"     : (["pattern_editor"], mode_pattern_editor)
+   "pattern_editor"     : (["pattern_editor"], mode_pattern_editor),
+   "bi_rules"           : (["bi_rules"], mode_bi_rules),
+   "bi_rule_tree"       : (["bi_rules"], mode_bi_rule_tree),
+   "bi_edit_rule"       : (["bi_rules"], mode_bi_edit_rule),
+   "bi_edit_aggregation": (["bi_rules"], mode_bi_edit_aggregation),
 }
 
 loaded_with_language = False
@@ -11881,7 +12696,29 @@ def load_plugins():
     g_rulespec_group = {}
     g_rulespec_groups = []
 
-    hooks.unregister()
+    # Directories and files to synchronize during replication
+    global replication_paths, backup_paths
+    replication_paths = [
+        ( "dir",  "check_mk",   root_dir ),
+        ( "dir",  "multisite",  multisite_dir ),
+        ( "file", "htpasswd",   defaults.htpasswd_file ),
+        ( "file", "auth.secret",  '%s/auth.secret' % os.path.dirname(defaults.htpasswd_file) ),
+        ( "file", "auth.serials", '%s/auth.serials' % os.path.dirname(defaults.htpasswd_file) ),
+        # Also replicate the user-settings of Multisite? While the replication
+        # as such works pretty well, the count of pending changes will not
+        # know.
+        ( "dir", "usersettings", defaults.var_dir + "/web" ),
+    ]
+
+    # Directories and files for backup & restore
+    backup_paths = replication_paths + [
+        ( "file", "sites",      sites_mk)
+        # autochecks are a site-local ressource. This does only make
+        # sense for single-site installations. How should we handle
+        # this?
+        # ( "dir", "autochecks", defaults.autochecksdir ),
+    ]
+
 
     # Declare WATO-specific permissions
     config.declare_permission_section("wato", _("WATO - Check_MK's Web Administration Tool"))
@@ -11916,7 +12753,7 @@ def load_plugins():
            "current configuration (and thus rewriting the "
            "monitoring configuration and restart the monitoring daemon.)"),
          [ "admin", "user", ])
-    
+
     config.declare_permission("wato.activateforeign",
          _("Activate Foreign Changes"),
          _("When several users work in parallel with WATO then "
@@ -12064,6 +12901,11 @@ def load_plugins():
          _("Logfile Pattern Analyzer"),
          _("Access to the module for analyzing and validating logfile patterns."),
          [ "admin", "user" ])
+
+    config.declare_permission("wato.bi_rules",
+        _("Business Intelligence Rules"),
+        _("Edit the rules for the BI aggregations."),
+         [ "admin" ])
 
 
     load_web_plugins("wato", globals())

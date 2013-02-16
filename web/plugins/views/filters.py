@@ -373,15 +373,15 @@ class FilterTime(Filter):
     def __init__(self, info, name, title, column):
         self.column = column
         self.name = name
-        self.ranges = [ 
-           (86400, _("days")),
-           (3600,  _("hours")), 
-           (60,    _("min")), 
-           (1,     _("sec")), 
+        self.ranges = [
+           (86400,  _("days")),
+           (3600,   _("hours")),
+           (60,     _("min")),
+           (1,      _("sec")),
         ]
         varnames = [ name + "_from", name + "_from_range",
                      name + "_until", name + "_until_range" ]
-            
+
         Filter.__init__(self, name, title, info, varnames, [column])
 
     def double_height(self):
@@ -389,7 +389,8 @@ class FilterTime(Filter):
 
     def display(self):
         choices = [ (str(sec), title + " " + _("ago")) for sec, title in self.ranges ] + \
-                  [ ("abs", _("Date (YYYY-MM-DD)")) ]
+                  [ ("abs", _("Date (YYYY-MM-DD)")),
+                    ("unix", _("UNIX timestamp")) ]
 
         html.write("<table class=filtertime>")
         for what, whatname in [
@@ -403,7 +404,7 @@ class FilterTime(Filter):
             html.select(varprefix + "_range", choices, "3600")
             html.write("</td></tr>")
         html.write("</table>")
-            
+
 
     def filter(self, infoname):
         fromsecs, untilsecs = self.get_time_range()
@@ -431,6 +432,8 @@ class FilterTime(Filter):
                     except:
                         html.add_user_error(varprefix, _("Please enter the date in the format YYYY-MM-DD."))
                         range.append(None)
+                elif rangename == "unix":
+                    range.append(int(count))
                 else:
                     try:
                         count = int(count)
@@ -439,7 +442,7 @@ class FilterTime(Filter):
                     except:
                         range.append(None)
                         html.set_var(varprefix, "")
-            
+
         return range
 
     # I'm not sure if this function is useful or ever been called.
@@ -459,6 +462,9 @@ class FilterTime(Filter):
 
 declare_filter(250, FilterTime("service", "svc_last_state_change", _("Last service state change"), "service_last_state_change"))
 declare_filter(251, FilterTime("service", "svc_last_check", _("Last service check"), "service_last_check"))
+
+declare_filter(250, FilterTime("host", "host_last_state_change", _("Last host state change"), "host_last_state_change"))
+declare_filter(251, FilterTime("host", "host_last_check", _("Last host check"), "host_last_check"))
 
 #    _
 #   | |    ___   __ _

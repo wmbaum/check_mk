@@ -171,6 +171,121 @@ register_rule(group + '/' + subgroup_inventory,
     match = 'list',
 )
 
+#dublicate: check_mk_configuration.py
+_if_portstate_choices = [
+                        ( '1', 'up(1)'),
+                        ( '2', 'down(2)'),
+                        ( '3', 'testing(3)'),
+                        ( '4', 'unknown(4)'),
+                        ( '5', 'dormant(5)') ,
+                        ( '6', 'notPresent(6)'),
+                        ( '7', 'lowerLayerDown(7)'),
+                        ]
+
+#dublicate: check_mk_configuration.py
+_if_porttype_choices = [
+  ("1", "other(1)" ), ("2", "regular1822(2)" ), ("3", "hdh1822(3)" ), ("4", "ddnX25(4)" ),
+  ("5", "rfc877x25(5)" ), ("6", "ethernetCsmacd(6)" ), ("7", "iso88023Csmacd(7)" ), ("8",
+  "iso88024TokenBus(8)" ), ("9", "iso88025TokenRing(9)" ), ("10", "iso88026Man(10)" ),
+  ("11", "starLan(11)" ), ("12", "proteon10Mbit(12)" ), ("13", "proteon80Mbit(13)" ), ("14",
+  "hyperchannel(14)" ), ("15", "fddi(15)" ), ("16", "lapb(16)" ), ("17", "sdlc(17)" ), ("18",
+  "ds1(18)" ), ("19", "e1(19)" ), ("20", "basicISDN(20)" ), ("21", "primaryISDN(21)" ), ("22",
+  "propPointToPointSerial(22)" ), ("23", "ppp(23)" ), ("24", "softwareLoopback(24)" ), ("25",
+  "eon(25)" ), ("26", "ethernet3Mbit(26)" ), ("27", "nsip(27)" ), ("28", "slip(28)" ), ("29",
+  "ultra(29)" ), ("30", "ds3(30)" ), ("31", "sip(31)" ), ("32", "frameRelay(32)" ), ("33",
+  "rs232(33)" ), ("34", "para(34)" ), ("35", "arcnet(35)" ), ("36", "arcnetPlus(36)" ),
+  ("37", "atm(37)" ), ("38", "miox25(38)" ), ("39", "sonet(39)" ), ("40", "x25ple(40)" ),
+  ("41", "iso88022llc(41)" ), ("42", "localTalk(42)" ), ("43", "smdsDxi(43)" ), ("44",
+  "frameRelayService(44)" ), ("45", "v35(45)" ), ("46", "hssi(46)" ), ("47", "hippi(47)" ),
+  ("48", "modem(48)" ), ("49", "aal5(49)" ), ("50", "sonetPath(50)" ), ("51", "sonetVT(51)"
+  ), ("52", "smdsIcip(52)" ), ("53", "propVirtual(53)" ), ("54", "propMultiplexor(54)" ),
+  ("55", "ieee80212(55)" ), ("56", "fibreChannel(56)" ), ("57", "hippiInterface(57)" ), ("58",
+  "frameRelayInterconnect(58)" ), ("59", "aflane8023(59)" ), ("60", "aflane8025(60)" ), ("61",
+  "cctEmul(61)" ), ("62", "fastEther(62)" ), ("63", "isdn(63)" ), ("64", "v11(64)" ), ("65",
+  "v36(65)" ), ("66", "g703at64k(66)" ), ("67", "g703at2mb(67)" ), ("68", "qllc(68)" ), ("69",
+  "fastEtherFX(69)" ), ("70", "channel(70)" ), ("71", "ieee80211(71)" ), ("72", "ibm370parChan(72)"
+  ), ("73", "escon(73)" ), ("74", "dlsw(74)" ), ("75", "isdns(75)" ), ("76", "isdnu(76)" ),
+  ("77", "lapd(77)" ), ("78", "ipSwitch(78)" ), ("79", "rsrb(79)" ), ("80", "atmLogical(80)" ),
+  ("81", "ds0(81)" ), ("82", "ds0Bundle(82)" ), ("83", "bsc(83)" ), ("84", "async(84)" ), ("85",
+  "cnr(85)" ), ("86", "iso88025Dtr(86)" ), ("87", "eplrs(87)" ), ("88", "arap(88)" ), ("89",
+  "propCnls(89)" ), ("90", "hostPad(90)" ), ("91", "termPad(91)" ), ("92", "frameRelayMPI(92)" ),
+  ("93", "x213(93)" ), ("94", "adsl(94)" ), ("95", "radsl(95)" ), ("96", "sdsl(96)" ), ("97",
+  "vdsl(97)" ), ("98", "iso88025CRFPInt(98)" ), ("99", "myrinet(99)" ), ("100", "voiceEM(100)"
+  ), ("101", "voiceFXO(101)" ), ("102", "voiceFXS(102)" ), ("103", "voiceEncap(103)" ), ("104",
+  "voiceOverIp(104)" ), ("105", "atmDxi(105)" ), ("106", "atmFuni(106)" ), ("107", "atmIma(107)"
+  ), ("108", "pppMultilinkBundle(108)" ), ("109", "ipOverCdlc(109)" ), ("110", "ipOverClaw(110)"
+  ), ("111", "stackToStack(111)" ), ("112", "virtualIpAddress(112)" ), ("113", "mpc(113)" ),
+  ("114", "ipOverAtm(114)" ), ("115", "iso88025Fiber(115)" ), ("116", "tdlc(116)" ), ("117",
+  "gigabitEthernet(117)" ), ("118", "hdlc(118)" ), ("119", "lapf(119)" ), ("120", "v37(120)" ),
+  ("121", "x25mlp(121)" ), ("122", "x25huntGroup(122)" ), ("123", "trasnpHdlc(123)" ), ("124",
+  "interleave(124)" ), ("125", "fast(125)" ), ("126", "ip(126)" ), ("127", "docsCableMaclayer(127)"
+  ), ( "128", "docsCableDownstream(128)" ), ("129", "docsCableUpstream(129)" ), ("130",
+  "a12MppSwitch(130)" ), ("131", "tunnel(131)" ), ("132", "coffee(132)" ), ("133", "ces(133)" ),
+  ("134", "atmSubInterface(134)" ), ("135", "l2vlan(135)" ), ("136", "l3ipvlan(136)" ), ("137",
+  "l3ipxvlan(137)" ), ("138", "digitalPowerline(138)" ), ("139", "mediaMailOverIp(139)" ),
+  ("140", "dtm(140)" ), ("141", "dcn(141)" ), ("142", "ipForward(142)" ), ("143", "msdsl(143)" ),
+  ("144", "ieee1394(144)" ), ( "145", "if-gsn(145)" ), ("146", "dvbRccMacLayer(146)" ), ("147",
+  "dvbRccDownstream(147)" ), ("148", "dvbRccUpstream(148)" ), ("149", "atmVirtual(149)" ),
+  ("150", "mplsTunnel(150)" ), ("151", "srp(151)" ), ("152", "voiceOverAtm(152)" ), ("153",
+  "voiceOverFrameRelay(153)" ), ("154", "idsl(154)" ), ( "155", "compositeLink(155)" ),
+  ("156", "ss7SigLink(156)" ), ("157", "propWirelessP2P(157)" ), ("158", "frForward(158)" ),
+  ("159", "rfc1483(159)" ), ("160", "usb(160)" ), ("161", "ieee8023adLag(161)" ), ("162",
+  "bgppolicyaccounting(162)" ), ("163", "frf16MfrBundle(163)" ), ("164", "h323Gatekeeper(164)"
+  ), ("165", "h323Proxy(165)" ), ("166", "mpls(166)" ), ("167", "mfSigLink(167)" ), ("168",
+  "hdsl2(168)" ), ("169", "shdsl(169)" ), ("170", "ds1FDL(170)" ), ("171", "pos(171)" ), ("172",
+  "dvbAsiIn(172)" ), ("173", "dvbAsiOut(173)" ), ("174", "plc(174)" ), ("175", "nfas(175)" ), (
+  "176", "tr008(176)" ), ("177", "gr303RDT(177)" ), ("178", "gr303IDT(178)" ), ("179", "isup(179)" ),
+  ("180", "propDocsWirelessMaclayer(180)" ), ("181", "propDocsWirelessDownstream(181)" ), ("182",
+  "propDocsWirelessUpstream(182)" ), ("183", "hiperlan2(183)" ), ("184", "propBWAp2Mp(184)" ),
+  ("185", "sonetOverheadChannel(185)" ), ("186", "digitalWrapperOverheadChannel(186)" ), ("187",
+  "aal2(187)" ), ("188", "radioMAC(188)" ), ("189", "atmRadio(189)" ), ("190", "imt(190)" ), ("191",
+  "mvl(191)" ), ("192", "reachDSL(192)" ), ("193", "frDlciEndPt(193)" ), ("194", "atmVciEndPt(194)"
+  ), ("195", "opticalChannel(195)" ), ("196", "opticalTransport(196)" ), ("197", "propAtm(197)" ),
+  ("198", "voiceOverCable(198)" ), ("199", "infiniband(199)" ), ("200", "teLink(200)" ), ("201",
+  "q2931(201)" ), ("202", "virtualTg(202)" ), ("203", "sipTg(203)" ), ("204", "sipSig(204)" ), (
+  "205", "docsCableUpstreamChannel(205)" ), ("206", "econet(206)" ), ("207", "pon155(207)" ), ("208",
+  "pon622(208)" ), ("209", "bridge(209)" ), ("210", "linegroup(210)" ), ("211", "voiceEMFGD(211)"
+  ), ("212", "voiceFGDEANA(212)" ), ("213", "voiceDID(213)" ), ("214", "mpegTransport(214)" ),
+  ("215", "sixToFour(215)" ), ("216", "gtp(216)" ), ("217", "pdnEtherLoop1(217)" ), ("218",
+  "pdnEtherLoop2(218)" ), ("219", "opticalChannelGroup(219)" ), ("220", "homepna(220)" ),
+  ("221", "gfp(221)" ), ("222", "ciscoISLvlan(222)" ), ("223", "actelisMetaLOOP(223)" ), ("224",
+  "fcipLink(224)" ), ("225", "rpr(225)" ), ("226", "qam(226)" ), ("227", "lmp(227)" ), ("228",
+  "cblVectaStar(228)" ), ("229", "docsCableMCmtsDownstream(229)" ), ("230", "adsl2(230)" ), ]
+
+register_rule(group + '/' + subgroup_networking,
+    varname   = "inventory_if_rules",
+    title     = _("Network interface and switch port Inventory"),
+    valuespec = Dictionary(
+        elements = [
+         ("use_desc", Checkbox(
+                title = _("Use description as service name for network interface checks"),
+                label = _("use description"),
+                help = _("This option lets Check_MK use the interface description as item instead "
+                         "of the port number. If no description is available then the port number is "
+                         "used anyway."))),
+        ("use_alias", Checkbox(
+                 title = _("Use alias as service name for network interface checks"),
+                     label = _("use alias"),
+                     help = _("This option lets Check_MK use the alias of the port (ifAlias) as item instead "
+                              "of the port number. If no alias is available then the port number is used "
+                              "anyway."))),
+        ("portstates", ListChoice(title = _("Network interface port states to inventorize"),
+              help = _("When doing inventory on switches or other devices with network interfaces "
+                       "then only ports found in one of the configured port states will be added to the monitoring."),
+              choices = _if_portstate_choices)),
+        ("porttypes", ListChoice(title = _("Network interface port types to inventorize"),
+              help = _("When doing inventory on switches or other devices with network interfaces "
+                       "then only ports of the specified types will be created services for."),
+              choices = _if_porttype_choices,
+              columns = 3)),
+
+        ],
+        help = _('<p>This rule can be used to control the inventory for network ports. '
+                 'You can configure the port types and port states for inventory'
+                 'and the use of alias or description as service name.'),
+    ),
+    match = 'dict',
+)
 register_rule(group + '/' + subgroup_inventory,
     varname   = "inventory_processes_rules",
     title     = _('Process Inventory'),
@@ -538,20 +653,20 @@ checkgroups.append((
                 )
             ),
             ("minsize",
-                Tuple( 
+                Tuple(
                     title = _("Minimal size"),
-                    elements = [ 
-                      Filesize(title = _("Warning lower as")), 
-                      Filesize(title = _("Critical lower as")), 
+                    elements = [
+                      Filesize(title = _("Warning lower as")),
+                      Filesize(title = _("Critical lower as")),
                     ]
                 )
             ),
             ("maxsize",
-                Tuple( 
+                Tuple(
                     title = _("Maximal size"),
-                    elements = [ 
-                      Filesize(title = _("Warning higher as")), 
-                      Filesize(title = _("Critical higher as")), 
+                    elements = [
+                      Filesize(title = _("Warning higher as")),
+                      Filesize(title = _("Critical higher as")),
                     ]
                 )
             )
@@ -563,7 +678,6 @@ checkgroups.append((
         allow_empty = True),
     "first"
 ))
-
 
 register_rule(group + '/' + subgroup_storage,
     varname   = "filesystem_groups",
@@ -670,38 +784,38 @@ checkgroups.append((
                 )
             ),
             ("minsize",
-                Tuple( 
+                Tuple(
                     title = _("Minimal size"),
-                    elements = [ 
-                      Filesize(title = _("Warning lower as")), 
-                      Filesize(title = _("Critical lower as")), 
+                    elements = [
+                      Filesize(title = _("Warning lower as")),
+                      Filesize(title = _("Critical lower as")),
                     ]
                 )
             ),
             ("maxsize",
-                Tuple( 
+                Tuple(
                     title = _("Maximal size"),
-                    elements = [ 
-                      Filesize(title = _("Warning higher as")), 
-                      Filesize(title = _("Critical higher as")), 
+                    elements = [
+                      Filesize(title = _("Warning higher as")),
+                      Filesize(title = _("Critical higher as")),
                     ]
                 )
             ),
             ("mincount",
-                Tuple( 
+                Tuple(
                     title = _("Minimal file count"),
-                    elements = [ 
-                      Integer(title = _("Warning lower as")), 
-                      Integer(title = _("Critical lower as")), 
+                    elements = [
+                      Integer(title = _("Warning lower as")),
+                      Integer(title = _("Critical lower as")),
                     ]
                 )
             ),
             ("maxcount",
-                Tuple( 
+                Tuple(
                     title = _("Maximal file count"),
-                    elements = [ 
-                      Integer(title = _("Warning higher as")), 
-                      Integer(title = _("Critical higher as")), 
+                    elements = [
+                      Integer(title = _("Warning higher as")),
+                      Integer(title = _("Critical higher as")),
                     ]
                 )
             ),
@@ -720,20 +834,20 @@ checkgroups.append((
     Dictionary(
         elements = [
             ("read",
-                Tuple( 
+                Tuple(
                     title = _("Read"),
-                    elements = [ 
-                      Filesize(title = _("Warning lower as")), 
-                      Filesize(title = _("Critical lower as")), 
+                    elements = [
+                      Filesize(title = _("Warning lower as")),
+                      Filesize(title = _("Critical lower as")),
                     ]
                 )
             ),
             ("write",
-                Tuple( 
+                Tuple(
                     title = _("Write"),
-                    elements = [ 
-                      Filesize(title = _("Warning higher as")), 
-                      Filesize(title = _("Critical higher as")), 
+                    elements = [
+                      Filesize(title = _("Warning higher as")),
+                      Filesize(title = _("Critical higher as")),
                     ]
                 )
             )
@@ -767,8 +881,8 @@ checkgroups.append((
                        Tuple(
                            title = _("Absolute levels"),
                            elements = [
-                                Filesize(title = _("Warning higher as")), 
-                                Filesize(title = _("Critical higher as")), 
+                                Filesize(title = _("Warning higher as")),
+                                Filesize(title = _("Critical higher as")),
                            ]
                         )
                    ])),
@@ -786,8 +900,8 @@ checkgroups.append((
                        Tuple(
                            title = _("Absolute levels"),
                            elements = [
-                                Filesize(title = _("Warning higher as")), 
-                                Filesize(title = _("Critical higher as")), 
+                                Filesize(title = _("Warning higher as")),
+                                Filesize(title = _("Critical higher as")),
                            ]
                         )
                    ])),
@@ -943,10 +1057,10 @@ checkgroups.append((
                      "Active Remote Delivery<br>Active Mailbox Delivery<br>"
                      "Retry Remote Delivery<br>Poison Queue Length<br>"),
            choices = [
-              ( "Active Remote Delivery",  _("Active Remote Delivery") ), 
+              ( "Active Remote Delivery",  _("Active Remote Delivery") ),
               ( "Retry Remote Delivery",   _("Retry Remote Delivery") ),
               ( "Active Mailbox Delivery", _("Active Mailbox Delivery") ),
-              ( "Poison Queue Length",     _("Poison Queue Length") ), 
+              ( "Poison Queue Length",     _("Poison Queue Length") ),
               ],
            otherlabel = _("specify manually ->"),
            explicit = TextAscii(allow_empty = False)),
@@ -1027,6 +1141,29 @@ checkgroups.append((
     "dict")
 )
 
+register_check_parameters(
+    subgroup_networking,
+    "bonding",
+    _("Status of Linux bonding interfaces"),
+    Dictionary(
+        elements = [
+            ( "expect_active",
+              DropdownChoice(
+                  title = _("Warn on unexpected active interface"),
+                  choices = [
+                     ( "ignore",   _("ignore which one is active") ),
+                     ( "primary", _("require primary interface to be active") ),
+                     ( "lowest",   _("require interface that sorts lowest alphabetically") ),
+                  ]
+              )
+            ),
+        ]
+    ),
+    TextAscii(
+        title = _("Name of the bonding interface"),
+    ),
+    "dict")
+
 checkgroups.append((
     subgroup_networking,
     "if",
@@ -1079,7 +1216,7 @@ checkgroups.append((
              ),
              ( "unit",
                RadioChoice(
-                   title = _("Measurement unit"), 
+                   title = _("Measurement unit"),
                    help = _("Here you can specifiy the measurement unit of the network interface"),
                    default_value = "byte",
                    choices = [
@@ -1260,7 +1397,7 @@ checkgroups.append((
     "akcp_humidity",
     _("AKCP Humidity Levels"),
     Tuple(
-          help = _("This Rulset sets the threshold limits for humidity sensors attached to " 
+          help = _("This Rulset sets the threshold limits for humidity sensors attached to "
                    "AKCP Sensor Probe "),
           elements = [
               Integer(title = _("Critical if moisture lower than")),
@@ -1275,10 +1412,98 @@ checkgroups.append((
 
 checkgroups.append((
     subgroup_applications,
+    "oracle_tablespaces",
+    _("Oracle Tablespaces"),
+    Dictionary(
+        elements = [
+            ("levels",
+                Alternative(
+                    title = _("Levels for the Tablespace size"),
+                    elements = [
+                        Tuple(
+                            title = _("Percentage free space"),
+                            elements = [
+                                Percentage(title = _("Warning below"), label = _("free")),
+                                Percentage(title = _("Critical below"), label = _("free")),
+                            ]
+                        ),
+                        Tuple(
+                            title = _("Absolute free space"),
+                            elements = [
+                                 Integer(title = _("Warning lower than"), unit = _("MB")),
+                                 Integer(title = _("Critical lower than"), unit = _("MB")),
+                            ]
+                        ),
+                        ListOf(
+                            Tuple(
+                                orientation = "horizontal",
+                                elements = [
+                                    Filesize(title = _("Tablespace larger than")),
+                                    Alternative(
+                                        title = _("Levels for the Tablespace size"),
+                                        elements = [
+                                            Tuple(
+                                                title = _("Percentage free space"),
+                                                elements = [
+                                                    Percentage(title = _("Warning below"), label = _("free")),
+                                                    Percentage(title = _("Critical below"), label = _("free")),
+                                                ]
+                                            ),
+                                            Tuple(
+                                                title = _("Absolute free space"),
+                                                elements = [
+                                                     Integer(title = _("Warning lower than"), unit = _("MB")),
+                                                     Integer(title = _("Critical lower than"), unit = _("MB")),
+                                                ]
+                                            ),
+                                        ]
+                                    ),
+                                ],
+                            ),
+                            title = _('Dynamic levels'),
+                        ),
+                    ]
+                )
+            ),
+            ("magic",
+               Float(
+                  title = _("Magic factor (automatic level adaptation for large tablespaces)"),
+                  minvalue = 0.1,
+                  maxvalue = 1.0)),
+            (  "magic_normsize",
+               Integer(
+                   title = _("Reference size for magic factor"),
+                   minvalue = 1,
+                   default_value = 1000,
+                   label = _("MB"))),
+            ( "levels_low",
+              Tuple(
+                  title = _("Minimum levels if using magic factor"),
+                  help = _("The tablespace levels will never fall below these values, when using "
+                           "the magic factor and the tablespace is very small."),
+                  elements = [
+                      Percentage(title = _("Warning at"),  label = _("usage"), allow_int = True),
+                      Percentage(title = _("Critical at"), label = _("usage"), allow_int = True)])),
+            ( "autoextend",
+                Checkbox(
+                  title = _("Autoextend"),
+                  label = _("Autoextension is expected"),
+                  help = _(""))),
+                   ]),
+    TextAscii(
+        title = _("Explicit tablespaces"),
+        help = _("Here you can set explicit tablespaces by defining them via SID and the tablespace name, separated by a dot, for example <b>pengt.TEMP</b>"),
+        regex = '.+\..+',
+        allow_empty = False),
+     None))
+
+
+checkgroups.append((
+    subgroup_applications,
     "oracle_logswitches",
     _("Oracle Logswitches"),
     Tuple(
-          help = _("This check monitors the number of log switches of an ORACLE " 
+          help = _("This check monitors the number of log switches of an ORACLE "
                    "database instance in the last 60 minutes. You can set levels for upper and lower bounds."),
           elements = [
               Integer(title = _("Critical if fewer than"), unit=_("log switches")),
@@ -1379,11 +1604,11 @@ checkgroups.append((
          help = _("This check monitors the current number of active sessions to the MySQL "
                   "database server as well as the connection rate."),
          elements = [
-             ( "total", 
+             ( "total",
                Tuple(
                    title = _("Number of current sessions"),
                    elements = [
-                       Integer(title = _("Warning at"),  unit = _("sessions"), default_value = 100), 
+                       Integer(title = _("Warning at"),  unit = _("sessions"), default_value = 100),
                        Integer(title = _("Critical at"), unit = _("sessions"), default_value = 200),
                     ],
                ),
@@ -1393,7 +1618,7 @@ checkgroups.append((
                    title = _("Number of currently running sessions"),
                    help = _("Levels for the number of sessions that are currently active"),
                    elements = [
-                       Integer(title = _("Warning at"),  unit = _("sessions"), default_value = 10), 
+                       Integer(title = _("Warning at"),  unit = _("sessions"), default_value = 10),
                        Integer(title = _("Critical at"), unit = _("sessions"), default_value = 20),
                     ],
                ),
@@ -1402,7 +1627,7 @@ checkgroups.append((
                Tuple(
                    title = _("Number of new connections per second"),
                    elements = [
-                       Integer(title = _("Warning at"),  unit = _("connection/sec"), default_value = 20), 
+                       Integer(title = _("Warning at"),  unit = _("connection/sec"), default_value = 20),
                        Integer(title = _("Critical at"), unit = _("connection/sec"), default_value = 40),
                     ],
                ),
@@ -1494,11 +1719,11 @@ checkgroups.append((
     Dictionary(
          help = _("This check monitors the current number of active and idle sessions on PostgreSQL"),
          elements = [
-             ( "total", 
+             ( "total",
                Tuple(
                    title = _("Number of current sessions"),
                    elements = [
-                       Integer(title = _("Warning at"),  unit = _("sessions"), default_value = 100), 
+                       Integer(title = _("Warning at"),  unit = _("sessions"), default_value = 100),
                        Integer(title = _("Critical at"), unit = _("sessions"), default_value = 200),
                     ],
                ),
@@ -1508,7 +1733,7 @@ checkgroups.append((
                    title = _("Number of currently running sessions"),
                    help = _("Levels for the number of sessions that are currently active"),
                    elements = [
-                       Integer(title = _("Warning at"),  unit = _("sessions"), default_value = 10), 
+                       Integer(title = _("Warning at"),  unit = _("sessions"), default_value = 10),
                        Integer(title = _("Critical at"), unit = _("sessions"), default_value = 20),
                     ],
                ),
@@ -1527,7 +1752,7 @@ checkgroups.append((
          title = _("Number of active sessions"),
          help = _("This check monitors the current number of active sessions on Oracle"),
          elements = [
-             Integer(title = _("Warning at"),  unit = _("sessions"), default_value = 100), 
+             Integer(title = _("Warning at"),  unit = _("sessions"), default_value = 100),
              Integer(title = _("Critical at"), unit = _("sessions"), default_value = 200),
           ],
      ),
@@ -1542,7 +1767,7 @@ checkgroups.append((
     _("PostgreSQL Database Statistics"),
     Dictionary(
         help = _("This check monitors how often database objects in a PostgreSQL Database are accessed"),
-        elements = [ 
+        elements = [
             ( "blocks_read",
                 Tuple(
                    title = _("Blocks read"),
@@ -1552,7 +1777,7 @@ checkgroups.append((
                    ],
                 ),
             ),
-            ( "xact_commit", 
+            ( "xact_commit",
                 Tuple(
                    title = _("Commits"),
                    elements = [
@@ -1561,7 +1786,7 @@ checkgroups.append((
                    ],
                 ),
             ),
-            ( "tup_fetched", 
+            ( "tup_fetched",
                 Tuple(
                    title = _("Fetches"),
                    elements = [
@@ -1569,8 +1794,8 @@ checkgroups.append((
                       Float(title = _("Critical at"), unit = _("/s")),
                    ],
                 ),
-            ),    
-            ( "tup_deleted", 
+            ),
+            ( "tup_deleted",
                 Tuple(
                    title = _("Deletes"),
                    elements = [
@@ -1579,7 +1804,7 @@ checkgroups.append((
                    ],
                 ),
             ),
-            ( "tup_updated", 
+            ( "tup_updated",
                 Tuple(
                    title = _("Updates"),
                    elements = [
@@ -1588,7 +1813,7 @@ checkgroups.append((
                    ],
                 ),
             ),
-            ( "tup_inserted", 
+            ( "tup_inserted",
                 Tuple(
                    title = _("Inserts"),
                    elements = [
@@ -1639,7 +1864,7 @@ checkgroups.append((
     Optional(
         Tuple(
               elements = [
-                  Integer(title = _("Warning at"), unit = _("processes"), default_value = 100), 
+                  Integer(title = _("Warning at"), unit = _("processes"), default_value = 100),
                   Integer(title = _("Critical at"), unit = _("processes"), default_value = 200)]),
         title = _("Impose levels on number of processes"),
     ),
@@ -1701,7 +1926,7 @@ checkgroups.append((
                            "and write will be applied to the average instead of the current "
                            "value."),
                  unit = "min")),
-            ( "latency", 
+            ( "latency",
               Tuple(
                   title = _("IO Latency"),
                   elements = [
@@ -1716,14 +1941,14 @@ checkgroups.append((
                            "cause incompatibilities with existing historical data "
                            "if you are running PNP4Nagios in SINGLE mode.")),
             ),
-            ( "read_ql", 
+            ( "read_ql",
               Tuple(
                   title = _("Read Queue-Length"),
                   elements = [
                       Float(title = _("warning at"),  default_value = 80.0),
                       Float(title = _("critical at"), default_value = 90.0),
              ])),
-            ( "write_ql", 
+            ( "write_ql",
               Tuple(
                   title = _("Write Queue-Length"),
                   elements = [
@@ -1761,7 +1986,7 @@ register_rule(
         title = _("Inventory mode for Disk IO check"),
         help = _("This rule controls which and how many checks will be created "
                  "for monitoring individual physical and logical disks."),
-        choices = [ 
+        choices = [
            ( "summary",  _("Create a summary over all physical disks") ),
            ( "legacy",   _("Create a summary for all read, one for write") ),
            ( "physical", _("Create a separate check for each physical disk") ),
@@ -1771,6 +1996,41 @@ register_rule(
         default_value = [ 'summary' ],
     ),
     match="first")
+
+
+register_rule(group + '/' + subgroup_networking,
+    varname   = "if_groups",
+    title     = _('Network interface groups'),
+    help      = _('Normally the if checks create a single service for interface. '
+                  'By defining if-group patterns multiple interfaces can be combined together. '
+                  'A single service is created for this interface group showing the total traffic amount '
+                  'of its members. You can configure if interfaces which are identified as group interfaces '
+                  'should not show up as single service'),
+    valuespec = ListOf(
+                    Dictionary(
+                        elements = [
+                            ("name",
+                                   TextAscii(
+                                       title = _("Name of group"),
+                                       help  = _("Name of group in service description"),
+                                       allow_empty = False,
+                                   )),
+                            ("iftype", Integer(
+                                title = _("Interface port type"),
+                                help = _("The number of the port type. For example 53 (propVirtual)"),
+                                default_value = 0,
+                                minvalue = 1,
+                                maxvalue = 255,
+                            )),
+                            ("single", Checkbox(
+                                title = _("Do not list grouped interfaces separately"),
+                            )),
+                        ],
+                        required_keys = ["name", "iftype", "single"]),
+                    add_label = _("Add pattern")),
+    match = 'list',
+)
+
 
 
 checkgroups.append((
@@ -1869,7 +2129,7 @@ checkgroups.append((
     _("Windows Services"),
     Dictionary(
         elements = [
-            ( "states", 
+            ( "states",
               ListOf(
                 Tuple(
                     orientation = "horizontal",
@@ -1898,7 +2158,7 @@ checkgroups.append((
                     default_value = ( "running", "auto", 0)),
                 title = _("Services states"),
                 help = _("You can specify a separate monitoring state for each possible "
-                         "combination of service state and start type. If you do not use " 
+                         "combination of service state and start type. If you do not use "
                          "this parameter, then only running/auto will be assumed to be OK."),
             )),
         ( "else",
@@ -2155,8 +2415,8 @@ checkgroups.append((
                        Tuple(
                            title = _("Absolute free space in MB"),
                            elements = [
-                                Integer(title = _("Warning lower than"), unit = _("MB")), 
-                                Integer(title = _("Critical lower than"), unit = _("MB")), 
+                                Integer(title = _("Warning lower than"), unit = _("MB")),
+                                Integer(title = _("Critical lower than"), unit = _("MB")),
                            ]
                         )
                    ])),
@@ -2175,7 +2435,7 @@ checkgroups.append((
                            title = _("Absolute free space in MB"),
                            elements = [
                                 Integer(title = _("Warning lower than"), unit = _("MB")),
-                                Integer(title = _("Critical lower than"), unit = _("MB")), 
+                                Integer(title = _("Critical lower than"), unit = _("MB")),
                            ]
                         )
                    ])),
@@ -2193,8 +2453,8 @@ checkgroups.append((
                        Tuple(
                            title = _("Absolute free space in MB"),
                            elements = [
-                                Integer(title = _("Warning lower than"), unit = _("MB")), 
-                                Integer(title = _("Critical lower than"), unit = _("MB")), 
+                                Integer(title = _("Warning lower than"), unit = _("MB")),
+                                Integer(title = _("Critical lower than"), unit = _("MB")),
                            ]
                         )
                    ])),
@@ -2206,6 +2466,22 @@ checkgroups.append((
     ),
     "dict"
 ))
+
+checkgroups.append((
+    subgroup_applications,
+    "db2_mem",
+    _("Memory levels for DB2 memory usage"),
+    Tuple(
+        elements = [
+                Percentage(title = _("Memory left warning at")),
+                Percentage(title = _("Memory left critical at")),
+              ],
+    ),
+    TextAscii(
+        title = _("Instance name"),
+        allow_empty = True),
+    "first"))
+
 
 checkgroups.append((
     subgroup_applications,
@@ -2300,7 +2576,7 @@ checkgroups.append((
             Integer(title = _("Memory warning at"), unit = "MB"),
             Integer(title = _("Memory critical at"), unit = "MB"),
             Integer(title = _("Pagefile warning at"), unit = "MB"),
-            Integer(title = _("Pagefile critical at"), unit = "MB"), 
+            Integer(title = _("Pagefile critical at"), unit = "MB"),
             Percentage(title = _("CPU usage warning at")),
             Percentage(title = _("CPU usage critical at")),
         ],

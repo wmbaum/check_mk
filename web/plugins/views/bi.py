@@ -68,6 +68,27 @@ multisite_datasources["bi_hostname_aggregations"] = {
 #    |_|   \__,_|_|_| |_|\__\___|_|  |___/
 #
 
+def paint_bi_icons(row):
+    html.plug()
+    single_url = "view.py?" + htmllib.urlencode_vars([
+            ("view_name", "aggr_single"),
+            ("aggr_name", row["aggr_name"])])
+    html.icon_button(single_url, _("Show only this aggregation"), "showbi")
+    avail_url = "bi_availability.py?" + htmllib.urlencode_vars([
+            ("aggr_group", row["aggr_group"]),
+            ("aggr_name",  row["aggr_name"])])
+    html.icon_button(avail_url, _("Analyse availability of this aggregation"), "availability")
+    code = html.drain()
+    html.unplug()
+    return "buttons", code
+
+multisite_painters["aggr_icons"] = {
+    "title" : _("Links"),
+    "columns" : [ "aggr_group", "aggr_name" ],
+    "paint" : paint_bi_icons,
+}
+
+
 def paint_aggr_state_short(state, assumed = False):
     if state == None:
         return "", ""
@@ -164,11 +185,11 @@ multisite_painter_options["aggr_onlyproblems"] = {
 multisite_painter_options["aggr_treetype"] = {
  "title"   : _("Type of tree layout"),
  "default" : "foldable",
- "values"  : [ 
-    ("foldable",     _("foldable")), 
+ "values"  : [
+    ("foldable",     _("foldable")),
     ("boxes",        _("boxes")),
     ("boxes-omit-root", _("boxes (omit root)")),
-    ("bottom-up",    _("bottom up")), 
+    ("bottom-up",    _("bottom up")),
     ("top-down",     _("top down"))]
 }
 
@@ -262,7 +283,8 @@ multisite_painters["aggr_treestate_boxed"] = {
     "title"   : _("Aggregation: simplistic boxed layout"),
     "short"   : _("Tree"),
     "columns" : [ "aggr_treestate", "aggr_hosts" ],
-    "paint"   : lambda row: paint_aggr_tree_foldable(row, boxes = True, omit_root = True),
+    "paint"   : lambda row: bi.render_tree_foldable(row, boxes=True, omit_root=True,
+                expansion_level=bi.load_ex_level(), only_problems=False, lazy=True),
 }
 
 #     _____ _ _ _
@@ -407,7 +429,7 @@ class BIStatusFilter(Filter):
             defval = ""
         else:
             defval = "on"
-        for varend, text in [('0', 'OK'), ('1', 'WARN'), ('2', 'CRIT'), 
+        for varend, text in [('0', 'OK'), ('1', 'WARN'), ('2', 'CRIT'),
                              ('3', 'UNKN'), ('-1', 'PENDING'), ('n', _('no assumed state set'))]:
             if self.code != 'a' and varend == 'n':
                 continue # no unset for read and effective state
