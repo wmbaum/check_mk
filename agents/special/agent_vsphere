@@ -31,7 +31,6 @@ parser = argparse.ArgumentParser(description='Check_MK vSphere Agent')
 group = parser.add_argument_group()
 group.add_argument('-p', type=int, help="Port Number of vSphere Server")
 group.add_argument('-i', help="Check the hostsystem and or virtualmachine. Comma separated")
-group.add_argument('-lower', action="store_true", help="Convert the name attributes of each MOR to lower case")
 parser.add_argument('-u', help="Username")
 parser.add_argument('-s', help="Secret")
 parser.add_argument('Hostname', help="Hostname")
@@ -42,9 +41,8 @@ try:
     from pysphere import VIServer, VIProperty, MORTypes
     from pysphere.resources import VimService_services as VI
 except: 
-    print "<<<local>>>"
-    print "2 Agent_error - pysphere API not found. Please install and make a reinventory"
-    sys.exit(0)
+    sys.stderr.write("pysphere API not found. Please install and try again.\n")
+    sys.exit(1)
 
 host = VIServer()
 
@@ -53,9 +51,8 @@ object_collection = {}
 try:
     host.connect(params['Hostname'], params['u'], params['s'])
 except:
-    print "<<<local>>>"
-    print "2 Agent_error - Cant connect to vSphere  Server. May the wrong credentials. Please correct and make a reinventory"
-    sys.exit(0)
+    sys.stderr.write("Cannot connect to vSphere Server. May the wrong credentials. Please correct and make a reinventory.")
+    sys.exit(1)
 
 print "<<<check_mk>>>"
 print "Version: %s" % host.get_api_version()
@@ -79,8 +76,6 @@ def output_mors(what, properties):
         # Get the name of this Host/VirtualMachine
         # May there a comments in the field, so split at whitespace
         name = data["name"].split()[0]
-        if params['lower']:
-            name = name.lower()
 
         object_collection[name] = (what, data['name'])
         
@@ -142,9 +137,8 @@ if "virtualmachine" in check:
     })
 
 print "<<<<>>>>"
+
 print "<<<local>>>"
 for name, data in object_collection.items():
-    print "0 %s-%s - INFO: Collecting data for %s" % (data[0], name, data[1])
-
-
+    print "0 %s-%s - INFO: collecting piggyback data for %s" % (data[0], name, data[1])
 host.disconnect()

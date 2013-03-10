@@ -121,7 +121,6 @@ NT_PLACEHOLDER = 4 # temporary dummy entry needed for REMAINING
 g_cache = {}                  # per-user cache
 g_config_information = None   # for invalidating cache after config change
 did_compilation = False       # Is set to true if anything has been compiled
-g_compiled_everything = False # Is set to true if all aggregations have been compiled
 
 # Load the static configuration of all services and hosts (including tags)
 # without state.
@@ -211,47 +210,57 @@ def log(s):
 # aggregation functions are still left as names. That way the forest
 # printable (and storable in Python syntax to a file).
 def compile_forest(user, only_hosts = None, only_groups = None):
-    global g_cache, g_user_cache, g_compiled_everything
+    global g_cache, g_user_cache
     global used_cache, did_compilation
 
     new_config_information = cache_needs_update()
-    if new_config_information \
-       or (config.bi_precompile_on_demand and not only_groups and not only_hosts):
-        # config changed or monitoring daemon restarted, clear cache.
-        # or: in case of on demand precompile and a total compilation
-        # requested (even if some hosts have already be compiled).
+    if new_config_information:
+        log("Configuration has changed. Forcing recompile.\n")
         g_cache = {}
         global g_config_information
         g_config_information = new_config_information
-        g_compiled_everything = False
-
-    if g_compiled_everything:
-        log('PID: %d - Already compiled everything\n' % os.getpid())
-        used_cache = True
-        return # In this case simply skip further compilations
 
     # OPTIMIZE: All users that have the permissing bi.see_all
     # can use the same cache.
     if config.may("bi.see_all"):
         user = '<<<see_all>>>'
 
-    # Try to get data from per-user cache:
-    # make sure, BI permissions have not changed since last time
-    cache = g_cache.get(user)
-    if cache and cache["see_all"] == config.may("bi.see_all"):
-        g_user_cache = cache
-    else:
-        # Initialize empty caching structure
-        cache = {
+    def empty_user_cache():
+        return {
             "forest" :                   {},
             "aggregations_by_hostname" : {},
             "host_aggregations" :        {},
             "affected_hosts" :           {},
             "affected_services":         {},
-            "see_all" :                  config.may("bi.see_all"),
             "compiled_hosts" :           set([]),
-            "compiled_groups":           set([]),
+            "compiled_groups" :          set([]),
+            "compiled_all" :             False,
         }
+
+    # Try to get data from per-user cache:
+    # make sure, BI permissions have not changed since last time.
+    # g_user_cache is a global variable for all succeeding functions, so 
+    # that they do not need to check the user again
+    cache = g_cache.get(user)
+    if cache:
+        g_user_cache = cache
+    else:
+        # Initialize empty caching structure
+        cache = empty_user_cache()
+        g_user_cache = cache
+
+    if g_user_cache["compiled_all"]:
+        log('PID: %d - Already compiled everything\n' % os.getpid())
+        used_cache = True
+        return # In this case simply skip further compilations
+
+    # If we have previously only partly compiled and now there is no
+    # filter, then throw away partly compiled data.
+    if (cache["compiled_hosts"] or cache["compiled_groups"]) \
+       and (not config.bi_precompile_on_demand \
+       or (config.bi_precompile_on_demand and not only_groups and not only_hosts)):
+        log("Invalidating incomplete cache, since we compile all now.\n")
+        cache = empty_user_cache()
         g_user_cache = cache
 
     # Reduces a list of hosts by the already compiled hosts
@@ -367,12 +376,18 @@ def compile_forest(user, only_hosts = None, only_groups = None):
                         # in the list of required nodes.
                         # Before the latest change this used the last item of the req_hosts. I think it
                         # would be better to register this for all hosts mentioned in req_hosts. Give it a try...
+                        # ASSERT: len(req_hosts) == 1!
                         for host in req_hosts:
                             if not only_hosts or host in only_hosts:
                                 cache["host_aggregations"].setdefault(host, []).append((group, aggr))
 
                                 # construct a list of compiled single-host aggregations for cached registration
                                 single_affected_hosts.append(host)
+
+                    # Also all other aggregations that contain exactly one hosts are considered to
+                    # be "single host aggregations"
+                    elif len(req_hosts) == 1:
+                        cache["host_aggregations"].setdefault(req_hosts[0], []).append((group, aggr))
 
                     # All aggregations containing a specific host
                     for h in req_hosts:
@@ -395,8 +410,7 @@ def compile_forest(user, only_hosts = None, only_groups = None):
         # The list of ALL hosts
         cache['compiled_hosts']  = set(g_services.keys())
         cache['compiled_groups'] = set(cache['forest'].keys())
-
-        g_compiled_everything = True
+        cache['compiled_all'] = True
 
     # Remember successful compile in cache
     g_cache[user] = cache
@@ -436,7 +450,7 @@ def compile_forest(user, only_hosts = None, only_groups = None):
                num_new_multi_aggrs, num_new_host_aggrs,
                only_groups and len(only_groups) or 0,
 
-               g_compiled_everything,
+               cache['compiled_all'],
                num_total_aggr - num_host_aggr,
                num_host_aggr,
                len(cache['compiled_groups']),
@@ -1097,10 +1111,12 @@ def get_status_info(required_hosts):
             filter += "Filter: name = %s\n" % host
         if len(hosts) > 1:
             filter += "Or: %d\n" % len(hosts)
+        html.live.set_auth_domain('bi')
         data = html.live.query(
                 "GET hosts\n"
                 "Columns: name state plugin_output services_with_info\n"
                 + filter)
+        html.live.set_auth_domain('read')
         tuples += [((site, e[0]), e[1:]) for e in data]
 
     return dict(tuples)
@@ -1124,14 +1140,15 @@ def get_status_info_filtered(filter_header, only_sites, limit, add_columns, fetc
         html.write('<div class="livestatus message" onmouseover="this.style.display=\'none\';">'
                            '<tt>%s</tt></div>\n' % (query.replace('\n', '<br>\n')))
 
-
     html.live.set_only_sites(only_sites)
     html.live.set_prepend_site(True)
 
+    html.live.set_auth_domain('bi')
     data = html.live.query(query)
 
     html.live.set_prepend_site(False)
     html.live.set_only_sites(None)
+    html.live.set_auth_domain('read')
 
     headers = [ "site" ] + columns
     hostnames = [ row[1] for row in data ]
@@ -1215,7 +1232,7 @@ config.aggregation_functions["worst"] = aggr_worst
 config.aggregation_functions["best"]  = aggr_best
 
 def aggr_countok_convert(num, count):
-    if num.endswith('%'):
+    if str(num).endswith('%'):
         return int(num[:-1]) / 100.0 * count
     else:
         return int(num)
@@ -1483,7 +1500,7 @@ def aggr_render_node(tree, title, mousecode, show_host):
          % (effective_state["state"], addclass, render_bi_state(effective_state["state"]))
     if mousecode:
         h += '<img class=opentree %s>' % mousecode
-        h += '<span class="content name">%s</span>' % title
+        h += '<span class="content name" %s>%s</span>' % (mousecode, title) 
     else:
         h += title
 
@@ -1529,10 +1546,10 @@ def aggr_render_leaf(tree, show_host, bare = False):
     # (4) CPU load                  (show_host == False, service != None)
 
     if show_host or not service:
-        host_url = "view.py?" + htmllib.urlencode_vars([("view_name", "hoststatus"), ("site", site), ("host", host)])
+        host_url = html.makeuri([("view_name", "hoststatus"), ("site", site), ("host", host)], filename="view.py")
 
     if service:
-        service_url = "view.py?" + htmllib.urlencode_vars([("view_name", "service"), ("site", site), ("host", host), ("service", service)])
+        service_url = html.makeuri([("view_name", "service"), ("site", site), ("host", host), ("service", service)], filename="view.py")
 
     if show_host:
         content += '<a href="%s">%s</a><b class=bullet>&diams;</b>' % (host_url, host.replace(" ", "&nbsp;"))
@@ -1565,7 +1582,7 @@ def filter_tree_only_problems(tree):
     new_subtrees = []
     for subtree in subtrees:
         effective_state = subtree[1] != None and subtree[1] or subtree[0]
-        if effective_state["state"] != OK:
+        if effective_state["state"] not in [ OK, PENDING ]:
             if len(subtree) == 3:
                 new_subtrees.append(subtree)
             else:
@@ -1701,6 +1718,7 @@ def singlehost_table(columns, add_headers, only_sites, limit, filters, joinbynam
 
     host_columns = filter(lambda c: c.startswith("host_"), columns)
     hostrows = get_status_info_filtered(filter_code, only_sites, limit, host_columns, config.bi_precompile_on_demand)
+
     # if limit:
     #     views.check_limit(hostrows, limit)
 

@@ -86,7 +86,6 @@ register_rule(group,
     ),
     match = 'all')
 
-
 register_rule(group,
     "active_checks:tcp",
     Tuple(
@@ -730,6 +729,70 @@ register_rule(group,
     match = 'all'
 )
 
+register_rule(group, 
+    "active_checks:disk_smb",
+    Dictionary(
+        title = _("Check access to SMB share"),
+        help = _("This ruleset helps you to configure the classical Nagios "
+                 "plugin <tt>check_disk_smb</tt> that checks the access to "
+                 "filesystem shares that are exported via SMB/CIFS."),
+        elements = [
+            ( "share",
+              TextUnicode(
+                  title = _("SMB share to check"),
+                  size = 32,
+                  allow_empty = False,
+            )),
+            ( "workgroup",
+              TextUnicode(
+                  title = _("Workgroup"),
+                  help = _("Workgroup or domain used (defaults to <tt>WORKGROUP</tt>)"),
+                  size = 32,
+                  allow_empty = False,
+            )),
+            ( "host",
+              TextAscii(
+                  title = _("NetBIOS name of the server"),
+                  help = _("If omitted then the IP address is being used."),
+                  size = 32,
+                  allow_empty = False,
+            )),
+            ( "port",
+              Integer(
+                  title = _("TCP Port"),
+                  help = _("TCP port number to connect to. Usually either 139 or 445."),
+                  default_value = 445,
+                  minvalue = 1,
+                  maxvalue = 65535,
+            )),
+            ( "levels",
+              Tuple(
+                  title = _("Levels for used disk space"),
+                  elements = [
+                      Percentage(title = _("Warning at"), default_value = 85, unit=_("% used space")),
+                      Percentage(title = _("Critical at"), default_value = 95, unit=_("% used space")),
+                  ]
+            )),
+            ( "auth",
+              Tuple(
+                  title = _("Authorization"),
+                  elements = [
+                      TextAscii(
+                          title = _("Username"),
+                          allow_empty = False,
+                          size = 24),
+                      Password(
+                          title = _("Password"),
+                          allow_empty = False,
+                          size = 12),
+                  ],
+            )),
+        ],
+        required_keys = [ "share", "levels" ],
+    ),
+    match = 'all')
+
+
 register_rule(group,
     "custom_checks",
     Dictionary(
@@ -786,9 +849,47 @@ register_rule(group,
                   totext = _("process performance data"),
               )
             ),
+            ( "freshness",
+              Dictionary(
+                  title = _("Check freshness"),
+                  help = _("Freshness checking is only useful for passive checks. It makes sure that passive "
+                           "check results are submitted on a regular base. If not, the check is being set to "
+                           "warning, critical or unknown."),
+                  optional_keys = False,
+                  elements = [ 
+                      ( "interval",
+                        Integer(
+                            title = _("Expected update interval"),
+                            label = _("Updates are expected at least every"),
+                            unit = _("minutes"),
+                            minvalue = 1,
+                            default_value = 10,
+                      )),
+                      ( "state",
+                        DropdownChoice(
+                            title = _("State in case of absent updates"),
+                            choices =  [
+                               ( 1, _("WARN") ),
+                               ( 2, _("CRIT") ),
+                               ( 3, _("UNKNOWN") ),
+                            ],
+                            default_value = 3,
+                      )),
+                      ( "output",
+                        TextUnicode(
+                            title = _("Plugin output in case of absent abdates"),
+                            size = 40,
+                            allow_empty = False,
+                            default_value = _("Check result did not arrive in time")
+                      )),
+                  ],
+               )
+            ),
+
         ],
         required_keys = [ "service_description" ],
     ),
     match = 'all'
 )
+
 

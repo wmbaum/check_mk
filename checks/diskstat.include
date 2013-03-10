@@ -94,12 +94,13 @@ def check_diskstat_line(this_time, item, params, line):
     perfdata = []
     infos = []
     status = 0
+    prediction_perf = []
     for what, ctr in [ ("read",  line[1]), ("write", line[2]) ]:
         countername = "diskstat.%s.%s" % (item, what)
 
         # unpack levels now, need also for perfdata
         levels = params.get(what)
-        if levels:
+        if type(levels) == tuple:
             warn, crit = levels
         else:
             warn, crit = None, None
@@ -109,29 +110,30 @@ def check_diskstat_line(this_time, item, params, line):
         bytes_per_sec = sectors_per_sec * 512
         infos.append("%s/sec %s" % (get_bytes_human_readable(bytes_per_sec), what))
         perfdata.append( (what, bytes_per_sec, warn, crit) )
+        dsname = what
 
         # compute average of the rate over ___ minutes
         if average_range != None:
             timedif, avg = get_average(countername + ".avg", this_time, bytes_per_sec, average_range)
-            perfdata.append( (what + ".avg", avg) )
+            dsname = what + ".avg"
+            perfdata.append( (dsname, avg) )
             bytes_per_sec = avg
 
         # check levels
-        if levels != None:
-            mb_per_sec = bytes_per_sec / 1048576
-            if mb_per_sec >= crit:
-                status = 2
-                infos[-1] += "(!!)"
-            elif mb_per_sec >= warn:
-                status = max(status, 1)
-                infos[-1] += "(!)"
+        state, text, extraperf = check_levels(bytes_per_sec, dsname, levels, 
+                                              unit = "MB/s", factor = 1.0 / 1048576, statemarkers=True)
+        if text:
+            infos.append(text)
+        status = max(state, status)
+        prediction_perf += extraperf
 
     # Add performance data for averaged IO
     if average_range != None:
         perfdata = [ perfdata[0], perfdata[2], perfdata[1], perfdata[3] ]
 
     # Process IOs when available
-    if line[3] >= 0 and line[4] > 0:
+    ios_per_sec = None
+    if len(line) >= 5 and line[3] >= 0 and line[4] > 0:
         reads, writes = map(int, line[3:5])
         ios = reads + writes
         timedif, ios_per_sec = get_counter(countername + ".ios", this_time, ios)
@@ -190,8 +192,9 @@ def check_diskstat_line(this_time, item, params, line):
             if params.get("ql_perfdata"):
                 perfdata.append((what + "_ql", ql))
 
+    perfdata += prediction_perf
 
-    return (status, nagios_state_names[status] + " - " + ", ".join(infos) , perfdata)
+    return (status, ", ".join(infos) , perfdata)
 
 
 def check_diskstat_generic(item, params, this_time, info):
@@ -214,7 +217,7 @@ def check_diskstat_generic(item, params, this_time, info):
         if line[0] == item:
             return check_diskstat_line(this_time, item, params, line)
 
-    return (3, "UNKNOWN - device missing")
+    return (3, "device missing")
 
 
 # This is the legacy version of diskstat as used in <= 1.1.10.
@@ -227,11 +230,11 @@ def check_diskstat_old(item, params, this_time, info):
     elif item == 'write':
         index = 2 # sectors written
     else:
-        return (3, "UNKNOWN - invalid item %s" % (item,))
+        return (3, "invalid item %s" % (item,))
 
     this_val  = sum([int(x[index]) for x in info if ' ' not in x[0]])
 
     timedif, per_sec = get_counter("diskstat." + item, this_time, this_val)
     mb_per_s = per_sec / 2048.0    # Diskstat output is in sectors a 512 Byte
     perfdata = [ (item, "%dc" % this_val ) ]
-    return (0, "OK - %.1fMB/s (in last %d secs)" % (mb_per_s, timedif), perfdata)
+    return (0, "%.1fMB/s (in last %d secs)" % (mb_per_s, timedif), perfdata)

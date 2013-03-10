@@ -2563,12 +2563,13 @@ def mode_bulk_inventory(phase):
             except Exception, e:
                 result = repr([ 'failed', 1, 1, 0, 0, 0, 0, ]) + "\n"
                 if site_id:
-                    msg = _("Error during inventory of %s on site %s: %s") % (hostname, site_id, e)
+                    msg = _("Error during inventory of %s on site %s<div class=exc>%s</div") % \
+                                     (hostname, site_id, e)
                 else:
-                    msg = _("Error during inventory of %s: %s") % (hostname, e)
+                    msg = _("Error during inventory of %s<div class=exc>%s</div>") % (hostname, e)
                 if config.debug:
-                    msg += "<br><pre>%s</pre>" % format_exception().replace("\n", "<br>")
-                result += msg + "\n<br>"
+                    msg += "<br><pre>%s</pre><br>" % format_exception().replace("\n", "<br>")
+                result += msg
                 if not host.get("inventory_failed"):
                     host["inventory_failed"] = True
                     save_hosts(folder)
@@ -5646,6 +5647,67 @@ def save_configuration_vars(vars, filename):
 #   | Mode for editing host-, service- and contact groups                  |
 #   '----------------------------------------------------------------------'
 
+def find_usages_of_group_in_rules(name, varnames):
+    used_in = []
+    rulesets = load_all_rulesets()
+    for varname in varnames:
+        ruleset  = rulesets[varname]
+        rulespec = g_rulespecs[varname]
+        for folder, rule in ruleset:
+            value, tag_specs, host_list, item_list, rule_options = parse_rule(rulespec, rule)
+            if value == name:
+                used_in.append(("%s: %s" % (_("Ruleset"), g_rulespecs[varname]["title"]),
+                               make_link([("mode", "edit_ruleset"), ("varname", varname)])))
+    return used_in
+
+# Check if a group is currently in use and cannot be deleted
+# Returns a list of occurrances.
+# Possible usages:
+# - 1. rules: host to contactgroups, services to contactgroups
+# - 2. user memberships
+def find_usages_of_contact_group(name):
+    # Part 1: Rules
+    used_in = find_usages_of_group_in_rules(name, [ 'host_contactgroups', 'service_contactgroups' ])
+
+    # Is the contactgroup assigned to a user?
+    users = filter_hidden_users(userdb.load_users())
+    entries = users.items()
+    entries.sort(cmp = lambda a, b: cmp(a[1].get("alias"), b[1].get("alias")))
+    for userid, user in entries:
+        cgs = user.get("contactgroups", [])
+        if name in cgs:
+            used_in.append(('%s: %s' % (_('User'), user.get('alias')),
+                make_link([('mode', 'edit_user'), ('edit', userid)])))
+
+    global_config = load_configuration_settings()
+
+    # Used in default_user_profile?
+    domain, valuespec, need_restart, allow_reset = g_configvars['default_user_profile']
+    configured = global_config.get('default_user_profile', {})
+    default_value = valuespec.default_value()
+    if (configured and name in configured['contactgroups']) \
+       or name in  default_value['contactgroups']:
+        used_in.append(('%s' % (_('Default User Profile')),
+            make_link([('mode', 'edit_configvar'), ('varname', 'default_user_profile')])))
+
+    # Is the contactgroup used in mkeventd notify (if available)?
+    if 'mkeventd_notify_contactgroup' in g_configvars:
+        domain, valuespec, need_restart, allow_reset = g_configvars['mkeventd_notify_contactgroup']
+        configured = global_config.get('mkeventd_notify_contactgroup')
+        default_value = valuespec.default_value()
+        if (configured and name == configured) \
+           or name == default_value:
+            used_in.append(('%s' % (valuespec.title()),
+                make_link([('mode', 'edit_configvar'), ('varname', 'mkeventd_notify_contactgroup')])))
+
+    return used_in
+
+def find_usages_of_host_group(name):
+    return find_usages_of_group_in_rules(name, [ 'host_groups' ])
+
+def find_usages_of_service_group(name):
+    return find_usages_of_group_in_rules(name, [ 'service_groups' ])
+
 def mode_groups(phase, what):
     if what == "host":
         what_name = _("host groups")
@@ -5675,30 +5737,24 @@ def mode_groups(phase, what):
         delname = html.var("_delete")
 
         if what == 'contact':
-            # Is the contactgroup in use?
-            member_links = []
-            users = filter_hidden_users(userdb.load_users())
-            entries = users.items()
-            entries.sort(cmp = lambda a, b: cmp(a[1].get("alias"), b[1].get("alias")))
-            for id, user in entries:
-                cgs   = user.get("contactgroups", [])
-                if delname in cgs:
-                    member_links.append('<a href="%s">%s</a>' %
-                        (make_link([('mode', 'edit_user'), ('edit', id)]), user.get('alias')))
+            usages = find_usages_of_contact_group(delname)
+        elif what == 'host':
+            usages = find_usages_of_host_group(delname)
+        elif what == 'service':
+            usages = find_usages_of_service_group(delname)
 
-            if member_links:
-                raise MKUserError(None,
-                    _('Unable to delete the group %s. It still has the following members: %s. '
-                      ' You must first remove all members from the group to be able to delete the group.') %
-                                                         (delname, ', '.join(member_links)))
+        if usages:
+            message = "<b>%s</b><br>%s:<ul>" % \
+                        (_("You cannot delete this %s group.") % what,
+                         _("It is still in use by"))
+            for title, link in usages:
+                message += '<li><a href="%s">%s</a></li>\n' % (link, title)
+            message += "</ul>"
+            raise MKUserError(None, message)
 
-            confirm_txt = _('Do you really want to delete the %s group %s?') % (what, delname)
-        else:
-            confirm_txt = _("Do you really want to delete the %s group %s? If there are still objects "
-                            "assigned to that group, the group will kept up (but without an alias). "
-                            "Removing all objects from the will make the group disappear completely. ") % (what, delname)
+        confirm_txt = _('Do you really want to delete the %s group "%s"?') % (what, delname)
 
-        c = wato_confirm(_("Confirm deletion of group %s" % delname), confirm_txt)
+        c = wato_confirm(_("Confirm deletion of group \"%s\"" % delname), confirm_txt)
         if c:
             del groups[delname]
             save_group_information(all_groups)
@@ -5784,6 +5840,11 @@ def mode_edit_group(phase, what):
     if phase == "action":
         if html.check_transaction():
             alias = html.var_utf8("alias").strip()
+            if not alias:
+                raise MKUserError("alias", _("Please specify an alias name."))
+            for key, value in groups.items():
+                if alias == value and name != key:
+                    raise MKUserError("alias", _("This alias is already used in the group %s ." % key))
             if new:
                 name = html.var("name").strip()
                 if len(name) == 0:
@@ -5814,16 +5875,18 @@ def mode_edit_group(phase, what):
         html.text_input("name", clone_group or "")
         html.set_focus("name")
     else:
+        clone_group = None
         html.write(name)
         html.set_focus("alias")
 
     forms.section(_("Alias"))
     html.help(_("An Alias or description of this group."))
     alias = groups.get(name, "")
-    if not alias and clone_group:
-        alias = groups.get(clone_group, "")
     if not alias:
-        alias = name
+        if clone_group:
+            alias = groups.get(clone_group, "")
+        else:
+            alias = name
     html.text_input("alias", alias)
     forms.end()
     html.button("save", _("Save"))
@@ -5900,7 +5963,7 @@ def mode_timeperiods(phase):
     if phase == "action":
         delname = html.var("_delete")
         if html.transaction_valid():
-            usages = find_usage_of_timeperiod(delname)
+            usages = find_usages_of_timeperiod(delname)
             if usages:
                 message = "<b>%s</b><br>%s:<ul>" % \
                             (_("You cannot delete this timeperiod."),
@@ -6244,7 +6307,7 @@ class TimeperiodSelection(ElementSelection):
 # - 1. rules: service/host-notification/check-period
 # - 2. user accounts (notification period)
 # - 3. excluded by other timeperiods
-def find_usage_of_timeperiod(tpname):
+def find_usages_of_timeperiod(tpname):
 
     # Part 1: Rules
     used_in = []
@@ -7575,132 +7638,135 @@ def load_notification_scripts():
     choices = scripts.items()
     choices.append((None, _("Plain Text Email (using configured templates)")))
     choices.sort(cmp = lambda a,b: cmp(a[1], b[1]))
+    # Make choices localizable
+    choices = [ (k, _(v)) for k, v in choices ]
     return choices
 
 def notification_script_title(name):
     return dict(load_notification_scripts()).get(name, name)
 
 
-# Notification table
-vs_notification_method = \
-    CascadingDropdown(
-        title = _("Notification Method"),
-        choices = [
-            ( "email", _("Plain Text Email (using configured templates)") ),
-            ( "flexible",
-              _("Flexible Custom Notifications"),
-                ListOf(
-                    Foldable(
-                        Dictionary(
-                            optional_keys = [ "only_hosts", "only_services", "escalation" ],
-                            columns = 1,
-                            headers = True,
-                            elements = [
-                                (  "plugin",
-                                   DropdownChoice(
-                                        title = _("Notification Plugin"),
-                                        choices = load_notification_scripts,
+def load_notification_table():
+    global vs_notification_method
+    vs_notification_method = \
+        CascadingDropdown(
+            title = _("Notification Method"),
+            choices = [
+                ( "email", _("Plain Text Email (using configured templates)") ),
+                ( "flexible",
+                  _("Flexible Custom Notifications"),
+                    ListOf(
+                        Foldable(
+                            Dictionary(
+                                optional_keys = [ "only_hosts", "only_services", "escalation" ],
+                                columns = 1,
+                                headers = True,
+                                elements = [
+                                    (  "plugin",
+                                       DropdownChoice(
+                                            title = _("Notification Plugin"),
+                                            choices = load_notification_scripts,
+                                        ),
                                     ),
-                                ),
-                                (  "disabled",
-                                   Checkbox(
-                                        title = _("Disabled"),
-                                        label = _("Currently disable this notification"),
-                                        default_value = False,
+                                    (  "disabled",
+                                       Checkbox(
+                                            title = _("Disabled"),
+                                            label = _("Currently disable this notification"),
+                                            default_value = False,
+                                        )
+                                    ),
+                                    ( "timeperiod",
+                                      TimeperiodSelection(
+                                          title = _("Timeperiod"),
+                                          help = _("Do only notifiy alerts within this time period"),
+                                      )
+                                    ),
+                                    ( "escalation",
+                                      Tuple(
+                                          title = _("Restrict to n<sup>th</sup> to m<sup>th</sup> notification (escalation)"),
+                                          orientation = "float",
+                                          elements = [
+                                              Integer(
+                                                  label = _("from"),
+                                                  help = _("Let through notifications counting from this number"),
+                                                  default_value = 1,
+                                                  minvalue = 1,
+                                                  maxvalue = 999999,
+                                              ),
+                                              Integer(
+                                                  label = _("to"),
+                                                  help = _("Let through notifications counting upto this number"),
+                                                  default_value = 999999,
+                                                  minvalue = 1,
+                                                  maxvalue = 999999,
+                                              ),
+                                        ],
+                                      ),
+                                    ),
+                                  ( "host_events",
+                                     ListChoice(
+                                          title = _("Host Events"),
+                                          choices = [
+                                          ( 'd', _("Host goes down")),
+                                          ( 'u', _("Host gets unreachble")),
+                                          ( 'r', _("Host goes up again")),
+                                          ( 'f', _("Start or end of flapping state")),
+                                          ( 's', _("Start or end of a scheduled downtime ")),
+                                          ( 'x', _("Acknowledgement of host problem")),
+                                        ],
+                                        default_value = [ 'd', 'u' ],
+                                    )
+                                  ),
+                                    ( "service_events",
+                                      ListChoice(
+                                          title = _("Service Events"),
+                                          choices = [
+                                            ( 'w', _("Service goes into warning state")),
+                                            ( 'u', _("Service goes into unknown state")),
+                                            ( 'c', _("Service goes into critical state")),
+                                            ( 'r', _("Service recovers to OK")),
+                                            ( 'f', _("Start or end of flapping state")),
+                                            ( 's', _("Start or end of a scheduled downtime")),
+                                            ( 'x', _("Acknowledgement of service problem")),
+                                        ],
+                                        default_value = [ 'w', 'c', 'u' ],
+                                    )
+                                  ),
+                                  ( "only_hosts",
+                                    ListOfStrings(
+                                        title = _("Limit to the following hosts"),
+                                        help = _("Configure the hosts for this notification. Only exact, case sensitive matches"),
+                                        orientation = "horizontal",
+                                        valuespec = RegExp(size = 20),
+                                    ),
+                                  ),
+                                  ( "only_services",
+                                    ListOfStrings(
+                                        title = _("Limit to the following services"),
+                                        help = _("Configure regular expressions that match the beginning of the service names here. Prefix an "
+                                                 "entry with <tt>!</tt> in order to <i>exclude</i> that service."),
+                                        orientation = "horizontal",
+                                        valuespec = RegExp(size = 20),
+                                    ),
+                                  ),
+                                  ( "parameters",
+                                    ListOfStrings(
+                                        title = _("Plugin Arguments"),
+                                        help = _("You can specify arguments to the notification plugin here. "
+                                                 "Please refer to the documentation about the plugin for what "
+                                                 "parameters are allowed or required here."),
                                     )
                                 ),
-                                ( "timeperiod",
-                                  TimeperiodSelection(
-                                      title = _("Timeperiod"),
-                                      help = _("Do only notifiy alerts within this time period"),
-                                  )
-                                ),
-                                ( "escalation",
-                                  Tuple(
-                                      title = _("Restrict to n<sup>th</sup> to m<sup>th</sup> notification (escalation)"),
-                                      orientation = "float",
-                                      elements = [
-                                          Integer(
-                                              label = _("from"),
-                                              help = _("Let through notifications counting from this number"),
-                                              default_value = 1,
-                                              minvalue = 1,
-                                              maxvalue = 999999,
-                                          ),
-                                          Integer(
-                                              label = _("to"),
-                                              help = _("Let through notifications counting upto this number"),
-                                              default_value = 999999,
-                                              minvalue = 1,
-                                              maxvalue = 999999,
-                                          ),
-                                    ],
-                                  ),
-                                ),
-                              ( "host_events",
-                                 ListChoice(
-                                      title = _("Host Events"),
-                                      choices = [
-                                      ( 'd', _("Host goes down")),
-                                      ( 'u', _("Host gets unreachble")),
-                                      ( 'r', _("Host goes up again")),
-                                      ( 'f', _("Start or end of flapping state")),
-                                      ( 's', _("Start or end of a scheduled downtime ")),
-                                      ( 'x', _("Acknowledgement of host problem")),
-                                    ],
-                                    default_value = [ 'd', 'u' ],
-                                )
-                              ),
-                                ( "service_events",
-                                  ListChoice(
-                                      title = _("Service Events"),
-                                      choices = [
-                                        ( 'w', _("Service goes into warning state")),
-                                        ( 'u', _("Service goes into unknown state")),
-                                        ( 'c', _("Service goes into critical state")),
-                                        ( 'r', _("Service recovers to OK")),
-                                        ( 'f', _("Start or end of flapping state")),
-                                        ( 's', _("Start or end of a scheduled downtime")),
-                                        ( 'x', _("Acknowledgement of service problem")),
-                                    ],
-                                    default_value = [ 'w', 'c', 'u' ],
-                                )
-                              ),
-                              ( "only_hosts",
-                                ListOfStrings(
-                                    title = _("Limit to the following hosts"),
-                                    help = _("Configure the hosts for this notification. Only exact, case sensitive matches"),
-                                    orientation = "horizontal",
-                                    valuespec = RegExp(size = 20),
-                                ),
-                              ),
-                              ( "only_services",
-                                ListOfStrings(
-                                    title = _("Limit to the following services"),
-                                    help = _("Configure regular expressions that match the beginning of the service names here. Prefix an "
-                                             "entry with <tt>!</tt> in order to <i>exclude</i> that service."),
-                                    orientation = "horizontal",
-                                    valuespec = RegExp(size = 20),
-                                ),
-                              ),
-                              ( "parameters",
-                                ListOfStrings(
-                                    title = _("Plugin Arguments"),
-                                    help = _("You can specify arguments to the notification plugin here. "
-                                             "Please refer to the documentation about the plugin for what "
-                                             "parameters are allowed or required here."),
-                                )
+                                ]
                             ),
-                            ]
+                            title_function = lambda v: _("Notify by: ") + notification_script_title(v["plugin"]),
                         ),
-                        title_function = lambda v: _("Notify by: ") + notification_script_title(v["plugin"]),
+                        title = _("Flexible Custom Notifications"),
+                        add_label = _("Add notification"),
                     ),
-                    title = _("Flexible Custom Notifications"),
-                    add_label = _("Add notification"),
                 ),
-            ),
-        ]
-    )
+            ]
+        )
 
 
 def mode_users(phase):
@@ -9416,40 +9482,6 @@ def change_host_tags_in_rules(folder, operations, mode):
 #   | from main.mk.                                                        |
 #   '----------------------------------------------------------------------'
 
-vs_rule_options = Dictionary(
-    title = _("Additional options"),
-    optional_keys = False,
-    render = "form",
-    elements = [
-        ( "comment",
-          TextUnicode(
-            title = _("Comment"),
-            help = _("An optional comment that helps you documenting the purpose of  "
-                     "this rule"),
-            size = 80,
-            attrencode = True,
-          )
-        ),
-        ( "docu_url",
-          TextAscii(
-            title = _("Documentation-URL"),
-            help = _("An optional URL pointing to documentation or any other page. This will be displayed "
-                     "as an icon <img class=icon src='images/button_url_lo.png'> and open a new page when clicked. "
-                     "You can use either global URLs (beginning with <tt>http://</tt>), absolute local urls "
-                     "(beginning with <tt>/</tt>) or relative URLs (that are relative to <tt>check_mk/</tt>)."),
-            size = 80,
-          ),
-        ),
-        ( "disabled",
-          Checkbox(
-              title = _("Rule activation"),
-              help = _("Disabled rules are kept in the configuration but are not applied."),
-              label = _("do not apply this rule"),
-          )
-        ),
-    ]
-)
-
 def mode_ruleeditor(phase):
     only_host = html.var("host", "")
     only_local = "" # html.var("local")
@@ -9484,12 +9516,16 @@ def mode_ruleeditor(phase):
         if main_group not in groupnames:
             groupnames.append(main_group)
     menu = []
-    for groupname in groupnames + ["used"]:
+    for groupname in groupnames + ["used", "unused"]:
         url = make_link([("mode", "rulesets"), ("group", groupname),
                          ("host", only_host), ("local", only_local)])
         if groupname == "used":
             title = _("Used Rulesets")
             help = _("Show only modified rulesets<br>(all rulesets with at least one rule)")
+            icon = "usedrulesets"
+        elif groupname == "unused":
+            title = _("Unused Rulesets")
+            help = _("Show only modified rulesets<br>that do not match any host")
             icon = "usedrulesets"
         else:
             title, help = g_rulegroups.get(groupname, (groupname, ""))
@@ -9516,16 +9552,32 @@ def rule_search_form():
     html.write("<br>")
 
 
+def rule_is_unused(rule, rule_folder, rulespec, hosts):
+    value, tag_specs, host_list, item_list, rule_options = parse_rule(rulespec, rule)
+    found_match = False
+    for (hostname, hostvalues) in hosts.items():
+        reason = rule_matches_host_and_item(rulespec, tag_specs, host_list, item_list, rule_folder, hostvalues[".folder"], hostname, NO_ITEM)
+        if reason == True:
+            found_match = True
+            break
+    return not found_match
+
 def mode_rulesets(phase):
     group = html.var("group") # obligatory
     search = html.var("search")
     if search != None:
         search = search.strip().lower()
 
+    only_unused = False
     if group == "used":
         title = _("Used Rulesets")
         help = _("Non-empty rulesets")
         only_used = True
+    elif group == "unused":
+        title = _("Unused Rulesets")
+        help = _("Rulesets which do not match to any host")
+        only_used   = True
+        only_unused = True
     elif search != None:
         title = _("Rules matching ") + search
         help = _("All rules that contain '%s' in their name") % search
@@ -9559,7 +9611,7 @@ def mode_rulesets(phase):
     elif phase == "action":
         return
 
-    if not only_host:
+    if not only_host and not only_unused:
         render_folder_path(keepvarnames = ["mode", "local", "group"])
 
     if search != None:
@@ -9581,14 +9633,21 @@ def mode_rulesets(phase):
         if only_used:
             all_rulesets = dict([ r for r in all_rulesets.items() if len(r[1]) > 0 ])
 
+
     # Select matching rule groups while keeping their configured order
     groupnames = [ gn for gn, rulesets in g_rulespec_groups
-                   if only_used or search != None or gn == group or gn.startswith(group + "/") ]
+                   if only_used or only_unused or search != None or gn == group or gn.startswith(group + "/") ]
+
 
     something_shown = False
     html.write('<div class=rulesets>')
     # Loop over all ruleset groups
     title_shown = False
+
+
+    if only_unused:
+        all_hosts = load_all_hosts()
+
     for groupname in groupnames:
         # Show information about a ruleset
         # Sort rulesets according to their title
@@ -9604,6 +9663,20 @@ def mode_rulesets(phase):
             num_rules = len(rules)
             if num_rules == 0 and (only_used or only_local):
                 continue
+
+            unused_rules = [] 
+            if only_unused:
+                current_rule_folder = None
+                for f, rule in rules:
+                    if current_rule_folder == None or current_rule_folder != f:
+                        current_rule_folder = f
+                        rulenr = 0
+                    else:
+                        rulenr = rulenr + 1
+                    if rule_is_unused(rule, f, rulespec, all_hosts):
+                        unused_rules.append( (rulenr, (f,rule)) )
+                if len(unused_rules) == 0:
+                    continue
 
             # handle search
             if search != None \
@@ -9643,17 +9716,82 @@ def mode_rulesets(phase):
 
             something_shown = True
 
-            url_vars = [("mode", "edit_ruleset"), ("varname", varname)]
-            if only_host:
-                url_vars.append(("host", only_host))
-            view_url = make_link(url_vars)
+            if not unused_rules: 
+                url_vars = [("mode", "edit_ruleset"), ("varname", varname)]
+                if only_host:
+                    url_vars.append(("host", only_host))
+                view_url = make_link(url_vars)
+                html.write('<div class=ruleset><div class=text>')
+                html.write('<a class="%s" href="%s">%s</a>' %
+                          (num_rules and "nonzero" or "zero", view_url, rulespec["title"]))
+                html.write('<span class=dots>%s</span></div>' % ("." * 100))
+                html.write('<div class="rulecount %s" title="%s">%d</div>' %
+                          (num_rules and "nonzero" or "zero", title, num_rules))
+            else:
+                html.write("<div style='padding-left: 10px;'>")
+                table.begin(title = _("Unused Rules for %s") % rulespec["title"], css="ruleset")
+                for rel_rulenr, (f, rule) in unused_rules:
+                    value, tag_specs, host_list, item_list, rule_options = parse_rule(rulespec, rule)
+                    table.row()
+                    
+                    # Actions
+                    table.cell("Actions", css="ruleset")
+                    edit_url = make_link([
+                        ("mode", "edit_rule"),
+                        ("varname", varname),
+                        ("rulenr", rel_rulenr),
+                        ("rule_folder", f[".path"])])
+                    html.icon_button(edit_url, _("Edit this rule"), "edit")
+                    
+                    delete_url = make_action_link([
+                        ("mode", "edit_ruleset"),
+                        ("varname", varname),
+                        ("_action", "delete"),
+                        ("_folder", f[".path"]),
+                        ("_rulenr", rel_rulenr)])
+                    html.icon_button(delete_url, _("Delete this rule"), "delete")
 
-            html.write('<div class=ruleset><div class=text>')
-            html.write('<a class="%s" href="%s">%s</a>' %
-                      (num_rules and "nonzero" or "zero", view_url, rulespec["title"]))
-            html.write('<span class=dots>%s</span></div>' % ("." * 100))
-            html.write('<div class="rulecount %s" title="%s">%d</div>' %
-                    (num_rules and "nonzero" or "zero", title, num_rules))
+                    # Rule folder
+                    table.cell(_("Rule folder"))
+                    html.write(get_folder_aliaspath(f, show_main = False))
+
+                    # Conditions
+                    table.cell(_("Conditions"), css="condition")
+                    render_conditions(rulespec, tag_specs, host_list, item_list, varname, f)
+        
+                    # Value
+                    table.cell(_("Value"))
+                    if rulespec["valuespec"]:
+                        try:
+                            value_html = rulespec["valuespec"].value_to_text(value)
+                        except:
+                            try:
+                                reason = ""
+                                rulespec["valuespec"].validate_datatype(value, "")
+                            except Exception, e:
+                                reason = str(e)
+    
+                            value_html = '<img src="images/icon_alert.png" class=icon>' \
+                                       + _("The value of this rule is not valid. ") \
+                                       + reason
+                    else:
+                        img = value and "yes" or "no"
+                        title = value and _("This rule results in a positive outcome.") \
+                                      or  _("this rule results in a negative outcome.")
+                        value_html = '<img align=absmiddle class=icon title="%s" src="images/rule_%s.png">' \
+                                        % (title, img)
+                    html.write(value_html)
+                    
+                    # Comment
+                    table.cell(_("Comment"))
+                    url = rule_options.get("docu_url")
+                    if url:
+                        html.icon_button(url, _("Context information about this rule"), "url", target="_blank")
+                        html.write("&nbsp;")
+                    html.write(htmllib.attrencode(rule_options.get("comment", "")))
+
+                table.end()
+                html.write("</div>")
             html.write('</div>')
 
     if something_shown:
@@ -9663,7 +9801,10 @@ def mode_rulesets(phase):
         if only_host:
             html.write("<div class=info>" + _("There are no rules with an exception for the host <b>%s</b>.") % only_host + "</div>")
         else:
-            html.write("<div class=info>" + _("There are no rules defined in this folder.") + "</div>")
+            if only_unused:
+                html.write("<div class=info>" + _("There are no unused rules.") + "</div>")
+            else:
+                html.write("<div class=info>" + _("There are no rules defined in this folder.") + "</div>")
 
     html.write('</div>')
 
@@ -9727,6 +9868,8 @@ def mode_edit_ruleset(phase):
               make_link([("mode", "rulesets"), ("group", group), ("host", hostname)]), "back")
         html.context_button(_("Used Rulesets"),
               make_link([("mode", "rulesets"), ("group", "used"), ("host", hostname)]), "usedrulesets")
+        html.context_button(_("Unused Rulesets"),
+              make_link([("mode", "rulesets"), ("group", "unused")]), "usedrulesets")
         if hostname:
             html.context_button(_("Services"),
                  make_link([("mode", "inventory"), ("host", hostname)]), "back")
@@ -10256,6 +10399,41 @@ def get_rule_conditions(ruleset):
 
 
 def mode_edit_rule(phase, new = False):
+    # Due to localization this cannot be defined in the global context!
+    vs_rule_options = Dictionary(
+        title = _("Additional options"),
+        optional_keys = False,
+        render = "form",
+        elements = [
+            ( "comment",
+              TextUnicode(
+                title = _("Comment"),
+                help = _("An optional comment that helps you documenting the purpose of  "
+                         "this rule"),
+                size = 80,
+                attrencode = True,
+              )
+            ),
+            ( "docu_url",
+              TextAscii(
+                title = _("Documentation-URL"),
+                help = _("An optional URL pointing to documentation or any other page. This will be displayed "
+                         "as an icon <img class=icon src='images/button_url_lo.png'> and open a new page when clicked. "
+                         "You can use either global URLs (beginning with <tt>http://</tt>), absolute local urls "
+                         "(beginning with <tt>/</tt>) or relative URLs (that are relative to <tt>check_mk/</tt>)."),
+                size = 80,
+              ),
+            ),
+            ( "disabled",
+              Checkbox(
+                  title = _("Rule activation"),
+                  help = _("Disabled rules are kept in the configuration but are not applied."),
+                  label = _("do not apply this rule"),
+              )
+            ),
+        ]
+    )
+
     varname = html.var("varname")
     rulespec = g_rulespecs[varname]
 
@@ -10718,7 +10896,7 @@ def register_rule(group, varname, valuespec = None, title = None,
         "itemname"  : itemname, # e.g. "mount point"
         "itemhelp"  : itemhelp, # a description of the item, only rarely used
         "itemenum"  : itemenum, # possible fixed values for items
-        "match"     : match,
+        "match"     : match,    # used by WATO rule analyzer (green and grey balls)
         "title"     : title or valuespec.title(),
         "help"      : help or valuespec.help(),
         "optional"  : optional, # rule may be None (like only_hosts)
@@ -10797,7 +10975,149 @@ def register_check_parameters(subgroup, checkgroup, title, valuespec, itemspec, 
         match = "all")
 
 
+# The following function looks like a value spec and in fact
+# can be used like one (but take no parameters)
+def PredictiveLevels(**args):
+    dif = args.get("default_difference", (2.0, 4.0))
+    return Dictionary(
+        title = _("Predictive Levels"),
+        optional_keys = [ "weight", "levels_upper", "levels_lower" ],
+        default_keys = [ "levels_upper" ],
+        columns = 1,
+        headers = "sup",
+        elements = [
+             ( "period", 
+                DropdownChoice(
+                    title = _("Base prediction on"),
+                    choices = [
+                        ( "wday", _("Day of the week (00:00 - 24:00 in local time)") ),
+                        ( "day",  _("Hour of the day") ),
+                        ( "hour", _("Minute of the hour (00-59)") ),
+                    ]
+             )),
+             ( "horizon",
+               Integer(
+                   title = _("Time horizon"),
+                   unit = _("days"),
+                   minvalue = 1,
+                   default_value = 90,
+             )),
+             # ( "weight",
+             #   Percentage(
+             #       title = _("Raise weight of recent time"),
+             #       label = _("by"),
+             #       default_value = 0,
+             # )),
+             ( "levels_upper",
+               CascadingDropdown(
+                   title = _("Dynamic levels (upper bound)"),
+                   choices = [
+                       ( "absolute", 
+                         _("Absolute difference from prediction"),
+                         Tuple(
+                             elements = [
+                                 Float(title = _("Warning at"), unit = _("above predicted value"), default_value = dif[0]),
+                                 Float(title = _("Critical at"), unit = _("above predicted value"), default_value = dif[1]),
+                             ]
+                      )),
+                      ( "relative", 
+                        _("Relative difference from prediction"),
+                         Tuple(
+                             elements = [
+                                 Percentage(title = _("Warning at"), unit = _("% above predicted value"), default_value = 10),
+                                 Percentage(title = _("Critical at"), unit = _("% above predicted value"), default_value = 20),
+                             ]
+                      )),
+                      ( "stdev", 
+                        _("In relation to standard deviation"),
+                         Tuple(
+                             elements = [
+                                 Percentage(title = _("Warning at"), unit = _("times the standard deviation above the predicted value"), default_value = 2),
+                                 Percentage(title = _("Critical at"), unit = _("times the standard deviation above the predicted value"), default_value = 4),
+                             ]
+                      )),
+                   ]
+             )),
+             ( "levels_lower",
+               CascadingDropdown(
+                   title = _("Dynamic levels (lower bound)"),
+                   choices = [
+                       ( "absolute", 
+                         _("Absolute difference from prediction"),
+                         Tuple(
+                             elements = [
+                                 Float(title = _("Warning at"), unit = _("below predicted value"), default_value = 2.0),
+                                 Float(title = _("Critical at"), unit = _("below predicted value"), default_value = 4.0),
+                             ]
+                      )),
+                      ( "relative", 
+                        _("Relative difference from prediction"),
+                         Tuple(
+                             elements = [
+                                 Percentage(title = _("Warning at"), unit = _("% below predicted value"), default_value = 10),
+                                 Percentage(title = _("Critical at"), unit = _("% below predicted value"), default_value = 20),
+                             ]
+                      )),
+                      ( "stdev", 
+                        _("In relation to standard deviation"),
+                         Tuple(
+                             elements = [
+                                 Percentage(title = _("Warning at"), unit = _("times the standard deviation below the predicted value"), default_value = 2),
+                                 Percentage(title = _("Critical at"), unit = _("times the standard deviation below the predicted value"), default_value = 4),
+                             ]
+                      )),
+                   ]
+             )),
 
+        ]
+    )
+
+
+# To be used as ValueSpec for levels on numeric values, with
+# prediction
+def match_levels_alternative(v):
+    if type(v) == dict:
+        return 2
+    elif type(v) == tuple and v != (None, None):
+        return 1
+    else:
+        return 0
+
+def Levels(**kwargs):
+    help = kwargs.get("help")
+    unit = kwargs.get("unit")
+    title = kwargs.get("title")
+    default_levels = kwargs.get("default_levels", (0.0, 0.0))
+    default_difference = kwargs.get("default_difference", (0,0))
+    if "default_value" in kwargs:
+        default_value = kwargs["default_value"]
+    else:
+        default_value = default_levels and default_levels or None
+
+    return Alternative(
+          title = title,
+          help = help,
+          show_titles = False,
+          elements = [
+              FixedValue(
+                  None,
+                  title = _("No Levels"),
+                  totext = _("Do not impose levels, always be OK"),
+              ),
+              Tuple(
+                  title = _("Fixed Levels"),
+                  elements = [
+                      Float(unit = unit, title = _("Warning at"), default_value = default_levels[0]),
+                      Float(unit = unit, title = _("Critical at"), default_value = default_levels[1]),
+                  ],
+              ),
+              PredictiveLevels(
+                  default_difference = default_difference,
+              ),
+          ],
+          match = match_levels_alternative,
+          default_value = default_value,
+    )
 
 
 #
@@ -10861,6 +11181,7 @@ def page_user_profile():
 
                 # load the new language
                 load_language(config.get_language())
+                load_all_plugins()
 
                 user = users.get(config.user_id)
                 if config.may('general.edit_notifications') and user.get("notifications_enabled"):
@@ -11340,7 +11661,7 @@ def mode_bi_rules(phase):
         delete_url = make_action_link([("mode", "bi_rules"), ("_del_aggr", nr)])
         html.icon_button(delete_url, _("Delete this aggregation"), "delete")
         table.cell(_("Nr."), nr+1, css="number")
-        table.cell(_(""), css="buttons")
+        table.cell("", css="buttons")
         if aggregation["disabled"]:
             html.icon(_("This aggregation is currently disabled."), "disabled")
         if aggregation["single_host"]:
@@ -12685,6 +13006,8 @@ def load_plugins():
     configured_host_tags = None
     host_attributes = []
     userdb.reset_user_attributes()
+
+    load_notification_table()
 
     global g_configvars, g_configvar_groups
     g_configvars = {}

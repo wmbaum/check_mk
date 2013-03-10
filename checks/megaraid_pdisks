@@ -57,7 +57,7 @@ def megaraid_pdisks_parse(info):
     current_adapter = adapters[0]
     return_var = []
     adapter = 0
-    enclosure_devid = 0
+    enclosure_devid = -181
     for line in  info:
         if line[0] == 'adapter':
             current_adapter = {}
@@ -77,6 +77,11 @@ def megaraid_pdisks_parse(info):
 	    except: # no enclosure device
 	 	enclosure_devid = 0
 		adapters[adapter][0] = 0
+        elif line[0] == "Enclosure" and line[1] == "Number:":
+            for devid, number in current_adapter.items():
+                if number == int(line[-1]):
+                    enclosure_devid = devid
+                    break
 
         elif line[0] == "Slot":
             slot = int(line[-1])
@@ -88,6 +93,7 @@ def megaraid_pdisks_parse(info):
             return_var.append((megaraid_pdisks_adapterstr[adapter],
                                adapters[adapter][enclosure_devid],
                                enclosure_devid, slot, state, name))
+
     return return_var
 
 
@@ -103,12 +109,18 @@ def check_megaraid_pdisks(item, target_state, info):
     info = megaraid_pdisks_parse(info)
     for adapter, enclosure, enc_dev_id, slot, state, name in info:
         if "%s%s/%s" % (adapter, enclosure, slot) == item:
-           infotext = " - %s (%s)" % (state, name)
+           infotext = "%s (%s)" % (state, name)
            if state == target_state:
-               return (0, "OK" + infotext)
+               return (0, infotext)
            else:
-               return (2, "CRIT" + infotext)
-    return (3, "UNKNOWN - No disk in encl/slot %s found" % item)
+               return (2, infotext)
+    return (3, "No disk in encl/slot %s found" % item)
 
-check_info['megaraid_pdisks'] = (check_megaraid_pdisks, "RAID PDisk Adapt/Enc/Sl %s", 1, inventory_megaraid_pdisks)
-checkgroup_of['megaraid_pdisks'] = "raid_disk"
+
+check_info["megaraid_pdisks"] = {
+    'check_function':          check_megaraid_pdisks,
+    'inventory_function':      inventory_megaraid_pdisks,
+    'service_description':     'RAID PDisk Adapt/Enc/Sl %s',
+    'has_perfdata':            True,
+    'group':                   'raid_disk',
+}

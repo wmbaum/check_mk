@@ -244,10 +244,23 @@ register_configvar(group,
     domain = "multisite")
 
 register_configvar(group,
+    "sidebar_update_interval",
+    Float(title = _("Interval of sidebar status updates"),
+          help = _("The information provided by the sidebar snapins is refreshed in a regular "
+                   "interval. You can change the refresh interval to fit your needs here. This "
+                   "value means that all snapnis which request a regular refresh are updated "
+                   "in this interval."),
+          minvalue = 10.0,
+          default_value = 30.0,
+          unit = "sec",
+          display_format = "%.1f"),
+    domain = "multisite")
+
+register_configvar(group,
     "wato_activation_method",
     DropdownChoice(
-        title = _("Wato restart mode for Nagios"),
-        help = _("Should Wato restart or reload Nagios when activating changes"),
+        title = _("WATO restart mode for Nagios"),
+        help = _("Should WATO restart or reload Nagios when activating changes"),
         choices = [
             ('restart', _("Restart")),
             ('reload' , _("Reload") ),
@@ -282,6 +295,29 @@ register_configvar(group,
           help = _("If this option is used and set to a filename, Check_MK BI will create a logfile "
                    "containing details about compiling BI aggregations. This includes statistics and "
                    "details for each executed compilation.")),
+    domain = "multisite")
+
+register_configvar(group,
+    "auth_by_http_header",
+    Optional(
+        TextAscii(
+            label   = _("HTTP Header Variable"),
+            help    = _("Configure the name of the environment variable to read "
+                        "from the incoming HTTP requests"),
+            default_value = 'REMOTE_USER',
+        ),
+        title = _("Authenticate users by incoming HTTP requests"),
+        label = _("Activate HTTP header authentication (Warning: Only activate "
+                  "in trusted environments, see help for details)"),
+        help  = _("If this option is enabled, multisite reads the configured HTTP header "
+                  "variable from the incoming HTTP request and simply takes the string "
+                  "in this variable as name of the authenticated user. "
+                  "Be warned: Only allow access from trusted ip addresses "
+                  "(Apache <tt>Allow from</tt>), like proxy "
+                  "servers, to this webpage. A user with access to this page could simply fake "
+                  "the authentication information. This option can be useful to "
+                  " realize authentication in reverse proxy environments.")
+    ),
     domain = "multisite")
 
 #   .----------------------------------------------------------------------.
@@ -640,6 +676,15 @@ register_configvar(group,
     need_restart = True)
 
 register_configvar(group,
+    "piggyback_max_cachefile_age",
+    Age(title = _("Maximum age for piggyback files"),
+            help = _("The maximum age for piggy back data from another host to be valid for monitoring. "
+                     "Older files are deleted before processing them. Please make sure that this age is "
+                     "at least as large as you normal check interval for piggy hosts.")),
+    need_restart = True)
+
+
+register_configvar(group,
     "check_submission",
     DropdownChoice(
         title = _("Check submission method"),
@@ -890,17 +935,6 @@ register_configvar(group,
     )
 
 register_configvar(group,
-    "logwatch_forward_to_ec",
-    Checkbox(
-        title = _("Forward logwatch messages to event console"),
-        label = _("forward to event console"),
-        help  = _("Instead of using the regular logwatch check all lines received by logwatch can "
-                  "be forwarded to a Check_MK event console daemon to be processed. The target event "
-                  "console can be configured for each host in a separate rule."),
-    ),
-)
-
-register_configvar(group,
     "printer_supply_some_remaining_status",
     DropdownChoice(
         title = _("Printer supply some remaining status"),
@@ -1119,15 +1153,38 @@ register_rule(group,
                  "the state of the host will stay at its last status.")),
     )
 
+register_rule(
+    group,
+    "host_check_commands",
+    CascadingDropdown(
+        title = _("Host Check Command"),
+        help = _("Usually Check_MK uses a series of PING (ICMP echo request) in order to determine "
+                 "whether a host is up. In some cases this is not possible, however. With this rule "
+                 "you can specify an alternative way of determining the host's state."),
+        choices = [
+          ( "ping",    _("PING (ICMP echo request)") ),
+          ( "tcp" ,    _("TCP Connect"), Integer(label = _("to port:"), minvalue=1, maxvalue=65535, default_value=80 )), 
+          ( "ok",      _("Always assume host to be up") ),
+          ( "agent",   _("Use the status of the Check_MK Agent") ),
+          ( "service", _("Use the status of the service..."), TextUnicode(label = ":", size=32, allow_empty=False )),
+        ],
+        default_value = "ping",
+        html_separator = " ",
+    ),
+    match = 'first'
+)
+
+
 register_rule(group,
     "extra_host_conf:check_command",
     TextAscii(
+        title = _("Internal Command for Hosts Check"),
         label = _("Command:"),
-        title = _("Check Command for Hosts Check"),
-        help = _("This parameter changes the default check_command for "
-                 "a host check"),
-        ),
-    )
+        help = _("This ruleset is deprecated and will be removed soon: "
+                 "it changes the default check_command for a host check. You need to "
+                 "define that command manually in your monitoring configuration."),
+    ),
+)
 
 group = "monconf/" + _("Notifications")
 register_rule(group,
@@ -1572,3 +1629,73 @@ register_rule(group,
         size = 80,
         attrencode = True))
 
+register_rule(group,
+    "piggyback_translation",
+    Dictionary(
+        title = _("Hostname translation for piggybacked hosts"),
+        help = _("Some agents or agent plugins send data not only for the queried host but also "
+                 "for other hosts &quot;piggyback&quot; with their own data. This is the case "
+                 "for the vSphere special agent and the SAP R/3 plugin, for example. The hostnames "
+                 "that these agents send must match your hostnames in your monitoring configuration. "
+                 "If that is not the case, then with this rule you can define a hostname translation. "
+                 "Note: This rule must be configured for the &quot;pig&quot; - i.e. the host that the "
+                 "agent is running on. It is not applied to the translated piggybacked hosts."),
+        elements = [
+            ( "case",
+              DropdownChoice(
+                  title = _("Case translation"),
+                  choices = [
+                       ( None,    _("Do not convert case") ),
+                       ( "upper", _("Convert hostnames to upper case") ),
+                       ( "lower", _("Convert hostnames to lower case") ),
+                  ]
+            )),
+            ( "regex",
+              Tuple(
+                  title = _("Regular expression substitution"),
+                  help = _("Please specify a regular expression in the first field. This expression should at "
+                           "least contain one subexpression exclosed in brackets - for example <tt>vm_(.*)_prod</tt>. "
+                           "In the second field you specify the translated host name and can refer to the first matched " 
+                           "group with <tt>\1</tt>, the second with <tt>\2</tt> and so on, for example <tt>\1.example.org</tt>"),
+                  elements = [
+                      RegExpUnicode(
+                          title = _("Regular expression"),
+                          help = _("Must contain at least one subgroup <tt>(...)</tt>"),
+                          mingroups = 1,
+                          maxgroups = 9,
+                          size = 30,
+                          allow_empty = False,
+                      ),
+                      TextUnicode(
+                          title = _("Replacement"),
+                          help = _("Use <tt>\1</tt>, <tt>\2</tt> etc. to replace matched subgroups"),
+                          size = 30,
+                          allow_empty = False,
+                      )
+                 ]
+            )),
+            ( "mapping",
+              ListOf(
+                  Tuple(
+                      orientation = "horizontal",
+                      elements =  [
+                          TextUnicode(
+                               title = _("Original hostname"),  
+                               size = 30,
+                               allow_empty = False),
+                          TextUnicode(
+                               title = _("Translated hostname"), 
+                               size = 30,
+                               allow_empty = False),
+                      ],
+                  ),
+                  title = _("Explicit host name mapping"),
+                  help = _("If case conversion and regular expression do not work for all cases then you can "
+                           "specify explicity pairs of origin host name  and translated host name here. This "
+                           "mapping is being applied <b>after</b> the case conversion and <b>after</b> a regular "
+                           "expression conversion (if that matches)."),
+                  add_label = _("Add new mapping"),
+                  movable = False,
+            )),
+        ]),
+    match = "dict")

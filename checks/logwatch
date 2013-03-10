@@ -30,22 +30,47 @@ logwatch_patterns = { }
 logwatch_rules = []
 logwatch_max_filesize = 500000 # do not save more than 500k of message (configurable)
 logwatch_service_output = "default"
-logwatch_forward_to_ec = False
 
 # Variables embedded in precompiled checks
 check_config_variables += [ "logwatch_dir", "logwatch_max_filesize", "logwatch_service_output" ]
 
-def inventory_logwatch(info):
-    if logwatch_forward_to_ec:
-        # this is the regular logwatch inventory. Terminate when in logwatch forward mode
-        return []
+def logwatch_ec_forwarding_enabled(params, item):
+    if 'restrict_logfiles' not in params:
+        return True # matches all logs on this host
+    else:
+        # only logs which match the specified patterns
+        for pattern in params['restrict_logfiles']:
+            if re.match(pattern, item):
+                return True
 
+    return False
+
+def inventory_logwatch(info, is_logwatch_ec = False):
     inventory = []
+    forward_logs = []
+
+    forward_settings = host_extra_conf(g_hostname, checkgroup_parameters.get('logwatch_ec', []))
+
     for l in info:
         line = " ".join(l)
         if len(line) > 6 and line[0:3] == "[[[" and line[-3:] == "]]]" \
            and ':missing' not in line and ':cannotopen' not in line:
-            inventory.append((line[3:-3], "", '""'))
+            item = line[3:-3]
+
+            if not forward_settings or forward_settings[0] is None:
+                if not is_logwatch_ec:
+                    inventory.append((item, "", '""'))
+                continue
+
+            forward = logwatch_ec_forwarding_enabled(forward_settings[0], item)
+            if not is_logwatch_ec and not forward:
+                inventory.append((item, "", '""'))
+            elif is_logwatch_ec and forward:
+                forward_logs.append(item)
+
+    if forward_logs:
+        return [(None, '{}')]
+
     return inventory
 
 #logwatch_patterns = {
@@ -223,11 +248,11 @@ def check_logwatch(item, params, info):
     # Logfile (=item) section not found and no local file found. This usually
     # means, that the corresponding logfile also vanished on the target host.
     if found == False and not os.path.exists(logfile):
-        return (3, "UNKNOWN - log not present anymore")
+        return (3, "log not present anymore")
 
     # if logfile has reached maximum size, abort with critical state
     if os.path.exists(logfile) and os.path.getsize(logfile) > logwatch_max_filesize:
-        return (2, "CRIT - unacknowledged messages have exceeded max size (%d Bytes)" % logwatch_max_filesize)
+        return (2, "unacknowledged messages have exceeded max size (%d Bytes)" % logwatch_max_filesize)
 
     #
     # Write out new log lines (no reclassify here. It is done later in general for all logs)
@@ -348,26 +373,24 @@ def check_logwatch(item, params, info):
     # Render output
     #
 
-    state = logwatch_state(worst)
-
     if len(reclassified_lines) == 0:
-        return (0, "OK - no error messages")
+        return (0, "no error messages")
     else:
         count_txt = []
         for level, num in state_counts.iteritems():
             count_txt.append('%d %s' % (num, logwatch_level_name(level)))
         if logwatch_service_output == 'default':
-            return (worst, state + " - %s messages (Last worst: \"%s\")" %
+            return (worst, "%s messages (Last worst: \"%s\")" %
                                            (', '.join(count_txt), last_worst_line))
         else:
-            return (worst, state + " - %s messages" % ', '.join(count_txt))
+            return (worst, "%s messages" % ', '.join(count_txt))
 
 
 check_info['logwatch'] = {
     'check_function':      check_logwatch,
     'service_description': "LOG %s",
     'has_perfdata':        0,
-    'inventory_function':  inventory_logwatch,
+    'inventory_function':  lambda info: inventory_logwatch(info, False),
     'group':               'logwatch',
 }
 
@@ -385,14 +408,6 @@ precompile_params['logwatch'] = logwatch_precompile
 #   '----------------------------------------------------------------------'
 
 import socket, time
-
-def inventory_logwatch_ec(info):
-    if logwatch_forward_to_ec and info:
-        # this is the logwatch event console forward inventory. Add one service per host.
-        return [(None, "{}")]
-
-    # this is the logwatch event console forward inventory. Terminate when not in logwatch forward mode
-    return []
 
 # OK   -> priority 5
 # WARN -> priority 4
@@ -414,73 +429,96 @@ def syslog_time():
     value = time.strftime("%b %%d %H:%M:%S", localtime)
     return value % day
 
-def check_logwatch_ec(_unused, params, info):
+def check_logwatch_ec(item, params, info):
     # 1. Parse lines in info and separate by logfile
-    logs = []
+    logs = {}
     logfile = None
     for l in info:
         line = " ".join(l)
         if len(line) > 6 and line[0:3] == "[[[" and line[-3:] == "]]]":
             # new logfile, extract name
             logfile = line[3:-3]
+            logs.setdefault(logfile, [])
 
         elif logfile and line:
             # new regular line, skip context lines
             if line[0] != '.':
-                logs.append((logfile, line))
+                logs[logfile].append(line)
 
-    # 2. create syslog message of each line
+    # 2. Maybe filter logfiles if some should be excluded
+    if 'restrict_logfiles' in params:
+        for logfile in logs.keys():
+            if not logwatch_ec_forwarding_enabled(params, logfile):
+                del logs[logfile]
+
+    # 3. create syslog message of each line
     # <128> Oct 24 10:44:27 Klappspaten /var/log/syslog: Oct 24 10:44:27 Klappspaten logger: asdasdad as
     # <facility+priority> timestamp hostname logfile: message
     facility = params.get('facility', 17) << 3 # default to "local1"
     messages = []
     cur_time = syslog_time()
-    for logfile, line in logs:
-        msg = '<%d>' % (facility + logwatch_to_prio(line[0]),)
-        msg += '%s %s %s: %s' % (cur_time, g_hostname, logfile, line[2:])
-        messages.append(msg)
+    for logfile, lines in logs.items():
+        for line in lines:
+            msg = '<%d>' % (facility + logwatch_to_prio(line[0]),)
+            msg += '%s %s %s: %s' % (cur_time, g_hostname, logfile, line[2:])
+            messages.append(msg)
 
-    # 3. send lines to event console
+    # 4. send lines to event console
     # a) local in same omd site
     # b) local pipe
     # c) remote via udp
     # d) remote via tcp
     method = params.get('method')
-    if method == None:
+    if not method:
         method = os.getenv('OMD_ROOT') + "/tmp/run/mkeventd/eventsocket"
+    elif method == 'spool:':
+        method += os.getenv('OMD_ROOT') + "/var/mkeventd/spool"
 
+    num_messages = len(messages)
     try:
-        if isinstance(method, tuple):
-            # connect either via tcp or udp
-            if method[0] == 'udp':
-                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        if messages:
+            if isinstance(method, tuple):
+                # connect either via tcp or udp
+                if method[0] == 'udp':
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                else:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.connect((method[1], method[2]))
+                for message in messages:
+                    sock.send(message)
+                sock.close()
+
+            elif not method.startswith('spool:'):
+                # write into local event pipe
+                # Important: When the event daemon is stopped, then the pipe
+                # is *not* existing! This prevents us from hanging in such
+                # situations. So we must make sure that we do not create a file
+                # instead of the pipe!
+                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                sock.connect(method)
+                sock.send('\n'.join(messages) + '\n')
+                sock.close()
+
             else:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect((method[1], method[2]))
-            for message in messages:
-                sock.send(message)
-            sock.close()
+                # Spool the log messages to given spool directory.
+                # First write a file which is not read into ec, then
+                # perform the move to make the file visible for ec
+                spool_path = method[6:]
+                file_name  = '.%s_%s%d' % (g_hostname, item and item.replace('/', '\\') + '_' or '', time.time())
+                if not os.path.exists(spool_path):
+                    os.makedirs(spool_path)
+                file('%s/%s' % (spool_path, file_name), 'w').write('\n'.join(messages) + '\n')
+                os.rename('%s/%s' % (spool_path, file_name), '%s/%s' % (spool_path, file_name[1:]))
 
-        else:
-            # write into local event pipe
-            # Important: When the event daemon is stopped, then the pipe
-            # is *not* existing! This prevents us from hanging in such
-            # situations. So we must make sure that we do not create a file
-            # instead of the pipe!
-            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            sock.connect(method)
-            sock.send('\n'.join(messages) + '\n')
-            sock.close()
-
-        num_messages = len(messages)
-        return (0, 'OK - Forwarded %d messages to event console' % num_messages, [('messages', num_messages)])
+        return (0, 'Forwarded %d messages to event console' % num_messages, [('messages', num_messages)])
     except Exception, e:
-        return (2, 'CRITICAL - Unable to forward messages to event console (%s)' % e)
+        return (2, 'Unable to forward messages to event console (%s). Lost %d messages.' %
+                (e, num_messages))
 
 check_info['logwatch.ec'] = {
     'check_function':      check_logwatch_ec,
     'service_description': "Log Forwarding",
     'has_perfdata':        0,
-    'inventory_function':  inventory_logwatch_ec,
+    'inventory_function':  lambda info: inventory_logwatch(info, True),
     'group':               'logwatch_ec',
 }

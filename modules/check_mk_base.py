@@ -352,6 +352,9 @@ def get_realhost_info(hostname, ipaddress, check_type, max_cache_age):
         write_cache_file(cache_relpath, repr(table) + "\n")
         return table
 
+    # Note: even von SNMP-tagged hosts TCP based checks can be used, if
+    # the data comes piggyback!
+
     # No SNMP check. Then we must contact the check_mk_agent. Have we already
     # tries to get data from the agent? If yes we must not do that again! Even if
     # no cache file is present.
@@ -364,13 +367,13 @@ def get_realhost_info(hostname, ipaddress, check_type, max_cache_age):
     # If we have piggyback data for that host from another host,
     # then we prepend this data and also tolerate a failing
     # normal Check_MK Agent access.
-    piggy_output = get_piggyback_info(hostname)
+    piggy_output = get_piggyback_info(hostname) + get_piggyback_info(ipaddress)
     output = ""
     agent_failed = False
     if is_tcp_host(hostname):
         try:
             output = get_agent_info(hostname, ipaddress, max_cache_age)
-        except:
+        except Exception, e:
             agent_failed = True
             # Remove piggybacked information from the host (in the
             # role of the pig here). Why? We definitely haven't
@@ -383,8 +386,10 @@ def get_realhost_info(hostname, ipaddress, check_type, max_cache_age):
 
     output += piggy_output
 
-    if len(output) == 0:
+    if len(output) == 0 and is_tcp_host(hostname):
         raise MKAgentError("Empty output from agent")
+    elif len(output) == 0:
+        return
     elif len(output) < 16:
         raise MKAgentError("Too short output from agent: '%s'" % output)
 
@@ -410,11 +415,21 @@ def get_piggyback_info(hostname):
     if os.path.exists(dir):
         for sourcehost in os.listdir(dir):
             if sourcehost not in ['.', '..'] \
-                and not sourcehost.startswith(".new."):
+               and not sourcehost.startswith(".new."):
+                file_path = dir + "/" + sourcehost
+
+                if cachefile_age(file_path) > piggyback_max_cachefile_age:
+                    if opt_debug:
+                        sys.stderr.write("Piggyback file %s is outdated by %d seconds. Deleting it.\n" %
+                            (file_path, cachefile_age(file_path) - piggyback_max_cachefile_age))
+                    os.remove(file_path)
+                    continue
+
                 if opt_debug:
                     sys.stderr.write("Using piggyback information from host %s.\n" %
                       sourcehost)
-                output += file(dir + "/" + sourcehost).read()
+
+                output += file(file_path).read()
     return output
 
 
@@ -429,11 +444,12 @@ def store_piggyback_info(sourcehost, piggybacked):
         out = file(dir + "/.new." + sourcehost, "w")
         for line in lines:
             out.write("%s\n" % line)
-        os.rename(dir + "/.new." + sourcehost,dir + "/" + sourcehost)
+        os.rename(dir + "/.new." + sourcehost, dir + "/" + sourcehost)
 
     # Remove piggybacked information that is not
     # being sent this turn
-    remove_piggyback_info_from(sourcehost, keep=piggybacked)
+    remove_piggyback_info_from(sourcehost, keep=piggybacked.keys())
+
 
 def remove_piggyback_info_from(sourcehost, keep=[]):
     removed = 0
@@ -456,6 +472,37 @@ def remove_piggyback_info_from(sourcehost, keep=[]):
             except:
                 pass
     return removed
+
+def translate_piggyback_host(sourcehost, backedhost):
+    translation = get_piggyback_translation(sourcehost)
+
+    # 1. Case conversion
+    caseconf = translation.get("case")
+    if caseconf == "upper":
+        backedhost = backedhost.upper()
+    elif caseconf == "lower":
+        backedhost = backedhost.lower()
+
+    # 2. Regular expression conversion
+    if "regex" in translation:
+        regex, subst = translation.get("regex")
+        if not regex.endswith('$'):
+            regex += '$'
+        rcomp = get_regex(regex)
+        mo = rcomp.match(backedhost)
+        if mo:
+            backedhost = subst
+            for nr, text in enumerate(mo.groups()):
+                backedhost = translated.replace("\\%d" % (nr+1), text)
+
+    # 3. Explicity mapping
+    for from_host, to_host in translation.get("mapping", []):
+        if from_host == backedhost:
+            backedhost = to_host
+            break
+
+    return backedhost
+
 
 
 def read_cache_file(relpath, max_cache_age):
@@ -620,8 +667,12 @@ def parse_info(lines, hostname):
     for line in lines:
         if line[:4] == '<<<<' and line[-4:] == '>>>>':
             host = line[4:-4]
-            if not host or host == hostname:
-                host = None # unpiggybacked "normal" host
+            if not host: 
+                host = None
+            else:
+                host = translate_piggyback_host(hostname, host)
+                if host == hostname:
+                    host = None # unpiggybacked "normal" host
         elif host: # processing data for an other host
             piggybacked.setdefault(host, []).append(line)
         elif line[:3] == '<<<' and line[-3:] == '>>>':
@@ -934,6 +985,10 @@ def do_all_checks_on_host(hostname, ipaddress, only_check_types = None):
         if only_check_types != None and checkname not in only_check_types:
             continue
 
+        # Make service description globally available 
+        global g_service_description
+        g_service_description = description
+
         # Skip checks that are not in their check period
         period = check_period_of(hostname, description)
         if period and not check_timeperiod(period):
@@ -972,13 +1027,13 @@ def do_all_checks_on_host(hostname, ipaddress, only_check_types = None):
         if info or info == []:
             num_success += 1
             try:
-                check_funktion = check_info[checkname]["check_function"]
+                check_function = check_info[checkname]["check_function"]
             except:
-                check_funktion = check_unimplemented
+                check_function = check_unimplemented
 
             try:
                 dont_submit = False
-                result = check_funktion(item, params, info)
+                result = check_function(item, params, info)
             # handle check implementations that do not yet support the
             # handling of wrapped counters via exception. Do not submit
             # any check result in that case:
@@ -987,7 +1042,7 @@ def do_all_checks_on_host(hostname, ipaddress, only_check_types = None):
                     print "Counter wrapped, not handled by check, ignoring this check result: %s" % e
                 dont_submit = True
             except Exception, e:
-                result = (3, "UNKNOWN - invalid output from agent, invalid check parameters or error in implementation of check %s. Please set <tt>debug_log</tt> to a filename in <tt>main.mk</tt> for enabling exception logging." % checkname)
+                result = (3, "invalid output from agent, invalid check parameters or error in implementation of check %s. Please set <tt>debug_log</tt> to a filename in <tt>main.mk</tt> for enabling exception logging." % checkname)
                 if debug_log:
                     try:
                         import traceback, pprint
@@ -1095,19 +1150,31 @@ def convert_perf_data(p):
 
 
 def submit_check_result(host, servicedesc, result, sa):
+    if len(result) >= 3:
+        state, infotext, perfdata = result[:3]
+    else:
+        state, infotext = result
+        perfdata = None
+
+    if not (
+        infotext.startswith("OK -") or
+        infotext.startswith("WARN -") or
+        infotext.startswith("CRIT -") or
+        infotext.startswith("UNKNOWN -")):
+        infotext = nagios_state_names[state] + " - " + infotext
+
     global nagios_command_pipe
     # [<timestamp>] PROCESS_SERVICE_CHECK_RESULT;<host_name>;<svc_description>;<return_code>;<plugin_output>
 
     # Aggregated service -> store for later
     if sa != "":
-        store_aggregated_service_result(host, servicedesc, sa, result[0], result[1])
+        store_aggregated_service_result(host, servicedesc, sa, state, infotext)
 
     # performance data - if any - is stored in the third part of the result
     perftexts = [];
     perftext = ""
 
-    if len(result) > 2:
-        perfdata = result[2]
+    if perfdata:
         # Check may append the name of the check command to the
         # list of perfdata. It is of type string. And it might be
         # needed by the graphing tool in order to choose the correct
@@ -1127,15 +1194,15 @@ def submit_check_result(host, servicedesc, result, sa):
             perftext = "|" + (" ".join(perftexts))
 
     if not opt_dont_submit:
-        submit_to_nagios(host, servicedesc, result[0], result[1] + perftext)
+        submit_to_nagios(host, servicedesc, state, infotext + perftext)
 
     if opt_verbose:
         if opt_showperfdata:
             p = ' (%s)' % (" ".join(perftexts))
         else:
             p = ''
-        color = { 0: tty_green, 1: tty_yellow, 2: tty_red, 3: tty_magenta }[result[0]]
-        print "%-20s %s%s%-56s%s%s" % (servicedesc, tty_bold, color, result[1], tty_normal, p)
+        color = { 0: tty_green, 1: tty_yellow, 2: tty_red, 3: tty_magenta }[state]
+        print "%-20s %s%s%-56s%s%s" % (servicedesc, tty_bold, color, infotext, tty_normal, p)
 
 
 def submit_to_nagios(host, service, state, output):
@@ -1208,6 +1275,64 @@ def nodes_of(hostname):
 #   | These functions are used in some of the checks.                      |
 #   +----------------------------------------------------------------------+
 
+# Generic function for checking a value against levels. This also support
+# predictive levels.
+def check_levels(value, dsname, params, unit = "", factor = 1.0, statemarkers=False):
+
+    if params == None or params == (None, None):
+        return 0, "", []
+
+    perfdata = []
+    infotext = ""
+
+    # Pair of numbers -> static levels
+    if type(params) == tuple:
+        warn_upper, crit_upper = params[0] * factor, params[1] * factor,
+        warn_lower, crit_lower = None, None
+        ref_value = None
+
+    # Dictionary -> predictive levels
+    else:
+        try:
+            ref_value, ((warn_upper, crit_upper), (warn_lower, crit_lower)) = \
+                get_predictive_levels(dsname, params, "MAX", levels_factor=factor)
+            if ref_value:
+                infotext += "predicted reference: %.2f%s" % (ref_value * factor, unit)
+            else:
+                infotext += "no reference for prediction yet"
+        except Exception, e:
+            return 3, "%s" % e, []
+
+    if ref_value:
+        perfdata.append(('predict_' + dsname, ref_value))
+
+    # Critical cases
+    if crit_upper != None and value >= crit_upper:
+        state = 2
+        infotext += " (critical level at %.2f)" % crit_upper
+    elif crit_lower != None and value <= crit_lower:
+        state = 2
+        infotext += " (too low: critical level at %.2f)" % crit_lower
+
+    # Warning cases
+    elif warn_upper != None and value >= warn_upper:
+        state = 1
+        infotext += " (warning level at %.2f)" % warn_upper
+    elif warn_lower != None and value <= warn_lower:
+        state = 1
+        infotext += " (too low: warning level at %.2f)" % warn_lower
+
+    # OK
+    else:
+        state = 0
+
+    if state and statemarkers:
+        if state == 1:
+            infotext += "(!)"
+        else:
+            infotext += "(!!)"
+    return state, infotext, perfdata
+
 
 # check range, values might be negative!
 # returns True, if value is inside the interval
@@ -1247,6 +1372,7 @@ def savefloat(f):
 # The unit parameter simply changes the returned string, but does not interfere
 # with any calcluations
 def get_bytes_human_readable(b, base=1024.0, bytefrac=True, unit="B"):
+    base = float(base)
     # Handle negative bytes correctly
     prefix = ''
     if b < 0:

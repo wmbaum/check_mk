@@ -30,6 +30,7 @@ import config
 import main
 import logwatch
 import views
+import prediction
 import sidebar
 import actions
 import weblib
@@ -54,6 +55,7 @@ pagehandlers.update({
    "ajax_set_viewoption"      : views.ajax_set_viewoption,
    "ajax_set_rowselection"    : weblib.ajax_set_rowselection,
    "view"                     : views.page_view,
+   "prediction_graph"         : prediction.page_graph,
    "logwatch"                 : logwatch.page_show,
    "side"                     : sidebar.page_side,
    "sidebar_add_snapin"       : sidebar.page_add_snapin,
@@ -61,7 +63,6 @@ pagehandlers.update({
    "sidebar_openclose"        : sidebar.ajax_openclose,
    "sidebar_move_snapin"      : sidebar.move_snapin,
    "sidebar_ajax_speedometer" : sidebar.ajax_speedometer,
-   "nagios_restarted"         : sidebar.ajax_nagios_restarted,
    "switch_master_state"      : sidebar.ajax_switch_masterstate,
    "add_bookmark"             : sidebar.ajax_add_bookmark,
    "del_bookmark"             : sidebar.ajax_del_bookmark,

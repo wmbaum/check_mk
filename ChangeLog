@@ -1,16 +1,150 @@
 1.2.3i1:
     Core:
-    * New feature: agents can send data for other hosts
-      "piggyback".
+    * Agents can send data for other hosts "piggyback". This is being
+      used by the vSphere and SAP plugins
+    * New variable host_check_commands, that allows the definition of
+      an alternative host check command (without manually defining one)
+
+    Multisite:
+    * New availability view for arbitrary host/service collections
+    * New option auth_by_http_header to use the value of a HTTP header
+      variable for authentication (Useful in reverse proxy environments)
+    * New permission that is needed for seeing views that other users
+      have defined (per default this is contained in all roles)
+    * New path back to the view after command exection with all
+      checkboxes cleared
+    * Added plugins to config module to make registration of default values
+      possible for addons like mkeventd - reset to default values works now
+      correctly even for multisite related settings
+    * perfometer: Bit values now using base of 1000
+    * ADD: check_disk_smb pnp-template
+    * Dashboards can now be configured to be reloaded on resizing
+      (automatically adds width/height url parameters)
 
     Event Console:
-    * New rule feature: automatically delete after action
+    * New rule feature: automatically delete event after actions
+    * New filter for maximum services level (minimum already existed)
 
     Checks & Agents:
-    * Add: Memory and Swap for Solaris Agent
-    * Add: Monitoring of ESX (VMware) Hosts
+    * solaris_mem: New check for memory and swap for Solaris agent
+    * New special agent agent_vsphere for monitoring ESX (VMware) Hosts
+      via vSphere interface
+    * new special agent agent_random for creating random monitoring data
+    * New checks: windows_intel_bonding / windows_broadcom_bonding
+    * cisco_qos: adhere qos-bandwidth policies
+    * Implemented SAP monitoring based on the agent plugin mk_sap. This
+      must be run on a linux host. It connects via RFC calls to SAP R/3
+      systems to retrieve monitoring information for this or other machines.
+    * sap.dialog: Monitors SAP dialog statistics like the response time
+    * sap.value: Simply processes information provided by SAP to Nagios
+    * openvpn_clients: new check for OpenVPN connections
+    * check_disk_smb: WATO formalization for active check check_disk_smb
+    * if.include: new configurable parameters for assumed input and output speed
+    * cisco_qos: new param unit:    switches between bit/byte display
+                 new param average: average the values over the given minute
+                 new params post/drop can be configured via int and float
+                 fixed incorrect worst state if different parameters exceed limit
+    * logwatch.ec: Added optional spooling to the check to prevent dataloss
+      when processing of current lines needs more time than max execution time
+    * mounts: ignore multiple occurrances of the same device
+    * Linux agent: allow cached local/plugins checks (see docu)
+    
+    Livestatus:
+    * Table statehist: Improved detection of vanished hosts and services.
+                       Now able to detect and remove nonsense check plugin output 
 
-1.2.2b3
+    BI:
+    * Integrated availability computing, including nifty time warp feature
+
+    WATO:
+    * Configuration of datasource programs via dedicated rules
+    * New editor for Business Intelligence rules
+    * Valuespec: CascadingDropdown now able to process choice values from functions
+    * cisco_qos parameters now configurable via WATO
+    * Removed global option logwatch_forward_to_ec, moved this to the
+      logwatch_ec ruleset. With this option the forwarding can now be enabled
+      for each logfile on a host
+    * Configuration of an alternativ host check command
+
+1.2.2b5:
+    Core:
+    * Checks can now omit the typical "OK - " or "WARN -". This text
+      will be added automatically if missing.
+
+    livestatus:
+    * FIX: possible crash with VERY long downtime comments
+
+1.2.2b4:
+    Core:
+    * FIX: Fix output of cmk -D: datasource programs were missing
+    * FIX: allow unicode encoded extra_service_conf
+    * FIX: no default PING service if custom checks are defined
+    * FIX: check_mk_base: fixed rounding error in get_bytes_human_readable
+    * FIX: check_mk: improved support of utf-8 characters in extra_service_conf
+    * FIX: livestatus: table statehist now able to check AuthUser permissions
+    * New configuration variable contactgroup_members
+
+    Checks & Agents:
+    * FIX: smart - not trying to parse unhandled lines to prevent errors
+    * FIX: winperf_processor - fixed wrong calculations of usage
+    * FIX: WATO configuration of filesystem trends: it's hours, not days!
+    * FIX: mysql: fixed crash on computing IO information
+    * FIX: diskstat: fix local variable 'ios_per_sec' referenced before assignment
+    * FIX: multipath: ignore warning messages in agent due to invalid multipath.conf
+    * FIX: megaraid_bbu: deal with broken output ("Adpater"), found in Open-E
+    * FIX: megaraid_pdisk: deal with special output of Open-E
+    * FIX: jolokia_metrics.mem: renamed parameter totalheap to total
+    * FIX: megaraid_bbu: deal with broken output ("Adpater")
+    * FIX: check_ldap: added missing host address (check didn't work at all)
+    * FIX: check_ldap: added missing version option -2, -3, -3 -T (TLS)
+    * FIX: mssql: Agent plugin now supports MSSQL Server 2012
+    * FIX: hr_mem: fix max value in performance data (thanks to Michaël COQUARD)
+    * FIX: f5_bigip_psu: fix inventory function (returned list instead of tuple)
+    * FIX: mysql.connections: avoid crash on legacy agent output
+    * Linux agent: limit netstat to 10 seconds
+    * ps: Allow %1, %2, .. instead of %s in process_inventory. That allows
+      reordering of matched groups
+    * FIX: f5_bigip_psu - fixed inventory function
+    * FIX: printer_supply - fixed inventory function for some kind of OKI printers
+
+    Multisite:
+    * FIX: Fixed problem with error during localization scanning
+    * FIX: Fixed wrong localization right after a user changed its language
+    * FIX: Improved handling of error messages in bulk inventory
+    * FIX: fixed focus bug in transform valuespec class
+    * FIX: stop doing snapin refreshes after they have been removed
+    * FIX: sidebar snapins which refresh do not register for restart detection anymore
+    * FIX: fix user database corruption in case of a race condition
+    * FIX: added checks wether or not a contactgroup can be deleted
+    * FIX: Avoid deadlock due to lock on contacts.mk in some situations
+    * Changed sidebar snapin reload to a global interval (option:
+      sidebar_update_interval), defaults to 30 seconds
+    * Sidebar snapins are now bulk updated with one HTTP request each interval
+
+    BI:
+    * FIX: fixed invalid links to hosts and services in BI tree view
+    * FIX: fix exception in top/down and bottom/up views
+    * FIX: fix styling of top/down and bottom/up views (borders, padding)
+    * FIX: fix style of mouse pointer over BI boxes
+    * FIX: list of BI aggregates was incomplete in some cases
+    * FIX: single host aggregations didn't work for aggregations += [...]
+    * FIX: top-down and bottom-up was broken in case of "only problems"
+    * FIX: BI see_all permission is now working again
+    * Do not handle PENDING as "problem" anymore
+    * Make titles of non-leaf tree nodes klickable
+
+    WATO:
+    * FIX: flexible notification valuespec is now localizable
+    * FIX: Alias values of host/service/contact groups need to be set and unique
+           within the group
+    * FIX: Fixed exception when editing contactgroups without alias
+    * FIX: Fix localization of rule options
+    * FIX: ValueSpec OptionalDropDown: fix visibility if default is "other"
+    * Suggest use default value for filesystem levels that make sense
+    * Valuespec: CascadingDropdown now able to process choice values from functions
+    * Freshness checking for classical passive Nagios checks (custom_checks)
+
+1.2.2b3:
     Checks & Agents:
     * FIX: Fixed date parsing code ignoring the seconds value in several checks
            (ad_replication, cups_queues, heartbeat_crm, mssql_backup, smbios_sel)
@@ -449,6 +583,13 @@
       allow monitoring Siemens HiPath 3000/5000 series PBX.
     * if-checks now support "bit" as measurement unit
     * winperf_phydisk: monitor average queue length for read/write
+
+1.2.0p5:
+    Checks & Agents:
+    * FIX: windows agent: fixed possible crash in eventlog section
+
+    BI:
+    * FIX: fixed bug in aggregation count (thanks Neil) 
 
 1.2.0p4:
     WATO:

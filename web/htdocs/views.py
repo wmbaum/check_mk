@@ -293,15 +293,17 @@ def available_views():
             views[n] = view
 
     # 4. other users views, if public. Sill make sure we honor permission
-    #    for builtin views
-    for (u, n), view in html.multisite_views.items():
-        if n not in views and view["public"] and config.user_may(u, "general.publish_views"):
-            # Is there a builtin view with the same name? If yes, honor permissions.
-            permname = "view.%s" % n
-            if config.permission_exists(permname) \
-                and not config.may(permname):
-                continue
-            views[n] = view
+    #    for builtin views. Also the permission "general.see_user_views" is
+    #    necessary.
+    if config.may("general.see_user_views"):
+        for (u, n), view in html.multisite_views.items():
+            if n not in views and view["public"] and config.user_may(u, "general.publish_views"):
+                # Is there a builtin view with the same name? If yes, honor permissions.
+                permname = "view.%s" % n
+                if config.permission_exists(permname) \
+                    and not config.may(permname):
+                    continue
+                views[n] = view
 
     return views
 
@@ -2197,6 +2199,11 @@ def do_actions(view, what, action_rows, backurl):
     if message:
         if html.output_format == "html": # sorry for this hack
             message += '<br><a href="%s">%s</a>' % (backurl, _('Back to view'))
+            if html.var("show_checkboxes") == "1":
+                html.del_var("selection")
+                weblib.selection_id()
+                backurl += "&selection=" + html.var("selection")
+                message += '<br><a href="%s">%s</a>' % (backurl, _('Back to view with checkboxes reset'))
         html.message(message)
 
     return True

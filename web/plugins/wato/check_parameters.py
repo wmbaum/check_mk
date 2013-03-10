@@ -131,7 +131,7 @@ register_rule(group + '/' + subgroup_applications,
       add_label = _("Add pattern"),
     ),
     itemtype = 'item',
-    itemname = 'logfile',
+    itemname = 'Logfile',
     itemhelp = _("Put the item names of the logfiles here. For example \"System$\" "
                  "to select the service \"LOG System\"."),
     match = 'list',
@@ -293,14 +293,17 @@ register_rule(group + '/' + subgroup_inventory,
         elements = [
             ('descr', TextAscii(
                 title = _('Service Description'),
-                help  = _('<p>The service description may contain one or more occurances of %s. If you do this, then the pattern must be a regular '
+                help  = _('<p>The service description may contain one or more occurances of <tt>%s</tt>. If you do this, then the pattern must be a regular '
                           'expression and be prefixed with ~. For each %s in the description, the expression has to contain one "group". A group '
-                          'is a subexpression enclosed in brackets, for example (.*) or ([a-zA-Z]+) or (...). When the inventory finds a process '
+                          'is a subexpression enclosed in brackets, for example <tt>(.*)</tt> or <tt>([a-zA-Z]+)</tt> or <tt>(...)</tt>. When the inventory finds a process '
                           'matching the pattern, it will substitute all such groups with the actual values when creating the check. That way one '
                           'rule can create several checks on a host.</p>'
-                          '<p>If the pattern contains more groups thenoccurrances of %s in the service  description then only the first matching '
+                          '<p>If the pattern contains more groups then occurrances of <tt>%s</tt> in the service description then only the first matching '
                           'subexpressions  are used for the  service descriptions. The matched substrings corresponding to the remaining groups '
-                          'are copied into the regular expression, nevertheless.</p>'),
+                          'are copied into the regular expression, nevertheless.</p>'
+                          '<p>As an alternative to <tt>%s</tt> you may also use <tt>%1</tt>, <tt>%2</tt>, etc. '
+                          'These will be replaced by the first, second, ... matching group. This allows you to reorder things.</p>'
+                          ),
             )),
             ('match', Alternative(
                 title = _("Process Matching"),
@@ -386,9 +389,42 @@ register_rule(group + '/' + subgroup_inventory,
     match = 'list',
 )
 
-checkgroups = []
+register_rule(group + '/' + subgroup_inventory,
+    varname   = "inventory_sap_values",
+    title     = _('SAP Single Value Inventory'),
+    valuespec = Dictionary(
+        elements = [
+            ('match', Alternative(
+                title = _("Node Path Matching"),
+                elements = [
+                    TextAscii(
+                        title = _("Exact path of the node"),
+                        size = 100,
+                    ),
+                    Transform(
+                        RegExp(size = 100),
+                        title = _("Regular expression matching the path"),
+                        help = _("This regex must match the <i>beginning</i> of the complete "
+                                 "path of the node as reported by the agent"),
+                        forth = lambda x: x[1:],   # remove ~
+                        back  = lambda x: "~" + x, # prefix ~
+                    ),
+                    FixedValue(
+                        None,
+                        totext = "",
+                        title = _("Match all nodes"),
+                    )
+                ],
+                match = lambda x: (not x and 2) or (x[0] == '~' and 1 or 0),
+                default_value = 'SAP CCMS Monitor Templates/Dialog Overview/Dialog Response Time/ResponseTime',
+            )),
+        ],
+        optional_keys = [],
+    ),
+    match = 'list',
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "ad_replication",
     _("Active Directory Replication"),
@@ -404,9 +440,9 @@ checkgroups.append((
         help = _("The name of the replication partner (Destination DC Site/Destination DC)."),
     ),
     "first"
-))
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "plesk_backups",
     _("Plesk Backups"),
@@ -450,9 +486,10 @@ checkgroups.append((
         title = _("Service descriptions"),
         allow_empty = False
     ),
-    None))
+    None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_storage,
     "brocade_fcport",
     _("Brocade FC FibreChannel ports"),
@@ -594,9 +631,9 @@ checkgroups.append((
         help = _("The name of the switch port"),
     ),
     "first"
-))
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_storage,
     "fs_mount_options",
     _("Filesystem mount options (Linux/UNIX)"),
@@ -609,11 +646,10 @@ checkgroups.append((
     TextAscii(
         title = _("Mount point"),
         allow_empty = False),
-    "first"))
+    "first"
+)
 
-
-
-checkgroups.append((
+register_check_parameters(
    subgroup_os,
     "systemtime",
     _("Windows system time offset"),
@@ -626,9 +662,9 @@ checkgroups.append((
     ),
     None,
     "first"
-))
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_storage,
     "fileinfo",
     _("Size and age of single files"),
@@ -656,8 +692,8 @@ checkgroups.append((
                 Tuple(
                     title = _("Minimal size"),
                     elements = [
-                      Filesize(title = _("Warning lower as")),
-                      Filesize(title = _("Critical lower as")),
+                      Filesize(title = _("Warning when lower then")),
+                      Filesize(title = _("Critical when lower then")),
                     ]
                 )
             ),
@@ -665,8 +701,8 @@ checkgroups.append((
                 Tuple(
                     title = _("Maximal size"),
                     elements = [
-                      Filesize(title = _("Warning higher as")),
-                      Filesize(title = _("Critical higher as")),
+                      Filesize(title = _("Warning when higher then")),
+                      Filesize(title = _("Critical when higher then")),
                     ]
                 )
             )
@@ -677,7 +713,7 @@ checkgroups.append((
         title = _("File name"),
         allow_empty = True),
     "first"
-))
+)
 
 register_rule(group + '/' + subgroup_storage,
     varname   = "filesystem_groups",
@@ -740,8 +776,7 @@ register_rule(group + '/' + subgroup_storage,
     match = 'list',
 )
 
-
-checkgroups.append((
+register_check_parameters(
     subgroup_storage,
     "fileinfo-groups",
     _("Size, age and count of file groups"),
@@ -787,8 +822,8 @@ checkgroups.append((
                 Tuple(
                     title = _("Minimal size"),
                     elements = [
-                      Filesize(title = _("Warning lower as")),
-                      Filesize(title = _("Critical lower as")),
+                      Filesize(title = _("Warning when lower then")),
+                      Filesize(title = _("Critical when lower then")),
                     ]
                 )
             ),
@@ -796,8 +831,8 @@ checkgroups.append((
                 Tuple(
                     title = _("Maximal size"),
                     elements = [
-                      Filesize(title = _("Warning higher as")),
-                      Filesize(title = _("Critical higher as")),
+                      Filesize(title = _("Warning when higher then")),
+                      Filesize(title = _("Critical when higher then")),
                     ]
                 )
             ),
@@ -805,8 +840,8 @@ checkgroups.append((
                 Tuple(
                     title = _("Minimal file count"),
                     elements = [
-                      Integer(title = _("Warning lower as")),
-                      Integer(title = _("Critical lower as")),
+                      Integer(title = _("Warning when lower then")),
+                      Integer(title = _("Critical when lower then")),
                     ]
                 )
             ),
@@ -814,8 +849,8 @@ checkgroups.append((
                 Tuple(
                     title = _("Maximal file count"),
                     elements = [
-                      Integer(title = _("Warning higher as")),
-                      Integer(title = _("Critical higher as")),
+                      Integer(title = _("Warning when higher then")),
+                      Integer(title = _("Critical when higher then")),
                     ]
                 )
             ),
@@ -825,9 +860,9 @@ checkgroups.append((
         title = _("Filegroup Name"),
         allow_empty = True),
     "first"
-))
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_storage,
     "netapp_fcprtio",
     _("Netapp FC Port throughput"),
@@ -837,8 +872,8 @@ checkgroups.append((
                 Tuple(
                     title = _("Read"),
                     elements = [
-                      Filesize(title = _("Warning lower as")),
-                      Filesize(title = _("Critical lower as")),
+                      Filesize(title = _("Warning when lower then")),
+                      Filesize(title = _("Critical when lower then")),
                     ]
                 )
             ),
@@ -846,8 +881,8 @@ checkgroups.append((
                 Tuple(
                     title = _("Write"),
                     elements = [
-                      Filesize(title = _("Warning higher as")),
-                      Filesize(title = _("Critical higher as")),
+                      Filesize(title = _("Warning when higher then")),
+                      Filesize(title = _("Critical when higher then")),
                     ]
                 )
             )
@@ -858,10 +893,10 @@ checkgroups.append((
         title = _("File name"),
         allow_empty = True),
     "first"
-))
+)
 
 
-checkgroups.append((
+register_check_parameters(
     subgroup_os,
     "memory_pagefile_win",
     _("Memory and pagefile levels for Windows"),
@@ -881,8 +916,8 @@ checkgroups.append((
                        Tuple(
                            title = _("Absolute levels"),
                            elements = [
-                                Filesize(title = _("Warning higher as")),
-                                Filesize(title = _("Critical higher as")),
+                                Filesize(title = _("Warning when higher then")),
+                                Filesize(title = _("Critical when higher then")),
                            ]
                         )
                    ])),
@@ -900,17 +935,17 @@ checkgroups.append((
                        Tuple(
                            title = _("Absolute levels"),
                            elements = [
-                                Filesize(title = _("Warning higher as")),
-                                Filesize(title = _("Critical higher as")),
+                                Filesize(title = _("Warning when higher then")),
+                                Filesize(title = _("Critical when higher then")),
                            ]
                         )
                    ])),
         ]),
     None,
     "dict"
-))
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_networking,
     "tcp_conn_stats",
     ("TCP connection stats"),
@@ -1038,9 +1073,9 @@ checkgroups.append((
     ),
     None,
     "first"
-))
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "msx_queues",
     _("MS Exchange message queues"),
@@ -1064,10 +1099,10 @@ checkgroups.append((
               ],
            otherlabel = _("specify manually ->"),
            explicit = TextAscii(allow_empty = False)),
-    "first")
+    "first"
 )
 
-checkgroups.append((
+register_check_parameters(
     subgroup_storage,
     "filesystem",
     _("Filesystems (used space and growth)"),
@@ -1077,16 +1112,18 @@ checkgroups.append((
               Tuple(
                   title = _("Levels for the used space"),
                   elements = [
-                      Percentage(title = _("Warning at"),  label = _("% usage"), allow_int = True),
-                      Percentage(title = _("Critical at"), label = _("% usage"), allow_int = True)])),
+                      Percentage(title = _("Warning at"),  label = _("% usage"), allow_int = True, default_value=80),
+                      Percentage(title = _("Critical at"), label = _("% usage"), allow_int = True, default_value=90)])),
             (  "magic",
                Float(
                   title = _("Magic factor (automatic level adaptation for large filesystems)"),
+                  default_value = 0.8,
                   minvalue = 0.1,
                   maxvalue = 1.0)),
             (  "magic_normsize",
                Integer(
                    title = _("Reference size for magic factor"),
+                   default_value = 20,
                    minvalue = 1,
                    label = _("GB"))),
             ( "levels_low",
@@ -1095,12 +1132,13 @@ checkgroups.append((
                   help = _("The filesystem levels will never fall below these values, when using "
                            "the magic factor and the filesystem is very small."),
                   elements = [
-                      Percentage(title = _("Warning at"),  label = _("usage"), allow_int = True),
-                      Percentage(title = _("Critical at"), label = _("usage"), allow_int = True)])),
+                      Percentage(title = _("Warning at"),  label = _("usage"), allow_int = True, default_value=50),
+                      Percentage(title = _("Critical at"), label = _("usage"), allow_int = True, default_value=60)])),
             (  "trend_range",
                Optional(
                    Integer(
                        title = _("Range for filesystem trend computation"),
+                       default_value = 24,
                        minvalue = 1,
                        label= _("hours")),
                    title = _("Trend computation"),
@@ -1109,22 +1147,22 @@ checkgroups.append((
                Tuple(
                    title = _("Levels on trends in MB per range"),
                    elements = [
-                       Integer(title = _("Warning at"), label = _("MB / range")),
-                       Integer(title = _("Critical at"), label = _("MB / range"))
+                       Integer(title = _("Warning at"), label = _("MB / range"), default_value = 100),
+                       Integer(title = _("Critical at"), label = _("MB / range"), default_value = 200)
                    ])),
             (  "trend_perc",
                Tuple(
                    title = _("Levels for the percentual growth"),
                    elements = [
-                       Percentage(title = _("Warning at"), label = _("% / range")),
-                       Percentage(title = _("Critical at"), label = _("% / range"))
+                       Percentage(title = _("Warning at"), label = _("% / range"), default_value = 5,),
+                       Percentage(title = _("Critical at"), label = _("% / range"), default_value = 10,),
                    ])),
             (  "trend_timeleft",
                Tuple(
                    title = _("Levels on the time left until the filesystem gets full"),
                    elements = [
-                       Integer(title = _("Warning at"), label = _("days left")),
-                       Integer(title = _("Critical at"), label = _("days left"))
+                       Integer(title = _("Warning at"), label = _("hours left"), default_value = 12,),
+                       Integer(title = _("Critical at"), label = _("hours left"), default_value = 6, ),
                    ])),
             ( "trend_perfdata",
               Checkbox(
@@ -1138,7 +1176,7 @@ checkgroups.append((
         help = _("For Linux/UNIX systems, specify the mount point, for Windows systems "
                  "the drive letter uppercase followed by a colon, e.g. <tt>C:</tt>"),
         allow_empty = False),
-    "dict")
+    "dict"
 )
 
 register_check_parameters(
@@ -1162,9 +1200,10 @@ register_check_parameters(
     TextAscii(
         title = _("Name of the bonding interface"),
     ),
-    "dict")
+    "dict"
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_networking,
     "if",
     _("Network interfaces and switch ports"),
@@ -1181,7 +1220,6 @@ checkgroups.append((
                       Percentage(title = _("Warning at"), label = _("errors")),
                       Percentage(title = _("Critical at"), label = _("errors"))
                   ])),
-
              ( "speed",
                OptionalDropdownChoice(
                    title = _("Operating speed"),
@@ -1193,9 +1231,10 @@ checkgroups.append((
                             "traffic monitoring (see below)."),
                   choices = [
                      ( None,       _("ignore speed") ),
-                     ( 10000000,   "10 MBit/s" ),
-                     ( 100000000,  "100 MBit/s" ),
-                     ( 1000000000, "1 GBit/s" ) ],
+                     ( 10000000,    "10 MBit/s" ),
+                     ( 100000000,   "100 MBit/s" ),
+                     ( 1000000000,  "1 GBit/s" ),
+                     ( 10000000000, "10 GBit/s" ) ],
                   otherlabel = _("specify manually ->"),
                   explicit = \
                       Integer(title = _("Other speed in bits per second"),
@@ -1213,6 +1252,44 @@ checkgroups.append((
                     label = _("Ignore the operational state"),
                     none_label = _("ignore"),
                     negate = True)
+             ),
+             ( "assumed_speed_in",
+               OptionalDropdownChoice(
+                        title = _("Assumed input speed"),
+                        help = _("If the automatic detection of the incoming link speed does not work "
+                                 "or the switch's capabilities are throttled because of the network setup "
+                                 "you can set the assummend incoming speed here."),
+                  choices = [
+                     ( None,       _("ignore speed") ),
+                     ( 10000000,    "10 MBit/s" ),
+                     ( 100000000,   "100 MBit/s" ),
+                     ( 1000000000,  "1 GBit/s" ),
+                     ( 10000000000, "10 GBit/s" ) ],
+                  otherlabel = _("specify manually ->"),
+                  default_value = 16000000,
+                  explicit = \
+                      Integer(title = _("Other speed in bits per second"),
+                              label = _("Bits per second"),
+                              size = 10))
+             ),
+             ( "assumed_speed_out",
+               OptionalDropdownChoice(
+                        title = _("Assumed output speed"),
+                        help = _("If the automatic detection of the outgoing speed does not work "
+                                 "or the switch's capabilities are throttled because of the network setup "
+                                 "you can set the assummend outgoing speed here."),
+                  choices = [
+                     ( None,       _("ignore speed") ),
+                     ( 10000000,    "10 MBit/s" ),
+                     ( 100000000,   "100 MBit/s" ),
+                     ( 1000000000,  "1 GBit/s" ),
+                     ( 10000000000, "10 GBit/s" ) ],
+                  otherlabel = _("specify manually ->"),
+                  default_value = 1500000,
+                  explicit = \
+                      Integer(title = _("Other speed in bits per second"),
+                              label = _("Bits per second"),
+                              size = 12))
              ),
              ( "unit",
                RadioChoice(
@@ -1265,9 +1342,86 @@ checkgroups.append((
         title = _("port specification"),
         allow_empty = False),
     "dict",
-    ))
+)
 
-checkgroups.append((
+register_check_parameters(
+    subgroup_networking,
+    "cisco_qos",
+    _("Cisco quality of service"),
+    Dictionary(
+        elements = [
+             ( "unit",
+               RadioChoice(
+                   title = _("Measurement unit"),
+                   help = _("Here you can specifiy the measurement unit of the network interface"),
+                   default_value = "bit",
+                   choices = [
+                       ( "bit",  _("Bits") ),
+                       ( "byte", _("Bytes") ),],
+               )),
+             ( "post",
+               Alternative(
+                   title = _("Used bandwidth (traffic)"),
+                   help = _("Settings levels on the used bandwidth is optional. If you do set "
+                            "levels you might also consider using an averaging."),
+                   elements = [
+                       Tuple(
+                           title = _("Percentual levels (in relation to policy speed)"),
+                           elements = [
+                               Percentage(title = _("Warning at"), max_value=1000, label = _("% of port speed")),
+                               Percentage(title = _("Critical at"), max_value=1000, label = _("% of port speed")),
+                           ]
+                       ),
+                       Tuple(
+                           title = _("Absolute levels in bits or bytes per second"),
+                           help = _("Depending on the measurement unit (defaults to bit) the absolute levels are set in bit or byte"),
+                           elements = [
+                               Integer(title = _("Warning at"), size = 10, label = _("bits / bytes per second")),
+                               Integer(title = _("Critical at"), size = 10, label = _("bits / bytes per second")),
+                           ]
+                        )
+                   ])
+               ),
+               ( "average",
+                 Integer(
+                     title = _("Average values"),
+                     help = _("By activating the computation of averages, the levels on "
+                              "errors and traffic are applied to the averaged value. That "
+                              "way you can make the check react only on long-time changes, "
+                              "not on one-minute events."),
+                     label = _("minutes"),
+                     minvalue = 1,
+                 )
+               ),
+               ( "drop",
+                 Alternative(
+                     title = _("Number of dropped bits or bytes per second"),
+                     help = _("Depending on the measurement unit (defaults to bit) you can set the warn and crit "
+                              "levels for the number of dropped bits or bytes"),
+                     elements = [
+                         Tuple(
+                             title = _("Percentual levels (in relation to policy speed)"),
+                             elements = [
+                                 Percentage(title = _("Warning at"), max_value=1000, label = _("% of port speed")),
+                                 Percentage(title = _("Critical at"), max_value=1000, label = _("% of port speed")),
+                             ]
+                         ),
+                         Tuple(
+                             elements = [
+                                 Integer(title = _("Warning at"), size = 8, label = _("bits / bytes per second")),
+                                 Integer(title = _("Critical at"), size = 8, label = _("bits / bytes per second")),
+                             ]
+                          )
+                     ])
+               ),
+           ]),
+    TextAscii(
+        title = _("port specification"),
+        allow_empty = False),
+    "dict",
+)
+
+register_check_parameters(
     subgroup_os,
     "cisco_mem",
     _("Cisco Memory Usage"),
@@ -1294,9 +1448,9 @@ checkgroups.append((
         allow_empty = False
     ),
     None
-))
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_os,
     "memory",
     _("Main memory usage (Linux / UNIX / Other Devices)"),
@@ -1320,9 +1474,10 @@ checkgroups.append((
                   Integer(title = _("Warning at"), unit = _("MB")),
                   Integer(title = _("Critical at"), unit = _("MB"))]),
             ]),
-    None, None))
+    None, None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_printing,
     "printer_supply",
     _("Printer cardridge levels"),
@@ -1337,13 +1492,13 @@ checkgroups.append((
         allow_empty = True
     ),
     None,
-    ))
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_os,
     "cpu_load",
     _("CPU load (not utilization!)"),
-    Tuple(
+    Levels(
           help = _("The CPU load of a system is the number of processes currently being "
                    "in the state <u>running</u>, i.e. either they occupy a CPU or wait "
                    "for one. The <u>load average</u> is the averaged CPU load over the last 1, "
@@ -1352,12 +1507,14 @@ checkgroups.append((
                    "those levels. The configured levels are multiplied with the number of "
                    "CPUs, so you should configure the levels based on the value you want to "
                    "be warned \"per CPU\"."),
-          elements = [
-              Float(title = _("Warning at a load of")),
-              Float(title = _("Critical at a load of"))]),
-    None, None))
+          unit = "per core",
+          default_difference = (2.0, 4.0),
+          default_levels = (5.0, 10.0),
+    ),
+    None, None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_os,
     "cpu_utilization",
     _("CPU utilization (percentual)"),
@@ -1370,9 +1527,10 @@ checkgroups.append((
         help = _("The CPU utilization sums up the percentages of CPU time that is used "
                  "for user processes and kernel routines over all available cores within "
                  "the last check interval. The possible range is from 0% to 100%")),
-    None, None))
+    None, None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_os,
     "cpu_iowait",
     _("CPU utilization (disk wait)"),
@@ -1390,9 +1548,10 @@ checkgroups.append((
                  "for data coming from or going to disk. If you have a significant disk wait "
                  "the the bottleneck of your server is IO. Please note that depending on the "
                  "applications being run this might or might not be totally normal.")),
-    None, None))
+    None, None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_environment,
     "akcp_humidity",
     _("AKCP Humidity Levels"),
@@ -1408,9 +1567,10 @@ checkgroups.append((
     TextAscii(
         title = _("Service descriptions"),
         allow_empty = False),
-     None))
+     None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "oracle_tablespaces",
     _("Oracle Tablespaces"),
@@ -1488,17 +1648,17 @@ checkgroups.append((
                 Checkbox(
                   title = _("Autoextend"),
                   label = _("Autoextension is expected"),
-                  help = _(""))),
+                  help = "")),
                    ]),
     TextAscii(
         title = _("Explicit tablespaces"),
         help = _("Here you can set explicit tablespaces by defining them via SID and the tablespace name, separated by a dot, for example <b>pengt.TEMP</b>"),
         regex = '.+\..+',
         allow_empty = False),
-     None))
+     None
+)
 
-
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "oracle_logswitches",
     _("Oracle Logswitches"),
@@ -1514,10 +1674,10 @@ checkgroups.append((
     TextAscii(
         title = _("Service descriptions"),
         allow_empty = False),
-     None))
+     None
+)
 
-
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "mssql_backup",
     _("MSSQL Backups"),
@@ -1538,9 +1698,10 @@ checkgroups.append((
     TextAscii(
         title = _("Service descriptions"),
         allow_empty = False),
-     None))
+     None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "mssql_counters_locks",
     _("MSSQL Locks"),
@@ -1593,10 +1754,10 @@ checkgroups.append((
         title = _("Service descriptions"),
         allow_empty = False
     ),
-    None))
+    None
+)
 
-
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "mysql_sessions",
     _("MySQL Sessions & Connections"),
@@ -1635,9 +1796,10 @@ checkgroups.append((
          ]
     ),
     None,
-    None))
+    None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "mysql_innodb_io",
     _("MySQL InnoDB Throughput"),
@@ -1667,9 +1829,10 @@ checkgroups.append((
                  unit = "min"))
         ]),
     None,
-    "dict"))
+    "dict"
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "mysql_connections",
     _("MySQL Connections"),
@@ -1691,9 +1854,10 @@ checkgroups.append((
             ),
         ]),
     None,
-    "dict"))
+    "dict"
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "dbsize",
     _("Size of MySQL/PostgresQL databases"),
@@ -1710,9 +1874,10 @@ checkgroups.append((
     TextAscii(
         title = _("Name of the database"),
     ),
-    "first"))
+    "first"
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "postgres_sessions",
     _("PostgreSQL Sessions"),
@@ -1741,10 +1906,11 @@ checkgroups.append((
          ]
     ),
     None,
-    None))
+    None
+)
 
 
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "oracle_sessions",
     _("Oracle Sessions"),
@@ -1759,9 +1925,10 @@ checkgroups.append((
     TextAscii(
         title = _("Database name"),
         allow_empty = False),
-     None))
+     None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "postgres_stat_database",
     _("PostgreSQL Database Statistics"),
@@ -1827,9 +1994,10 @@ checkgroups.append((
     TextAscii(
         title = _("Database name"),
         allow_empty = False),
-    None))
+    None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "win_dhcp_pools",
     _("Windows DHCP Pool"),
@@ -1843,9 +2011,10 @@ checkgroups.append((
     TextAscii(
         title = _("Service descriptions"),
         allow_empty = False),
-     None))
+     None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_os,
     "threads",
     _("Number of threads"),
@@ -1855,9 +2024,10 @@ checkgroups.append((
           elements = [
               Integer(title = _("Warning at"), unit = _("threads"), default_value = 1000),
               Integer(title = _("Critical at"), unit = _("threads"), default_value = 2000)]),
-    None, None))
+    None, None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "vms_procs",
     _("Number of processes on OpenVMS"),
@@ -1868,56 +2038,50 @@ checkgroups.append((
                   Integer(title = _("Critical at"), unit = _("processes"), default_value = 200)]),
         title = _("Impose levels on number of processes"),
     ),
-    None, None))
+    None, None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_os,
     "vm_counter",
     _("Number of kernel events per second"),
-    Tuple(
+    Levels(
           help = _("This ruleset applies to several similar checks measing various kernel "
                    "events like context switches, process creations and major page faults. "
                    "Please create separate rules for each type of kernel counter you "
                    "want to set levels for."),
-          show_titles = False,
-          elements = [
-              Optional(
-                 Float(label = _("events per second")),
-                 title = _("Set warning level:"),
-                 sameline = True),
-              Optional(
-                 Float(label = _("events per second")),
-                 title = _("Set critical level:"),
-                 sameline = True)]),
-
+          unit = _("events per second"),
+          default_levels = (1000, 5000),
+          default_difference = (500.0, 1000.0),
+          default_value = None,
+    ),
     DropdownChoice(
         title = _("kernel counter"),
         choices = [
            ( "Context Switches",  _("Context Switches") ),
            ( "Process Creations", _("Process Creations") ),
            ( "Major Page Faults", _("Major Page Faults") )]),
-    "first"))
+    "first"
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_storage,
     "disk_io",
     _("Levels on disk IO (throughput)"),
     Dictionary(
         elements = [
             ( "read",
-              Tuple(
+              Levels(
                   title = _("Read throughput"),
-                  elements = [
-                      Float(title = _("warning at"), unit = _("MB/s")),
-                      Float(title = _("critical at"), unit = _("MB/s"))
-                  ])),
+                  unit = _("MB/s"),
+                  default_value = None,
+                  default_levels = (50.0, 100.0))),
             ( "write",
-              Tuple(
+              Levels(
                   title = _("Write throughput"),
-                  elements = [
-                      Float(title = _("warning at"), unit = _("MB/s")),
-                      Float(title = _("critical at"), unit = _("MB/s"))
-                  ])),
+                  unit = _("MB/s"),
+                  default_value = None,
+                  default_levels = (50.0, 100.0))),
             ( "average",
               Integer(
                   title = _("Average"),
@@ -1976,7 +2140,8 @@ checkgroups.append((
                  "sum of read or write throughput write <tt>read</tt> or <tt>write</tt> resp. "
                  "A per-disk IO is specified by the drive letter and a colon on Windows "
                  "(e.g. <tt>C:</tt>) or by the device name on Linux/UNIX (e.g. <tt>/dev/sda</tt>).")),
-    "first"))
+    "first"
+)
 
 
 register_rule(
@@ -2031,9 +2196,7 @@ register_rule(group + '/' + subgroup_networking,
     match = 'list',
 )
 
-
-
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "mailqueue_length",
     _("Number of mails in outgoing mail queue"),
@@ -2043,37 +2206,42 @@ checkgroups.append((
           elements = [
               Integer(title = _("Warning at"), label = _("mails")),
               Integer(title = _("Critical at"), label = _("mails"))]),
-    None, None))
+    None, None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_os,
     "uptime",
     _("Display the system's uptime as a check"),
     None,
-    None, None))
+    None, None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_storage,
     "zpool_status",
     _("ZFS storage pool status"),
     None,
-    None, None))
+    None, None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_virt,
     "vm_state",
     _("Overall state of a virtual machine"),
     None,
-    None, None))
+    None, None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_hardware,
     "hw_errors",
     _("Simple checks for BIOS/Hardware errors"),
     None,
-    None, None))
+    None, None
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "omd_status",
     _("OMD site status"),
@@ -2081,9 +2249,10 @@ checkgroups.append((
     TextAscii(
         title = _("Name of the OMD site"),
         help = _("The name of the OMD site to check the status for")),
-    "first"))
+    "first"
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_storage,
     "network_fs",
     _("Network filesystem - overall status (e.g. NFS)"),
@@ -2091,9 +2260,10 @@ checkgroups.append((
     TextAscii(
         title = _("Name of the mount point"),
         help = _("For NFS enter the name of the mount point.")),
-    "first"))
+    "first"
+)
 
-checkgroups.append((
+register_check_parameters(
      subgroup_storage,
     "multipath",
     _("Multipathing - health of a multipath LUN"),
@@ -2104,9 +2274,10 @@ checkgroups.append((
         help = _("For Linux multipathing this is either the UUID (e.g. "
                  "60a9800043346937686f456f59386741), or the configured "
                  "alias.")),
-    "first"))
+    "first"
+)
 
-checkgroups.append((
+register_check_parameters(
      subgroup_storage,
     "hpux_multipath",
     _("Multipathing on HPUX - state of paths of a LUN"),
@@ -2120,10 +2291,10 @@ checkgroups.append((
         ]),
     TextAscii(
         title = _("WWID of the LUN")),
-    "first"))
+    "first"
+)
 
-
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "services",
     _("Windows Services"),
@@ -2178,9 +2349,10 @@ checkgroups.append((
          "do not mix up the service name with the display name of the service."
          "The latter one is just being displayed as a further information."),
         allow_empty = False),
-    "first"))
+    "first"
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_storage,
     "raid",
     _("RAID: overall state"),
@@ -2190,9 +2362,10 @@ checkgroups.append((
         help = _("For Linux MD specify the device name without the "
                  "<tt>/dev/</tt>, e.g. <tt>md0</tt>, for hardware raids "
                  "please refer to the manual of the actual check being used.")),
-    "first"))
+    "first"
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_storage,
     "raid_disk",
     _("RAID: state of a single disk"),
@@ -2206,9 +2379,10 @@ checkgroups.append((
         title = _("Number or ID of the disk"),
         help = _("How the disks are named depends on the type of hardware being "
                  "used. Please look at already inventorized checks for examples.")),
-    "first"))
+    "first"
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_environment,
     "room_temperature",
     _("Room temperature (external thermal sensors)"),
@@ -2223,9 +2397,10 @@ checkgroups.append((
     TextAscii(
         title = _("Sensor ID"),
         help = _("The identificator of the themal sensor.")),
-    "first"))
+    "first"
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_environment,
     "eaton_enviroment",
     _("Temperature and Humidity for Eaton UPS"),
@@ -2254,10 +2429,10 @@ checkgroups.append((
                   ])),
             ]),
             None,
-    "first"))
+    "first"
+)
 
-
-checkgroups.append((
+register_check_parameters(
     subgroup_environment,
     "pdu_gude",
     _("Levels for Gude PDU Devices"),
@@ -2302,10 +2477,11 @@ checkgroups.append((
     TextAscii(
         title = _("Phase Number"),
         help = _("The Number of the power Phase.")),
-    "first"))
+    "first"
+)
 
 
-checkgroups.append((
+register_check_parameters(
     subgroup_environment,
     "temperature_auto",
     _("Temperature sensors with builtin levels"),
@@ -2313,9 +2489,10 @@ checkgroups.append((
     TextAscii(
         title = _("Sensor ID"),
         help = _("The identificator of the themal sensor.")),
-    "first"))
+    "first"
+)
 
-checkgroups.append((
+register_check_parameters(
    subgroup_os,
     "ntp_time",
     _("State of NTP time synchronisation"),
@@ -2342,9 +2519,9 @@ checkgroups.append((
     ),
     None,
     "first"
-))
+)
 
-checkgroups.append((
+register_check_parameters(
    subgroup_os,
     "apc_symentra",
     _("Levels for APC Symentra Check"),
@@ -2370,7 +2547,7 @@ checkgroups.append((
     ),
     None,
     "first"
-))
+)
 
 syslog_facilities = [
     (0, "kern"),
@@ -2395,7 +2572,7 @@ syslog_facilities = [
     (23, "local7"),
 ]
 
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "jvm_memory",
     _("JVM memory levels"),
@@ -2465,9 +2642,9 @@ checkgroups.append((
         allow_empty = False,
     ),
     "dict"
-))
+)
 
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "db2_mem",
     _("Memory levels for DB2 memory usage"),
@@ -2480,72 +2657,107 @@ checkgroups.append((
     TextAscii(
         title = _("Instance name"),
         allow_empty = True),
-    "first"))
+    "first"
+)
 
-
-checkgroups.append((
-    subgroup_applications,
+register_check_parameters(subgroup_applications,
     "logwatch_ec",
     _('Logwatch Event Console Forwarding'),
-    Dictionary(
+    Alternative(
+        title = _("Forwarding"),
+        help = _("Instead of using the regular logwatch check all lines received by logwatch can "
+                 "be forwarded to a Check_MK event console daemon to be processed. The target event "
+                 "console can be configured for each host in a separate rule."),
         elements = [
-            ('method', Alternative(
-                title = _("Forwarding Method"),
+            FixedValue(
+                None,
+                totext = "Messages are handled by logwatch.",
+                title = _("No forwarding"),
+            ),
+            Dictionary(
+                title = _('Forward Messages to Event Console'),
                 elements = [
-                    FixedValue(
-                        None,
-                        totext = "",
-                        title = _("Send events to local event console in same OMD site"),
+                    ('restrict_logfiles',
+                        ListOfStrings(
+                            title = _('Restrict Logfiles (Prefix matching regular expressions)'),
+                            help  = _("Put the item names of the logfiles here. For example \"System$\" "
+                                      "to select the service \"LOG System\". You can use regular expressions "
+                                      "here which must match the beginning of the logfile name."),
+                        ),
                     ),
-                    TextAscii(
-                        title = _("Send events to local event console into unix socket"),
-                        allow_empty = False,
-                    ),
-                    Tuple(
-                        title = _("Send events to remote syslog host"),
+                    ('method', Alternative(
+                        title = _("Forwarding Method"),
                         elements = [
-                            DropdownChoice(
-                                choices = [
-                                    ('udp', _('UDP')),
-                                    ('tcp', _('TCP')),
+                            Alternative(
+                                title = _("Send events to local event console"),
+                                elements = [
+                                    FixedValue(
+                                        "",
+                                        totext = "Directly forward to event console",
+                                        title = _("Send events to local event console in same OMD site"),
+                                    ),
+                                    TextAscii(
+                                        title = _("Send events to local event console into unix socket"),
+                                        allow_empty = False,
+                                    ),
+
+                                    FixedValue(
+                                        "spool:",
+                                        totext = "Spool to event console",
+                                        title = _("Spooling: Send events to local event console in same OMD site"),
+                                    ),
+                                    Transform(
+                                        TextAscii(),
+                                        title = _("Spooling: Send events to local event console into given spool directory"),
+                                        allow_empty = False,
+                                        forth = lambda x: x[6:],        # remove prefix
+                                        back  = lambda x: "spool:" + x, # add prefix
+                                    ),
                                 ],
-                                title = _("Protocol"),
+                                match = lambda x: x and (x == 'spool:' and 2 or x.startswith('spool:') and 3 or 1) or 0
                             ),
-                            TextAscii(
-                                title = _("Address"),
-                                allow_empty = False,
+                            Tuple(
+                                title = _("Send events to remote syslog host"),
+                                elements = [
+                                    DropdownChoice(
+                                        choices = [
+                                            ('udp', _('UDP')),
+                                            ('tcp', _('TCP')),
+                                        ],
+                                        title = _("Protocol"),
+                                    ),
+                                    TextAscii(
+                                        title = _("Address"),
+                                        allow_empty = False,
+                                    ),
+                                    Integer(
+                                        title = _("Port"),
+                                        allow_empty = False,
+                                        default_value = 514,
+                                        minvalue = 1,
+                                        maxvalue = 65535,
+                                        size = 6,
+                                    ),
+                                ]
                             ),
-                            Integer(
-                                title = _("Port"),
-                                allow_empty = False,
-                                default_value = 514,
-                                minvalue = 1,
-                                maxvalue = 65535,
-                                size = 6,
-                            ),
-                        ]
-                    ),
+                        ],
+                    )),
+                    ('facility', DropdownChoice(
+                        title = _("Syslog facility for forwarded messages"),
+                        help = _("When forwarding messages and no facility can be extracted from the "
+                                 "message this facility is used."),
+                        choices = syslog_facilities,
+                        default_value = 17, # local1
+                    )),
                 ],
-            )),
-            ('facility', DropdownChoice(
-                title = _("Syslog facility for forwarded messages"),
-                help = _("When forwarding messages and no facility can be extracted from the "
-                         "message this facility is used."),
-                choices = syslog_facilities,
-                default_value = 17, # local1
-            )),
+                optional_keys = ['restrict_logfiles'],
+            ),
         ],
-        optional_keys = [],
+        default_value = '',
     ),
     None,
-    'first'
-))
-
-# Create rules for check parameters of inventorized checks
-for subgroup, checkgroup, title, valuespec, itemspec, matchtype in checkgroups:
-    register_check_parameters(subgroup, checkgroup, title, valuespec, itemspec, matchtype)
-
-checkgroups = []
+    'first',
+)
 
 register_rule(
     group + "/" + subgroup_networking,
@@ -2563,7 +2775,7 @@ register_rulegroup("static", _("Manual Checks"),
 
 
 # wmic_process does not support inventory at the moment
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "wmic_process",
     _("Memory and CPU of processes on Windows"),
@@ -2584,10 +2796,11 @@ checkgroups.append((
     TextAscii(
         title = _("Process name for usage in the Nagios service description"),
         allow_empty = False),
-    "first"))
+    "first", False
+)
 
 # Add checks that have parameters but are only configured as manual checks
-checkgroups.append((
+register_check_parameters(
     subgroup_applications,
     "ps",
     _("State and count of processes"),
@@ -2646,9 +2859,5 @@ checkgroups.append((
         regex_error = _("Please use only a-z, A-Z, 0-9, space, underscore, "
                         "dot and hyphon for your service description"),
     ),
-    "first"))
-
-
-for subgroup, checkgroup, title, valuespec, itemspec, matchtype in checkgroups:
-    register_check_parameters(subgroup, checkgroup, title, valuespec, itemspec, matchtype, False)
-
+    "first", False
+)

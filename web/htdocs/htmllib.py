@@ -248,8 +248,9 @@ class html:
         self.plugged_text = ''
 
     def flush(self):
-        self.lowlevel_write(self.plugged_text)
-        self.plugged_text = ''
+        if self.plugged:
+            self.lowlevel_write(self.plugged_text)
+            self.plugged_text = ''
 
     def drain(self):
         if self.plugged:
@@ -260,6 +261,7 @@ class html:
             return ''
 
     def unplug(self):
+        self.flush()
         self.plugged = False
 
     def heading(self, text):
@@ -357,15 +359,17 @@ class html:
         self.global_vars += varnames
 
     # [('varname1', value1), ('varname2', value2) ]
-    def makeuri(self, addvars, remove_prefix = None):
+    def makeuri(self, addvars, remove_prefix = None, filename=None):
         vars = [ (v, self.var(v)) for v in self.req.vars if v[0] != "_" ]
         if remove_prefix != None:
             vars = [ i for i in vars if not i[0].startswith(remove_prefix) ]
         vars = vars + addvars
+        if filename == None:
+            filename = self.req.myfile + ".py"
         if vars:
-            return self.req.myfile + ".py?" + urlencode_vars(vars)
+            return filename + "?" + urlencode_vars(vars)
         else:
-            return self.req.myfile + ".py"
+            return filename
 
     def makeactionuri(self, addvars):
         return self.makeuri(addvars + [("_transid", self.fresh_transid())])
@@ -1036,6 +1040,10 @@ class html:
             del self.req.vars[varname]
         if varname in self.req.listvars:
             del self.req.listvars[varname]
+
+    def del_all_vars(self):
+        self.req.vars = {}
+        self.req.listvars = {}
 
     def javascript(self, code):
         self.write("<script language=\"javascript\">\n%s\n</script>\n" % code)
