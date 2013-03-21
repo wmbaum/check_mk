@@ -1751,7 +1751,7 @@ def mode_editfolder(phase, new):
 
             if cgs_changed:
                 check_user_contactgroups(attributes.get("contactgroups"))
-            log_pending(AFFECTED, g_folder, "edit-folder", "Edited properties of folder %s" % title)
+            log_pending(AFFECTED, g_folder, "edit-folder", _("Edited properties of folder %s") % title)
 
             g_folder["title"]      = title
 
@@ -8329,22 +8329,25 @@ def filter_hidden_users(users):
         return users
 
 
-# Dropdown for choosing a multisite user
-class UserSelection(ElementSelection):
-    def __init__(self, **kwargs):
-        ElementSelection.__init__(self, **kwargs)
-        self._none = kwargs.get("none")
-
-    def get_elements(self):
+def generate_wato_users_elements_function(none_value):
+    def get_wato_users(nv):
         users = filter_hidden_users(userdb.load_users())
-        elements = dict([ (name, "%s - %s" % (name, us.get("alias", name))) for (name, us) in users.items() ])
-        if self._none:
-            elements[None] = self._none
+        elements = [ (name, "%s - %s" % (name, us.get("alias", name))) for (name, us) in users.items() ]
+        if nv != None:
+            elements = [ (None, none_value) ] + elements
         return elements
+    return lambda: get_wato_users(none_value)
+        
+# Dropdown for choosing a multisite user
+class UserSelection(DropdownChoice):
+    def __init__(self, **kwargs):
+        kwargs["choices"] = generate_wato_users_elements_function(kwargs.get("none"))
+        DropdownChoice.__init__(self, **kwargs)
 
     def value_to_text(self, value):
-        self.load_elements()
-        return self._elements.get(value, value).split(" - ")[-1]
+        text = DropdownChoice.value_to_text(self, value)
+        return text.split(" - ")[-1]
+
 
 #.
 #   .-Roles----------------------------------------------------------------.

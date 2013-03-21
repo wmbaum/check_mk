@@ -48,7 +48,12 @@
       when processing of current lines needs more time than max execution time
     * mounts: ignore multiple occurrances of the same device
     * Linux agent: allow cached local/plugins checks (see docu)
+    * mem.include: Linux memory check now includes size of page tables. This
+      can be important e.g. on ORACLE systems with a lot of memory
     
+    Notifications:
+    * notify.py: unique spoolfiles name no longer created with uuid
+
     Livestatus:
     * Table statehist: Improved detection of vanished hosts and services.
                        Now able to detect and remove nonsense check plugin output 
@@ -67,12 +72,14 @@
       logwatch_ec ruleset. With this option the forwarding can now be enabled
       for each logfile on a host
     * Configuration of an alternativ host check command
+    * Inventory: Display link symbol for ps ruleset
 
 1.2.2b5:
     Core:
     * Checks can now omit the typical "OK - " or "WARN -". This text
       will be added automatically if missing.
     * FIX: livecheck: fixed compilation bug
+    * FIX: check_mk: convert service description unicode into utf-8
     
     Checks & Agents:
     * FIX: jolokia_metrics.mem - now able to handle negative/missing max values
@@ -88,12 +95,23 @@
 
     WATO:
     * FIX: Fix hiliting of errors in Nagios output
+    * FIX: localisation error
 
     Multisite:
     * FIX: Avoid duplicate "Services" button in host detail views
     * New filter for IP address of a host 
     * Quicksearch: allow searching for complete IP addresses and IP
       address prefixes
+
+    BI: 
+    * FIX: fix exception with expansion level being 'None'
+    * FIX: speedup for single host tables joined by hostname (BI-Boxes)
+    * FIX: avoid closing BI subtree while tree is being loaded
+
+    Event Console:
+    * FIX: make hostname matching field optional. Otherwise a .* was
+           neccessary for the rule in order to match
+    * FIX: event_simulator now also uses case insensitive matches
 
 1.2.2b4:
     Core:
