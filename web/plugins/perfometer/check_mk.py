@@ -71,6 +71,7 @@ perfometers["check_mk-zfsget"] = perfometer_check_mk_df
 perfometers["check_mk-hr_fs"] = perfometer_check_mk_df
 perfometers["check_mk-oracle_asm_diskgroup"] = perfometer_check_mk_df
 perfometers["check_mk-mysql_capacity"] = perfometer_check_mk_df
+perfometers["check_mk-esx_vsphere_datastores"] = perfometer_check_mk_df
 
 
 def perfometer_check_mk_kernel_util(row, check_command, perf_data):
@@ -312,6 +313,7 @@ def perfometer_check_mk_cisco_qos(row, check_command, perf_data):
 
 perfometers["check_mk-if"] = perfometer_check_mk_if
 perfometers["check_mk-if64"] = perfometer_check_mk_if
+perfometers["check_mk-if64_tplink"] = perfometer_check_mk_if
 perfometers["check_mk-vms_if"] = perfometer_check_mk_if
 perfometers["check_mk-if_lancom"] = perfometer_check_mk_if
 perfometers["check_mk-lnx_if"] = perfometer_check_mk_if

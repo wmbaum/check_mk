@@ -35,6 +35,7 @@ class ValueSpec:
         self._attrencode    = kwargs.get("attrencode", False)
         if "default_value" in kwargs:
             self._default_value = kwargs.get("default_value")
+        self._validate      = kwargs.get("validate")
 
     def title(self):
         return self._title
@@ -104,7 +105,17 @@ class ValueSpec:
     # has been returned by from_html_vars() or because it has
     # been checked with validate_datatype()).
     def validate_value(self, value, varprefix):
-        pass
+        self.custom_validate(value, varprefix)
+
+    # Needed for implementation of customer validation
+    # functions that are configured by the user argument
+    # validate = .... Problem: this function must be
+    # called by *every* validate_value() function in all
+    # subclasses - explicitely.
+    def custom_validate(self, value, varprefix):
+        if self._validate:
+            self._validate(value, varprefix)
+
 
 # A fixed non-editable value, e.g. to be use in "Alternative"
 class FixedValue(ValueSpec):
@@ -136,6 +147,7 @@ class FixedValue(ValueSpec):
 
     def validate_value(self, value, varprefix):
         self.validate_datatype(value, varprefix)
+        ValueSpec.custom_validate(self, value, varprefix)
 
 # Time in seconds
 class Age(ValueSpec):
@@ -194,7 +206,7 @@ class Integer(ValueSpec):
         self._display_format = kwargs.get("display_format", "%d")
         self._align          = kwargs.get("align", "left")
 
-        if "size" not in kwargs and "maxvalue" in kwargs:
+        if "size" not in kwargs and "maxvalue" in kwargs and kwargs["maxvalue"] != None:
             self._size = 1 + int(math.log10(self._maxvalue)) + \
                (type(self._maxvalue) == float and 3 or 0)
 
@@ -251,6 +263,8 @@ class Integer(ValueSpec):
         if self._maxvalue != None and value > self._maxvalue:
             raise MKUserError(varprefix, _("%s is too high. The maximum allowed value is %s." % (
                                      value, self._maxvalue)))
+        ValueSpec.custom_validate(self, value, varprefix)
+
 # Filesize in Byte,Kbyte,Mbyte,Gigatbyte, Terrabyte
 class Filesize(Integer):
     def __init__(self, **kwargs):
@@ -342,6 +356,7 @@ class TextAscii(ValueSpec):
         if value and self._regex:
             if not self._regex.match(value):
                 raise MKUserError(varprefix, self._regex_error)
+        ValueSpec.custom_validate(self, value, varprefix)
 
 class TextUnicode(TextAscii):
     def __init__(self, **kwargs):
@@ -387,6 +402,7 @@ class RegExp(TextAscii):
             raise MKUserError(varprefix, _("Your regular expression containes <b>%d</b> groups. "
                  "It must have at most <b>%d</b> groups.") % (compiled.groups, self._maxgroups))
 
+        ValueSpec.custom_validate(self, value, varprefix)
 
 
 class RegExpUnicode(TextUnicode, RegExp):
@@ -397,7 +413,7 @@ class RegExpUnicode(TextUnicode, RegExp):
     def validate_value(self, value, varprefix):
         TextUnicode.validate_value(self, value, varprefix)
         RegExp.validate_value(self, value, varprefix)
-
+        ValueSpec.custom_validate(self, value, varprefix)
 
 class EmailAddress(TextAscii):
     def __init__(self, **kwargs):
@@ -440,6 +456,9 @@ class IPv4Network(TextAscii):
             if l & (2 ** (31-b)) != 0:
                 raise MKUserError(varprefix, _("Please make sure that only the %d non-network bits are non-zero") % bits)
 
+        ValueSpec.custom_validate(self, value, varprefix)
+
+
     def validate_ipaddress(self, value, varprefix):
         try:
             octets = map(int, value.split("."))
@@ -462,6 +481,7 @@ class IPv4Address(IPv4Network):
 
     def validate_value(self, value, varprefix):
         self.validate_ipaddress(value, varprefix)
+        ValueSpec.custom_validate(self, value, varprefix)
 
 
 # Valuespec for a HTTP Url (not HTTPS), that
@@ -476,6 +496,7 @@ class HTTPUrl(TextAscii):
         if value:
             if not value.startswith("http://"):
                 raise MKUserError(varprefix, _("The URL must begin with http://"))
+        ValueSpec.custom_validate(self, value, varprefix)
 
     def from_html_vars(self, varprefix):
         value = TextAscii.from_html_vars(self, varprefix)
@@ -502,19 +523,12 @@ class HTTPUrl(TextAscii):
             (self._target and 'target="%s" ' % self._target or ""),
             url, text)
 
-RETURN = 13
-SHIFT = 16
-CTRL = 17
-ALT = 18
-BACKSPACE = 8
-
 class TextAreaUnicode(TextUnicode):
     def __init__(self, **kwargs):
         TextUnicode.__init__(self, **kwargs)
         self._cols = kwargs.get("cols", 60)
         self._rows = kwargs.get("rows", 20)  # Allowed: "auto" -> Auto resizing
         self._minrows = kwargs.get("minrows", 0) # Minimum number of initial rows when "auto"
-        self._submit_keys = kwargs.get("submit_keys", [])
 
     def value_to_text(self, value):
         return "<pre class=ve_textarea>%s</pre>" % value
@@ -532,45 +546,7 @@ class TextAreaUnicode(TextUnicode):
         else:
             attrs = {}
             rows = self._rows
-        if self._submit_keys:
-            attrs['id'] = "textarea_%s" % varprefix
-            commit_code = ""
-            for keylist, code in self._submit_keys:
-                commit_code += "    textarea_%s_trysubmit(e, %r, %s);\n" % (
-                        varprefix, keylist, repr(code))
 
-            html.final_javascript("""
-textarea_text_keys = [];
-function textarea_%s_keydown(e) {
-    if (!e) e = window.event;
-    var keyCode = e.which || e.keyCode;
-    textarea_%s_keys.push(keyCode);
-%s}
-function textarea_%s_keyup(e) {
-    if (!e) e = window.event;
-    var keyCode = e.which || e.keyCode;
-    for (var i in textarea_%s_keys) {
-        if (textarea_%s_keys[i] == keyCode) {
-            textarea_%s_keys.splice(i, 1);
-            break;
-        }
-    }
-}
-function textarea_%s_trysubmit(e, keylist, code) {
-    for (var i in keylist) {
-        if (textarea_%s_keys.indexOf(keylist[i]) < 0) {
-            return;
-        }
-    }
-    if (e.stopPropagation)
-        e.stopPropagation();
-    e.cancelBubble = true;
-    eval(code);
-}
-var t = document.getElementById("textarea_%s");
-t.onkeydown = function(e) { return textarea_%s_keydown(e); }
-t.onkeyup   = function(e) { return textarea_%s_keyup(e); }
-""" % ((varprefix, varprefix, commit_code) + (varprefix,)*9))
         html.text_area(varprefix, value, rows=rows, cols=self._cols, attrs = attrs)
 
 
@@ -610,6 +586,8 @@ class Filename(TextAscii):
         # Write permissions to the file cannot be checked here since we run with Apache
         # permissions and the file might be created with Nagios permissions (on OMD this
         # is the same, but for others not)
+
+        ValueSpec.custom_validate(self, value, varprefix)
 
 class ListOfStrings(ValueSpec):
     def __init__(self, **kwargs):
@@ -677,6 +655,7 @@ class ListOfStrings(ValueSpec):
             raise MKUserError(vp + "_0", _("Please specify at least one value"))
         for nr, s in enumerate(value):
             self._valuespec.validate_value(s, vp + "_%d" % nr)
+        ValueSpec.custom_validate(self, value, vp)
 
 # Generic list-of-valuespec ValueSpec with Javascript-based
 # add/delete/move
@@ -815,6 +794,7 @@ class ListOf(ValueSpec):
             raise MKUserError(varprefix, _("Please specify at least on entry"))
         for n, v in enumerate(value):
             self._valuespec.validate_value(v, varprefix + "_%d" % (n+1))
+        ValueSpec.custom_validate(self, value, varprefix)
 
 
 
@@ -824,6 +804,7 @@ class Float(Integer):
         Integer.__init__(self, **kwargs)
         self._decimal_separator = kwargs.get("decimal_separator", ".")
         self._display_format = kwargs.get("display_format", "%.2f")
+        self._accept_int = kwargs.get("accept_int", False)
 
     def canonical_value(self):
         return float(Integer.canonical_value(self))
@@ -839,16 +820,18 @@ class Float(Integer):
             _("The text <b><tt>%s</tt></b> is not a valid floating point number." % html.var(varprefix)))
 
     def validate_datatype(self, value, varprefix):
-        if type(value) != float:
-            raise MKUserError(varprefix, _("The value %r has type %s, but must be of type float") % (value, type(value)))
+        if type(value) != float and not \
+            (type(value) == int and self._accept_int):
+            raise MKUserError(varprefix, _("The value %r has type %s, but must be of type float%s") %
+                 (value, type(value), self._accept_int and _(" or int") or ""))
 
 
 class Percentage(Float):
     def __init__(self, **kwargs):
         Integer.__init__(self, **kwargs)
-        if "min_value" not in kwargs:
+        if "minvalue" not in kwargs:
             self._minvalue = 0.0
-        if "max_value" not in kwargs:
+        if "maxvalue" not in kwargs:
             self._maxvalue = 101.0
         if "unit" not in kwargs:
             self._unit = "%"
@@ -1128,6 +1111,7 @@ class CascadingDropdown(ValueSpec):
                 type(value) == tuple and value[0] == val):
                 if vs:
                     vs.validate_value(value[1], varprefix + "_%d" % nr)
+                ValueSpec.custom_validate(self, value, varprefix)
                 return
         raise MKUserError(varprefix, _("Value %r is not allowed here.") % (value, ))
 
@@ -1237,6 +1221,7 @@ class ListChoice(ValueSpec):
     def validate_value(self, value, varprefix):
         if not self._allow_empty and not value:
             raise MKUserError(varprefix, _('You have not selected any connector. You have to select at least one.'))
+        ValueSpec.custom_validate(self, value, varprefix)
 
 
 # A alternative way of editing list choices
@@ -1324,6 +1309,7 @@ class OptionalDropdownChoice(ValueSpec):
         if self.value_is_explicit(value):
             self._explicit.validate_value(value, varprefix)
         # else valid_datatype already has made the job
+        ValueSpec.custom_validate(self, value, varprefix)
 
     def validate_datatype(self, value, varprefix):
         for val, title in self._choices:
@@ -1407,7 +1393,7 @@ class RelativeDate(OptionalDropdownChoice):
             raise MKUserError(varprefix, _("Date must be a number value"))
 
     def validate_value(self, value, varprefix):
-        pass
+        ValueSpec.custom_validate(self, value, varprefix)
 
 # A ValueSpec for editing a date. The date is
 # represented as a UNIX timestamp x where x % seconds_per_day
@@ -1482,6 +1468,7 @@ class AbsoluteDate(ValueSpec):
     def validate_value(self, value, varprefix):
         if value < 0 or int(value) > (2**31-1):
             return MKUserError(varprefix, _("%s is not a valid UNIX timestamp") % value)
+        ValueSpec.custom_validate(self, value, varprefix)
 
 
 # Valuespec for entering times like 00:35 or 16:17. Currently
@@ -1551,6 +1538,7 @@ class Timeofday(ValueSpec):
             raise MKUserError(varprefix, _("The time must not be greater than 23:59."))
         elif value[0] < 0 or value[1] < 0 or value[0] > 24 or value[1] > 59:
             raise MKUserError(varprefix, _("Hours/Minutes out of range"))
+        ValueSpec.custom_validate(self, value, varprefix)
 
 
 # Range like 00:15 - 18:30
@@ -1610,6 +1598,7 @@ class TimeofdayRange(ValueSpec):
         self._bounds[1].validate_value(value[1], varprefix + "_until")
         if value[0] > value[1]:
             raise MKUserError(varprefix + "_until", _("The <i>from</i> time must not be greater then the <i>until</i> time."))
+        ValueSpec.custom_validate(self, value, varprefix)
 
 
 # Make a configuration value optional, i.e. it may be None.
@@ -1695,6 +1684,7 @@ class Optional(ValueSpec):
     def validate_value(self, value, varprefix):
         if value != self._none_value:
             self._valuespec.validate_value(value, varprefix + "_value")
+        ValueSpec.custom_validate(self, value, varprefix)
 
 # Handle case when there are several possible allowed formats
 # for the value (e.g. strings, 4-tuple or 6-tuple like in SNMP-Communities)
@@ -1779,6 +1769,7 @@ class Alternative(ValueSpec):
         for nr, v in enumerate(self._elements):
             if vs == v:
                 vs.validate_value(value, varprefix + "_%d" % nr)
+        ValueSpec.custom_validate(self, value, varprefix)
 
 
 # Edit a n-tuple (with fixed size) of values
@@ -1866,6 +1857,7 @@ class Tuple(ValueSpec):
         for no, (element, val) in enumerate(zip(self._elements, value)):
             vp = varprefix + "_" + str(no)
             element.validate_value(val, vp)
+        ValueSpec.custom_validate(self, value, varprefix)
 
     def validate_datatype(self, value, varprefix):
         if type(value) != tuple:
@@ -2110,6 +2102,7 @@ class Dictionary(ValueSpec):
                 vs.validate_value(value[param], vp)
             elif not self._optional_keys or param in self._required_keys:
                 raise MKUserError(varprefix, _("The entry %s is missing") % vs.title())
+        ValueSpec.custom_validate(self, value, varprefix)
 
 
 # Base class for selection of a Nagios element out
@@ -2160,6 +2153,7 @@ class ElementSelection(ValueSpec):
               _("You cannot save this rule. There are not defined any elements for this selection yet."))
         if value not in self._elements:
             raise MKUserError(varprefix, _("%s is not an existing element in this selection.") % (value,))
+        ValueSpec.custom_validate(self, value, varprefix)
 
     def validate_datatype(self, value, varprefix):
         if type(value) != str:
@@ -2231,6 +2225,7 @@ class Foldable(ValueSpec):
 
     def validate_value(self, value, varprefix):
         self._valuespec.validate_value(value, varprefix)
+        ValueSpec.custom_validate(self, value, varprefix)
 
 
 # Transforms the value from one representation to
@@ -2260,16 +2255,16 @@ class Transform(ValueSpec):
             return value
 
     def render_input(self, varprefix, value):
-        self._valuespec.render_input( varprefix, self.forth(value))
+        self._valuespec.render_input(varprefix, self.forth(value))
 
     def set_focus(self, *args):
         self._valuespec.set_focus(*args)
 
     def canonical_value(self):
-        return self._back(self._valuespec.canonical_value())
+        return self.back(self._valuespec.canonical_value())
 
     def default_value(self):
-        return self._back(self._valuespec.default_value())
+        return self.back(self._valuespec.default_value())
 
     def value_to_text(self, value):
         return self._valuespec.value_to_text(self.forth(value))
@@ -2282,6 +2277,7 @@ class Transform(ValueSpec):
 
     def validate_value(self, value, varprefix):
         self._valuespec.validate_value(self.forth(value), varprefix)
+        ValueSpec.custom_validate(self, value, varprefix)
 
 class LDAPDistinguishedName(TextAscii):
     def __init__(self, **kwargs):
@@ -2298,6 +2294,7 @@ class LDAPDistinguishedName(TextAscii):
         # Check wether or not the given DN is below a base DN
         if self.enforce_suffix and value and not value.lower().endswith(self.enforce_suffix.lower()):
             raise MKUserError(varprefix, _('Does not ends with "%s".') % self.enforce_suffix)
+        ValueSpec.custom_validate(self, value, varprefix)
 
 
 class Password(TextAscii):

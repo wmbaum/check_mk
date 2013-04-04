@@ -25,33 +25,118 @@
 # Boston, MA 02110-1301 USA.
 
 import sys
-import argparse
+import getopt
+import socket
 
-parser = argparse.ArgumentParser(description='Check_MK vSphere Agent')
-group = parser.add_argument_group()
-# group.add_argument('-p', '--port', type=int, help="Port Number of vSphere Server")
-group.add_argument('-i', 
-                    help="Modules to query. This is a comma separated list of hostsystem, "
-                         "virtualmachine and storage. Default is to query all modules.")
+import inspect, pprint # FOR DEBUGGING
 
-parser.add_argument('-u','--user', 
-                    help="Username for vSphere login")
+def usage():
+    sys.stderr.write("""Check_MK vSphere Agent
 
-parser.add_argument('-s','--secret', 
-                    help="Secret/Password for vSphere login")
+USAGE: agent_vsphere [-i MODULES] [-u USER] [-s SECRET] [-D] [-a] [--debug] HOST
+       agent_vsphere -h
 
-parser.add_argument('-D', '--direct', action="store_true",
-                    help="Assume a directly queried host system (no vCenter). In this "
-                         "we expect data about only one HostSystem to be found and do "
-                         "not create piggy host data for that host.")
-                    
-parser.add_argument('--debug', action="store_true", 
-                    help="Debug mode: let Python exceptions come through")
+ARGUMENTS:
+  HOST                          Host name or IP address of vCenter or VMWare HostSystem
 
-parser.add_argument('HOST', 
-                    help="Host name or IP address of vCenter or VMWare HostSystem")
+OPTIONS:
+  -h, --help                    Show this help message and exit
+  -u USER, --user USER          Username for vSphere login
+  -s SECRET, --secret SECRET    Secret/Password for vSphere login
+  -D, --direct                  Assume a directly queried host system (no vCenter). In
+                                This we expect data about only one HostSystem to be
+                                Found and do not create piggy host data for that host.
+  -a, --agent                   Also retrieve data from the normal Check_MK Agent.
+                                This makes sense if you query a vCenter that is
+                                Installed on a Windows host that you also want to
+                                Monitor with Check_MK.
+  --debug                       Debug mode: let Python exceptions come through
 
-params = vars(parser.parse_args())
+  -i MODULES, --modules MODULES Modules to query. This is a comma separated list of
+                                hostsystem, virtualmachine and storage. Default is to
+                                query all modules.
+
+
+""")
+
+short_options = 'hi:u:s:Da'
+long_options  = [
+    'help', 'user=', 'secret=', 'direct', 'agent', 'debug', 'modules=',
+]
+
+try:
+    opts, args = getopt.getopt(sys.argv[1:], short_options, long_options)
+except getopt.GetoptError, err:
+    print str(err)
+    sys.exit(1)
+
+opt_debug    = False
+opt_direct   = False
+opt_agent    = False
+host_address = None
+user         = None
+secret       = None
+mortypes     = [ 'hostsystem', 'virtualmachine', 'datastore' ]
+
+for o,a in opts:
+    if o in [ '--debug' ]:
+        opt_debug = True
+    elif o in [ '-D', '--direct' ]:
+        opt_direct = True
+    elif o in [ '-a', '--agent' ]:
+        opt_agent = True
+    elif o in [ '-u', '--user' ]:
+        user = a
+    elif o in [ '-s', '--secret' ]:
+        secret = a
+    elif o in [ '-i', '--modules' ]:
+        mortypes = a.split(',')
+    elif o in [ '-h', '--help' ]:
+        usage()
+        sys.exit(0)
+
+if len(args) == 1:
+    host_address = args[0]
+else:
+    sys.stderr.write("ERROR: No HOST given.\n")
+    usage()
+    sys.exit(1)
+
+def get_agent_info_tcp(hostname):
+    output = ""
+    try:
+        if hostname[0] in "123456789":
+            ipaddress = hostname
+        else:
+            ipaddress = socket.gethostbyname(hostname)
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.settimeout(3.0)
+        except:
+            pass # some old Python versions lack settimeout(). Better ignore than fail
+        s.connect((ipaddress, 6556))
+        try:
+            s.setblocking(1)
+        except:
+            pass
+        output = ""
+        while True:
+            out = s.recv(4096, socket.MSG_WAITALL)
+            if out and len(out) > 0:
+                output += out
+            else:
+                break
+        s.close()
+        return output
+    except Exception, e:
+        if opt_debug:
+            raise
+    return output
+
+error_exit = 1
+if opt_agent:
+    sys.stdout.write(get_agent_info_tcp(host_address))
+    error_exit = 0 # do not fail if vSphere fails
 
 
 try:
@@ -59,45 +144,22 @@ try:
     from pysphere.resources import VimService_services as VI
 except: 
     sys.stderr.write("pysphere API not found. Please install and try again.\n")
-    sys.exit(1)
+    sys.exit(error_exit)
 
 host = VIServer()
 
-object_collection = {} 
-
+object_collection = []
 try:
-    host.connect(params['HOST'], params['user'], params['secret'])
+    host.connect(host_address, user, secret)
 except:
-    if params['debug']:
+    if opt_debug:
         raise
     sys.stderr.write("Cannot connect to vSphere Server. May the wrong credentials. Please correct and make a reinventory.\n")
-    sys.exit(1)
+    sys.exit(error_exit)
 
 print "<<<check_mk>>>"
 print "Version: %s" % host.get_api_version()
 print "AgentOs: %s " % host.get_server_type()
-
-# import inspect, pprint
-# for x in host._retrieve_properties_traversal(property_names=[], obj_type = MORTypes.ManagedEntity):
-#     print x.Obj
-#     print inspect.getmembers(x)
-# sys.exit(17)
-
-# hosts = host.get_hosts()
-# pprint.pprint(inspect.getmembers(VIProperty(host, hosts.keys()[0]).hardware))
-# sys.exit(1)
-
-#for p in VIProperty(host, hosts.keys()[0]).network:
-    # print host.get_resource_pools(p)
-    # for n in p:
- #       pprint.pprint(inspect.getmembers(p))
-
-# print p
-# print hosts
-
-
-# sys.exit(1)
-
 
 
 def output_mors(what, properties, direct=False): 
@@ -110,7 +172,11 @@ def output_mors(what, properties, direct=False):
 
     count = 0
     sections = []
-    for mor in host._retrieve_properties_traversal(property_names=properties.keys(), obj_type=obj_type):
+    mors = host._retrieve_properties_traversal(property_names=properties.keys(), obj_type=obj_type)
+    if not mors:
+        return
+
+    for mor in mors:
         count += 1
         # Parse result into a dictionary. Key is the property name,
         # value is the value (some custom Python classes)
@@ -119,13 +185,10 @@ def output_mors(what, properties, direct=False):
             # Convert property value using specified conversion function
             data[p.Name] = properties[p.Name](p.Val)
 
-        # Get the name of this Host/VirtualMachine
-        # May there a comments in the field, so split at whitespace
-        try:
-            name = data["name"].split()[0]
-            object_collection[name] = (what, data['name'])
-        except:
-            pass
+        # Remember the total list of output objects. We will put this into
+        # a special section
+        object_collection.append((what, data["name"]))
+        name = data["name"].split()[0] # get rid of comment
         
         # Output multiplexed Check_MK Agent output (new in version 1.2.3i1)
         if direct:
@@ -148,6 +211,31 @@ def output_mors(what, properties, direct=False):
         print '<<<%s>>>' % section_name
         for line in section_lines:
             print line
+
+def debug(x):
+    pprint.pprint(inspect.getmembers(x))
+
+def output_datastores():
+    property_names = [ 
+        "name", 
+        "summary.freeSpace", 
+        "summary.capacity", 
+        "summary.uncommitted", 
+        "summary.url", 
+        "summary.accessible",
+        "summary.type", 
+        "summary.maintenanceMode", 
+        ]
+    # print inspect.getmembers(MORTypes)
+    print "<<<esx_vsphere_datastores:sep(%d)>>>" % ord('\t')
+    for mor in host._retrieve_properties_traversal(property_names=property_names, obj_type=MORTypes.Datastore):
+        for entry in mor.PropSet:
+            if entry.Name == "name":
+                print '[%s]' % entry.Val
+            else:
+                print '%s\t%s' % (entry.Name.split(".")[1], entry.Val)
+        
+
 
 
 def conv_multipath(value):
@@ -173,10 +261,9 @@ def conv_numeric_sensor_info(value):
 
     # return pprint.pformat(inspect.getmembers(value))
 
-if params['i'] == None:
-    mortypes = [ 'hostsystem', 'virtualmachine', 'storage' ]
-else:
-    mortypes = params['i'].split(',')
+if "datastore" in mortypes:
+    output_datastores()
+
 
 if "hostsystem" in mortypes:
     output_mors("hostsystem", {
@@ -204,7 +291,7 @@ if "hostsystem" in mortypes:
       "runtime.healthSystemRuntime.systemHealthInfo.numericSensorInfo" : conv_numeric_sensor_info,
 
       #"summary.quickStats.uptime": str,
-    }, params['direct'])
+    }, opt_direct)
 
 # Warning: we have no guarantee that all properties are always
 # output. For example if a VM is powered off, the only property
@@ -246,7 +333,7 @@ if "virtualmachine" in mortypes:
 
 print "<<<<>>>>"
 
-print "<<<local>>>"
-for name, data in object_collection.items():
-    print "0 %s-%s - OK: collecting piggyback data for %s" % (data[0], name, data[1])
+print "<<<esx_vsphere_objects:sep(9)>>>"
+for what, name in object_collection:
+    print "%s\t%s" % (what, name)
 host.disconnect()

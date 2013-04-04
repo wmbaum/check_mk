@@ -1112,8 +1112,8 @@ register_check_parameters(
               Tuple(
                   title = _("Levels for the used space"),
                   elements = [
-                      Percentage(title = _("Warning at"),  label = _("% usage"), allow_int = True, default_value=80),
-                      Percentage(title = _("Critical at"), label = _("% usage"), allow_int = True, default_value=90)])),
+                      Percentage(title = _("Warning at"),  unit = _("% usage"), allow_int = True, default_value=80),
+                      Percentage(title = _("Critical at"), unit = _("% usage"), allow_int = True, default_value=90)])),
             (  "magic",
                Float(
                   title = _("Magic factor (automatic level adaptation for large filesystems)"),
@@ -1368,8 +1368,8 @@ register_check_parameters(
                        Tuple(
                            title = _("Percentual levels (in relation to policy speed)"),
                            elements = [
-                               Percentage(title = _("Warning at"), max_value=1000, label = _("% of port speed")),
-                               Percentage(title = _("Critical at"), max_value=1000, label = _("% of port speed")),
+                               Percentage(title = _("Warning at"), maxvalue=1000, label = _("% of port speed")),
+                               Percentage(title = _("Critical at"), maxvalue=1000, label = _("% of port speed")),
                            ]
                        ),
                        Tuple(
@@ -1402,8 +1402,8 @@ register_check_parameters(
                          Tuple(
                              title = _("Percentual levels (in relation to policy speed)"),
                              elements = [
-                                 Percentage(title = _("Warning at"), max_value=1000, label = _("% of port speed")),
-                                 Percentage(title = _("Critical at"), max_value=1000, label = _("% of port speed")),
+                                 Percentage(title = _("Warning at"), maxvalue=1000, label = _("% of port speed")),
+                                 Percentage(title = _("Critical at"), maxvalue=1000, label = _("% of port speed")),
                              ]
                          ),
                          Tuple(
@@ -1430,8 +1430,8 @@ register_check_parameters(
             Tuple(
                 title = _("Specify levels in percentage of total RAM"),
                 elements = [
-                  Percentage(title = _("Warning at a usage of"), label = _("% of RAM"), max_value = None),
-                  Percentage(title = _("Critical at a usage of"), label = _("% of RAM"), max_value = None)
+                  Percentage(title = _("Warning at a usage of"), label = _("% of RAM"), maxvalue = None),
+                  Percentage(title = _("Critical at a usage of"), label = _("% of RAM"), maxvalue = None)
                 ]
             ),
             Tuple(
@@ -1466,8 +1466,10 @@ register_check_parameters(
             Tuple(
                 title = _("Specify levels in percentage of total RAM"),
                 elements = [
-                  Percentage(title = _("Warning at a memory usage of"), default_value = 80.0),
-                  Percentage(title = _("Critical at a memory usage of"), default_value = 90.0)]),
+                    # Disable limit of value to 101%, because levels > 100% make sense here
+                    # (swap+ram is > ram)
+                    Percentage(title = _("Warning at a memory usage of"), default_value = 80.0, maxvalue = None),
+                    Percentage(title = _("Critical at a memory usage of"), default_value = 90.0, maxvalue = None)]),
             Tuple(
                 title = _("Specify levels in absolute usage values"),
                 elements = [
@@ -2217,9 +2219,12 @@ register_check_parameters(
           help = _("These levels are applied to the number of Email that are "
                    "currently in the outgoing mail queue."),
           elements = [
-              Integer(title = _("Warning at"), label = _("mails")),
-              Integer(title = _("Critical at"), label = _("mails"))]),
-    None, None
+              Integer(title = _("Warning at"), unit = _("mails"), default_value = 10),
+              Integer(title = _("Critical at"), unit = _("mails"), default_value = 20),
+          ]
+    ),
+    None, 
+    None
 )
 
 register_check_parameters(
@@ -2410,6 +2415,22 @@ register_check_parameters(
     TextAscii(
         title = _("Sensor ID"),
         help = _("The identificator of the themal sensor.")),
+    "first"
+)
+
+register_check_parameters(
+    subgroup_environment,
+    "disk_temperature",
+    _("Harddisk temperature (e.g. via SMART)"),
+    Tuple(
+        help = _("Temperature levels for hard disks, that is determined e.g. via SMART"),
+        elements = [
+            Integer(title = _("warning at"), unit = u"°C", default_value = 35),
+            Integer(title = _("critical at"), unit = u"°C", default_value = 40),
+        ]),
+    TextAscii(
+        title = _("Hard disk device"),
+        help = _("The identificator of the hard disk device, e.g. <tt>/dev/sda</tt>.")),
     "first"
 )
 

@@ -57,23 +57,27 @@ register_rule(group,
               )
             ),
             ( "infos",
-              ListChoice(
-                 title = _("Retrieve information about..."),
-                 choices = [
-                     ( "hostsystem",     _("Host Systems") ),
-                     ( "virtualmachine", _("Virtual Machines") ),
-                     ( "storage",        _("Storage") ),
-                 ],
-                 default_value = [ "hostsystem", "virtualmachine" ],
-                 allow_empty = False,
-               )
+              Transform(
+                  ListChoice(
+                     choices = [
+                         ( "hostsystem",     _("Host Systems") ),
+                         ( "virtualmachine", _("Virtual Machines") ),
+                         ( "datastore",      _("Datastores") ),
+                     ],
+                     default_value = [ "hostsystem", "virtualmachine" ],
+                     allow_empty = False,
+                   ),
+                   forth = lambda v: [ x.replace("storage", "datastore") for x in v ],
+                   title = _("Retrieve information about..."),
+                )
              ),
              ( "direct",
                DropdownChoice(
                    title = _("Type of query"),
                    choices = [
-                       ( True, _("Queried host is a host system" ) ),
-                       ( False, _("Queried host is the vCenter") ),
+                       ( True,    _("Queried host is a host system" ) ),
+                       ( False,   _("Queried host is the vCenter") ),
+                       ( "agent", _("Queried host is the vCenter with Check_MK Agent installed") ),
                    ],
                    default = True,
                )

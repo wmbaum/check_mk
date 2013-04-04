@@ -189,6 +189,15 @@ class html:
         self.auto_id = 0
         self.have_help = False
         self.plugged = False
+        self.keybindings = []
+        self.io_error = False
+
+    RETURN = 13
+    SHIFT = 16
+    CTRL = 17
+    ALT = 18
+    BACKSPACE = 8
+    F1 = 112
 
     def set_buffering(self, b):
         self.buffering = b
@@ -238,10 +247,18 @@ class html:
             self.lowlevel_write(text)
 
     def lowlevel_write(self, text):
-        if self.buffering:
-            self.req.write(text, 0)
-        else:
-            self.req.write(text)
+        if self.io_error:
+            return
+
+        try:
+            if self.buffering:
+                self.req.write(text, 0)
+            else:
+                self.req.write(text)
+        except IOError, e:
+            # Catch writing problems to client, prevent additional writes
+            self.io_error = True
+            self.log('%s' % e)
 
     def plug(self):
         self.plugged = True
@@ -360,7 +377,10 @@ class html:
 
     # [('varname1', value1), ('varname2', value2) ]
     def makeuri(self, addvars, remove_prefix = None, filename=None):
-        vars = [ (v, self.var(v)) for v in self.req.vars if v[0] != "_" ]
+        new_vars = [ nv[0] for nv in addvars ]
+        vars = [ (v, self.var(v)) 
+                 for v in self.req.vars 
+                 if v[0] != "_" and v not in new_vars ]
         if remove_prefix != None:
             vars = [ i for i in vars if not i[0].startswith(remove_prefix) ]
         vars = vars + addvars
@@ -475,7 +495,7 @@ class html:
             self.write("</td></tr></table>\n")
         self.context_buttons_open = False
 
-    def context_button(self, title, url, icon=None, hot=False, id=None, bestof=None, hover_title=''):
+    def context_button(self, title, url, icon=None, hot=False, id=None, bestof=None, hover_title='', fkey=None):
         display = "block"
         if bestof:
             counts = config.load_user_file("buttoncounts", {})
@@ -495,7 +515,7 @@ class html:
             idtext = " id='%s'" % id
         else:
             idtext = ""
-        self.write('<div%s style="display:%s" class="contextlink%s" ' % (idtext, display, hot and " hot" or ""))
+        self.write('<div%s style="display:%s" class="contextlink%s%s" ' % (idtext, display, hot and " hot" or "", fkey and " button" or ""))
         self.context_button_hover_code(hot and "_hot" or "")
         self.write('>')
         self.write('<a href="%s"' % url)
@@ -503,6 +523,9 @@ class html:
             self.write(' title="%s"' % hover_title)
         if bestof:
             self.write(' onmousedown="count_context_button(this); document.location=this.href; " ')
+        if fkey:
+            title += '<div class=keysym>F%d</div>' % fkey
+            self.add_keybinding([html.F1 + (fkey - 1)], "document.location='%s';" % url)
         self.write('>%s</a></div>\n' % title)
 
     def context_button_hover_code(self, what):
@@ -911,6 +934,12 @@ class html:
     def body_end(self):
         if self.have_help:
             self.javascript("help_enable();")
+        if self.keybindings:
+            self.javascript("""var keybindings = %r;\n
+document.body.onkeydown = keybindings_keydown;
+document.body.onkeyup = keybindings_keyup;
+document.body.onfocus = keybindings_focus;
+""" % self.keybindings)
         if self.final_javascript_code:
             self.javascript(self.final_javascript_code);
         self.write("</body></html>\n")
@@ -1268,4 +1297,13 @@ class html:
 
     def del_cookie(self, varname):
         self.set_cookie(varname, '', time.time() - 60)
+
+    # Keyboard control
+    def add_keybinding(self, keylist, jscode):
+        self.keybindings.append([keylist, jscode])
+
+    def add_keybindings(self, bindings):
+        self.keybindings += bindings
+
+
 

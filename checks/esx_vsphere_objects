@@ -24,39 +24,44 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
-# <<<esx_vsphere_sensors:sep(59)>>>
-# VMware Rollup Health State;;0;system;0;;red;Red;Sensor is operating under critical conditions
-# Power Domain 1 Power Unit 0 - Redundancy lost;;0;power;0;;yellow;Yellow;Sensor is operating under conditions that are non-critical
-# Power Supply 2 Power Supply 2 0: Power Supply AC lost - Assert;;0;power;0;;red;Red;Sensor is operating under critical conditions
+# Example output from agent:
+# <<<esx_vsphere_objects:sep(9)>>>
+# hostsystem  esx.wacker.corp
+# virtualmachine  LinuxI
+# virtualmachine  OpenSUSE_II
+# virtualmachine  OpenSUSE_III
+# virtualmachine  OpenSUSE_IV
+# virtualmachine  OpenSUSE_V
+# virtualmachine  WindowsXP I
+# virtualmachine  LinuxII
+# virtualmachine  LinuxIII
+# virtualmachine  LinuxIV
+# virtualmachine  LinuxV
+# virtualmachine  OpenSUSE_I
 
-def inventory_esx_vsphere_sensors(info):
-    return [(None, None)]
+vsphere_object_names = {
+    "hostsystem" : "HostSystem",
+    "virtualmachine" : "VM",
+}
 
-def check_esx_vsphere_sensors(_no_item, _no_params, info):
-    state = 0
+def inventory_esx_vsphere_objects(info):
+    return [ (vsphere_object_names[line[0]] + " " + line[1], None) for line in info ]
 
-    infos = []
-    for name, base_units, current_reading, sensor_type, unit_modifier, rate_units, health_key, health_label, health_summary in info:
-        if health_key == "green":
-            continue # usually not output by agent anyway
-        infos.append("%s: %s (%s)" % (name, health_label, health_summary))
-        if health_key == "yellow":
-            state = max(state, 1)
-            infos[-1] += "(!)"
-        elif health_key == "unknown":
-            state = max(state, 1)
-            infos[-1] += "(!)"
-        else:
-            state = 2
-            infos[-1] += "(!!)"
+def check_esx_vsphere_objects(item, _no_params, info):
+    for line in info:
+        if vsphere_object_names[line[0]] + " " + line[1] == item:
+            return 0, "information about this object present"
 
-    if state > 0:
-        return state, ", ".join(infos)
+    what = item.split()[0]
+    name = item.split()[1]
+    if what == "VM":
+        return 3, "Virtual machine %s is missing" % name
     else:
-        return 0, "All sensors are in normal state"
+        return 3, "No data about host system %s" % name
 
-check_info['esx_vsphere_sensors'] = {
-  "inventory_function"  : inventory_esx_vsphere_sensors,
-  "check_function"      : check_esx_vsphere_sensors,
-  "service_description" : "Hardware Sensors",
+
+check_info['esx_vsphere_objects'] = {
+  "inventory_function"  : inventory_esx_vsphere_objects,
+  "check_function"      : check_esx_vsphere_objects,
+  "service_description" : "%s",
 }

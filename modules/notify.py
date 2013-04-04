@@ -35,6 +35,7 @@
 # the form %(variable)s
 
 import pprint
+import urllib
 
 # Default settings
 notification_logdir   = var_dir + "/notify"
@@ -271,6 +272,9 @@ def process_context(context, write_into_spoolfile, use_method = None):
             sys.stderr.write("Details have been logged to %s.\n" % notification_log)
         sys.exit(2)
 
+def urlencode(s):
+    return urllib.quote(s)
+
 def do_notify(args):
     try:
         mode = 'notify'
@@ -334,8 +338,13 @@ def do_notify(args):
             context["OMD_ROOT"] = omd_root
             context["OMD_SITE"] = os.getenv("OMD_SITE", "")
 
-        context["WHAT"] = "SERVICEDESC" in context and "SERVICE" or "HOST"
+        context["WHAT"] = context.get("SERVICEDESC") and "SERVICE" or "HOST"
         context["MAIL_COMMAND"] = notification_mail_command
+
+        context['HOSTURL'] = '/check_mk/view.py?view_name=hoststatus&host=%s' % urlencode(context['HOSTNAME'])
+        if context['WHAT'] == 'SERVICE':
+            context['SERVICEURL'] = '/check_mk/view.py?view_name=service&host=%s&service=%s' % \
+                                     (urlencode(context['HOSTNAME']), urlencode(context['SERVICEDESC']))
 
         # Handle interactive calls
         if mode == 'fake-service':
@@ -434,10 +443,20 @@ def should_notify(context, entry):
         if not servicedesc:
             notify_log(" - Proceed: limited to certain services, but this is a host notification")
         else:
+            # Example
+            # only_services = [ "!LOG foo", "LOG", BAR" ]
+            # -> notify all services beginning with LOG or BAR, but not "LOG foo..."
+            skip = True
             for s in entry["only_services"]:
+                if s.startswith("!"): # negate
+                    negate = True
+                    s = s[1:]
+                else:
+                    negate = False
                 if re.match(s, servicedesc):
+                    skip = negate
                     break
-            else:
+            if skip:
                 notify_log(" - Skipping: service '%s' matches non of %s" % (
                     servicedesc, ", ".join(entry["only_services"])))
                 return False
@@ -553,15 +572,13 @@ def check_notification_type(context, host_events, service_events):
     if context["WHAT"] == "HOST":
         allowed_events = host_events
         state = context["HOSTSTATE"]
-        events = { "UP" : 'u', "DOWN" : 'd' }
+        events = { "UP" : 'r', "DOWN" : 'd', "UNREACHABLE" : 'u' }
     else:
         allowed_events = service_events
         state = context["SERVICESTATE"]
-        events = { "WARNING" : 'w', "CRITICAL" : 'c', "UNKNOWN" : 'u' }
+        events = { "OK" : 'r', "WARNING" : 'w', "CRITICAL" : 'c', "UNKNOWN" : 'u' }
 
-    if notification_type == "PROBLEM":
-        event = events[state]
-    elif notification_type == "RECOVERY":
+    if notification_type == "RECOVERY":
         event = 'r'
     elif notification_type in [ "FLAPPINGSTART", "FLAPPINGSTOP", "FLAPPINGDISABLED" ]:
         event = 'f'
@@ -570,7 +587,7 @@ def check_notification_type(context, host_events, service_events):
     elif notification_type == "ACKNOWLEDGEMENT":
         event = 'x'
     else:
-        event = '?'
+        event = events.get(state, '?')
 
     return event, allowed_events
 

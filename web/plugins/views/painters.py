@@ -686,7 +686,7 @@ multisite_painters["check_manpage"] = {
 
 def paint_comments(prefix, row):
     comments = row[ prefix + "comments_with_info"]
-    text = ", ".join(["<i>%s</i>: %s" % (a,c) for (id,a,c) in comments ])
+    text = ", ".join(["<i>%s</i>: %s" % (a, htmllib.attrencode(c)) for (id, a, c) in comments ])
     return "", text
 
 multisite_painters["svc_comments"] = {
@@ -744,7 +744,10 @@ def paint_custom_notes(row):
             .replace('$HOSTNAME_UPPER$', host.upper())\
             .replace('$HOSTNAME_TITLE$', host[0].upper() + host[1:].lower())\
             .replace('$HOSTADDRESS$',    row["host_address"])\
+            .replace('$SERVICEOUTPUT$',  row.get("service_plugin_output", ""))\
+            .replace('$HOSTOUTPUT$',     row.get("host_plugin_output", ""))\
             .replace('$SERVICEDESC$',    row.get("service_description", ""))
+
     for f in files:
         contents.append(replace_tags(unicode(file(f).read(), "utf-8").strip()))
     return "", "<hr>".join(contents)
@@ -752,7 +755,7 @@ def paint_custom_notes(row):
 multisite_painters["svc_custom_notes"] = {
     "title"   : _("Custom services notes"),
     "short"   : _("Notes"),
-    "columns" : [ "host_name", "host_address", "service_description" ],
+    "columns" : [ "host_name", "host_address", "service_description", "service_plugin_output" ],
     "paint"   : paint_custom_notes,
 }
 
@@ -1152,7 +1155,7 @@ multisite_painters["host_contact_groups"] = {
 multisite_painters["host_custom_notes"] = {
     "title"   : _("Custom host notes"),
     "short"   : _("Notes"),
-    "columns" : [ "host_name", "host_address" ],
+    "columns" : [ "host_name", "host_address", "host_plugin_output" ],
     "paint"   : paint_custom_notes,
 }
 
@@ -1399,7 +1402,7 @@ multisite_painters["comment_author"] = {
 multisite_painters["comment_comment"] = {
     "title"   : _("Comment text"),
     "columns" : ["comment_comment"],
-    "paint"   : lambda row: (None, row["comment_comment"]),
+    "paint"   : lambda row: (None, htmllib.attrencode(row["comment_comment"])),
 }
 
 multisite_painters["comment_what"] = {
@@ -1478,7 +1481,7 @@ multisite_painters["downtime_comment"] = {
     "title"   : _("Downtime comment"),
     "short"   : _("Comment"),
     "columns" : ["downtime_comment"],
-    "paint"   : lambda row: (None, row["downtime_comment"]),
+    "paint"   : lambda row: (None, htmllib.attrencode(row["downtime_comment"])),
 }
 
 multisite_painters["downtime_fixed"] = {
@@ -1550,7 +1553,7 @@ multisite_painters["log_message"] = {
     "title"   : _("Log: complete message"),
     "short"   : _("Message"),
     "columns" : ["log_message"],
-    "paint"   : lambda row: ("", row["log_message"]),
+    "paint"   : lambda row: ("", htmllib.attrencode(row["log_message"])),
 }
 
 def paint_log_plugin_output(row):
@@ -1645,14 +1648,14 @@ multisite_painters["log_options"] = {
     "title"   : _("Log: informational part of message"),
     "short"   : _("Info"),
     "columns" : ["log_options"],
-    "paint"   : lambda row: ("", row["log_options"]),
+    "paint"   : lambda row: ("", htmllib.attrencode(row["log_options"])),
 }
 
 def paint_log_comment(msg):
     if ';' in msg:
         parts = msg.split(';')
         if len(parts) > 6:
-          return ("", parts[-1])
+          return ("", htmllib.attrencode(parts[-1]))
     return ("", "")
 
 multisite_painters["log_comment"] = {

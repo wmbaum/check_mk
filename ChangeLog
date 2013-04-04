@@ -20,6 +20,8 @@
     * Added PNP tempate for check_disk_smb
     * Dashboards can now be configured to be reloaded on resizing
       (automatically adds width/height url parameters)
+    * LDAP authentification: New config option "Do not use persistent
+                             connections to ldap server"
 
     Event Console:
     * New rule feature: automatically delete event after actions
@@ -50,9 +52,19 @@
     * Linux agent: allow cached local/plugins checks (see docu)
     * mem.include: Linux memory check now includes size of page tables. This
       can be important e.g. on ORACLE systems with a lot of memory
-    
+    * agent_vsphere: New VMWare ESX monitoring that uses pySphere and the VMWare
+      API in order to get data very efficiently. Read (upcoming) documentation
+      for details.
+    * windows_agent: Now buffers output before writing it to the socket
+                     Results in less tcp packages per call
+    * smart.stats: rewrote check. Please reinventorize. Error counters are now
+      snapshotted during inventory.
+    * smart.temp: add WATO configuration
+    * if64_tplink: special new check for TP Link switches with broken SNMP output
+
     Notifications:
     * notify.py: unique spoolfiles name no longer created with uuid
+    * Warn user if only_services does never match 
 
     Livestatus:
     * Table statehist: Improved detection of vanished hosts and services.
@@ -74,19 +86,83 @@
     * Configuration of an alternativ host check command
     * Inventory: Display link symbol for ps ruleset
 
+1.2.2:
+    Core:
+    * Added $HOSTURL$ and $SERVICEURL$ to notification macros which contain an
+      URL to the host/service details views with /check_mk/... as base.
+
+    Multisite:
+    * FIX: Fixed umlaut handling in reloaded snapins
+
+1.2.2b7:
+    Checks & Agents:
+    * FIX: postfix_mailq: fix labels in WATO rule, set correct default levels
+    
+
+1.2.2b6:
+    Core:
+    * FIX: setup: detect check_icmp also on 64-Bit CentOS
+           (thanks to あきら) 
+    * FIX: setup.sh: create auth.serials, fix permissions of htpasswd
+    * FIX: livecheck: now able to handle check output up to 16kB
+
+    Checks & Agents:
+    * FIX: apc_symmetra_power: resurrect garble PNP template for 
+    * FIX: check_mk_agent.freebsd: remove garble from output
+           (Thanks to Mathias Decker)
+    * FIX: check_mk-mssql_counters.locks: fix computation, was altogether wrong
+    * FIX: check_mk-mssql_counters.transactions: fix computation also
+    * check_http: now support the option -L (urlizing the result)
+    * Added mem section to Mac OSX agent (Thanks to Brad Davis)
+    * FIX: mssql.vbs (agent plugin) now sets auth options for each instance
+    * FIX: jolokia_metrics.mem: error when missing max values
+    * Make levels for SMART temperature editable via WATO
+
+    Multisite:
+    * FIX: fix localization in non-OMD environment
+           (thanks to あきら)
+    * FIX: hopefully fix computation of Speed-O-Meter
+    * Add $SERVICEOUTPUT$ and $HOSTOUTPUT$ to allowed macros for
+      custom notes
+    * FIX: Writing one clean message to webserver error_log when write fails
+    * FIX: Escaping html entities when displaying comment fields
+    * FIX: Monitored on site attribute always has valid default value
+
+    Notifications:
+    * FIX: fix event type for recoveries
+    * FIX: fix custom notifications on older nagios versions
+    * FIX: handle case where type HOST/SERVICE not correctly detected
+    
+    Livestatus:
+    * FIX: memory leak when removing downtime / comment 
+
+    WATO:
+    * FIX: Removed "No roles assigned" text in case of unlocked role attribute
+           in user management dialog
+    * FIX: Fix output of rule search: chapters appeared twice sometimes
+
+    Event Console:
+    * FIX: check_mkevents: fix usage help if called with illegal options
+    * check_mkevents now allows specification of a UNIX socket
+      This is needed in non-OMD environments
+    * setup.py now tries to setup Event Console even in non-OMD world
+
 1.2.2b5:
     Core:
     * Checks can now omit the typical "OK - " or "WARN -". This text
       will be added automatically if missing.
     * FIX: livecheck: fixed compilation bug
     * FIX: check_mk: convert service description unicode into utf-8
+    * FIX: avoid simultanous activation of changes by means of a lock
     
     Checks & Agents:
     * FIX: jolokia_metrics.mem - now able to handle negative/missing max values
     * ADD: tcp_conn_stats: now additionally uses /proc/net/tcp6
     * ADD: wmic_processs: cpucores now being considered when calculating 
            user/kernel percentages. (thanks to William Baum)
-
+    * FIX: UPS checks support Eaton Evolution
+    * FIX: windows agent plugin: mssql now exits after 10 seconds
+    
     Notifications:
     * FIX: fixed crash on host notification when contact had explicit services set
 
@@ -99,9 +175,11 @@
 
     Multisite:
     * FIX: Avoid duplicate "Services" button in host detail views
+    * FIX: fix rescheduling icon for services with non-ASCII characters
     * New filter for IP address of a host 
     * Quicksearch: allow searching for complete IP addresses and IP
       address prefixes
+    * Add logentry class filter to view 'Host- and Service events'
 
     BI: 
     * FIX: fix exception with expansion level being 'None'

@@ -33,7 +33,7 @@ CONFDIR	       	= /etc/$(NAME)
 LIBDIR	       	= $(PREFIX)/lib/$(NAME)
 DISTNAME       	= $(NAME)-$(VERSION)
 TAROPTS        	= --owner=root --group=root --exclude=.svn --exclude=*~ \
-		  --exclude=.gitignore --exclude=.*.swp
+		  --exclude=.gitignore --exclude=.*.swp --exclude=.f12
 LIVESTATUS_SOURCES = configure aclocal.m4 config.guess config.h.in config.sub \
 		     configure.ac ltmain.sh Makefile.am Makefile.in missing \
 		     nagios/README nagios/*.h src/*.{h,c,cc} src/Makefile.{in,am} \
@@ -55,11 +55,11 @@ help:
 
 check-spaces:
 	@echo -n "Checking for trailing spaces..."
-	@grep -q '[[:space:]]$$' $(SOURCE_FILES) && { echo $$? ; figlet "Space error" \
-          && echo "Aborting due to trailing spaces. Please use 'make healspaces' to repair." \
-          && echo "Affected files: " \
-          && grep -l '[ 	]$$' $(SOURCE_FILES) \
-          && false ; } || true
+	@if grep -q '[[:space:]]$$' $(SOURCE_FILES) ; then echo $$? ; figlet "Space error" \
+          ; echo "Aborting due to trailing spaces. Please use 'make healspaces' to repair." \
+          ; echo "Affected files: " \
+          ; grep -l '[ 	]$$' $(SOURCE_FILES) \
+          ; exit 1 ; fi
 	@echo OK
 
 check-permissions:
@@ -88,6 +88,7 @@ dist: mk-livestatus mk-eventd
 	tar czf $(DISTNAME)/checkman.tar.gz $(TAROPTS) -C checkman $$(cd checkman ; ls)
 	tar czf $(DISTNAME)/web.tar.gz $(TAROPTS) -C web htdocs plugins
 	tar czf $(DISTNAME)/livestatus.tar.gz $(TAROPTS) -C livestatus  $$(cd livestatus ; echo $(LIVESTATUS_SOURCES) )
+	tar czf $(DISTNAME)/mkeventd.tar.gz $(TAROPTS) -C mkeventd  $$(cd mkeventd ; echo * )
 	tar czf $(DISTNAME)/pnp-templates.tar.gz $(TAROPTS) -C pnp-templates $$(cd pnp-templates ; ls *.php)
 	tar cf $(DISTNAME)/doc.tar $(TAROPTS) -C doc $$(cd doc ; ls)
 	tar rf $(DISTNAME)/doc.tar $(TAROPTS) COPYING AUTHORS ChangeLog
@@ -133,7 +134,7 @@ version:
           -o "$$(head -c 12 /etc/issue)" = "Ubuntu 11.04" \
           -o "$$(head -c 12 /etc/issue)" = "Ubuntu 11.10" \
           -o "$$(head -c 12 /etc/issue)" = "Ubuntu 12.04" \
-          -o "$$(head -c 20 /etc/issue)" = "Debian GNU/Linux 6.0" ] \
+          -o "$$(head -c 12 /etc/issue)" = "Ubuntu 12.10" ] \
           || { echo 'You are not on the reference system!' ; exit 1; }
 	@newversion=$$(dialog --stdout --inputbox "New Version:" 0 0 "$(VERSION)") ; \
 	if [ -n "$$newversion" ] ; then $(MAKE) NEW_VERSION=$$newversion setversion ; fi
@@ -223,7 +224,7 @@ mrproper:
 
 SOURCE_FILES = checkman/* modules/* checks/* notifications/* $$(find -name Makefile) \
           livestatus/src/*{cc,c,h} web/htdocs/*.{py,css} web/htdocs/js/*.js web/plugins/*/*.py \
-          doc/helpers/* $(find -type f pnp-templates/*.php)
+          doc/helpers/* scripts/setup.sh scripts/autodetect.py $(find -type f pnp-templates/*.php)
 
 healspaces:
 	@echo "Removing trailing spaces from code lines..."

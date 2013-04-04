@@ -102,13 +102,13 @@ def ldap_uri():
 def ldap_connect():
     global ldap_connection, ldap_connection_options
 
-    if ldap_connection and config.ldap_connection == ldap_connection_options:
+    if not "no_persistent" in config.ldap_connection and ldap_connection and config.ldap_connection == ldap_connection_options:
         return # Use existing connections (if connection settings have not changed)
 
     try:
         ldap
     except:
-        raise MKLDAPException(_("The python module python-ldap seem to be missing. You need to "
+        raise MKLDAPException(_("The python module python-ldap seems to be missing. You need to "
                                 "install this extension to make the LDAP user connector work."))
 
     # Some major config var validations

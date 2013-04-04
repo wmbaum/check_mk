@@ -268,6 +268,7 @@ register_configvar(group,
     domain = "multisite"
     )
 
+
 register_configvar(group,
     "bi_precompile_on_demand",
     Checkbox(title = _("Precompile aggregations on demand"),
@@ -375,6 +376,12 @@ register_configvar(group,
                 value  = True,
                 totext = _("Encrypt the network connection using SSL."),
             )),
+            ("no_persistent", FixedValue(
+                title  = _("No persistent connection"),
+                help   = _("The connection to the LDAP server is not persisted."),
+                value  = True,
+                totext = _("Don't use persistent LDAP connections."),
+            )),
             ("connect_timeout", Float(
                 title = _("LDAP Connect Timeout (sec)"),
                 help = _("Timeout for the initial connection to the LDAP server in seconds."),
@@ -422,7 +429,7 @@ register_configvar(group,
                 ],
             )),
         ],
-        optional_keys = ['use_ssl', 'bind', ],
+        optional_keys = ['no_persistent', 'use_ssl', 'bind', ],
     ),
     domain = "multisite",
 )
@@ -630,6 +637,22 @@ register_configvar(group,
                       "from cache files that have been created during normal operation or have "
                       "been copied here from another monitoring site.")),
     need_restart = True)
+
+register_configvar(group,
+    "restart_locking",
+    DropdownChoice(
+        title = _("Simultanous activation of changes"),
+        help = _("When two users simultanously try to activate the changes then "
+                 "you can decide to abort with an error (default) or have the requests "
+                 "serialized. It is also possible - but not recommended - to turn "
+                 "off locking altogether."),
+        choices = [
+            ('abort', _("Abort with an error")),
+            ('ait' ,  _("Wait until the other has finished") ),
+            (None ,   _("Disable locking") ),
+            ]),
+    need_restart = False
+    )
 
 register_configvar(group,
     "agent_simulator",
@@ -1446,6 +1469,7 @@ class MonitoringIcon(ValueSpec):
     def validate_value(self, value, varprefix):
         if value and value not in self.available_icons():
             raise MKUserError(varprefix, _("The selected icon image does not exist."))
+        ValueSpec.custom_validate(self, value, varprefix)
 
 
 

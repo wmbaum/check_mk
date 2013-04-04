@@ -6043,6 +6043,7 @@ class ExceptionName(TextAscii):
         if value in [ "name", "alias", "timeperiod_name", "register", "use", "exclude" ]:
             raise MKUserError(varprefix, _("<tt>%s</tt> is a reserved keyword."))
         TextAscii.validate_value(self, value, varprefix)
+        ValueSpec.custom_validate(self, value, varprefix)
 
 class MultipleTimeRanges(ValueSpec):
     def __init__(self, **kwargs):
@@ -6080,6 +6081,7 @@ class MultipleTimeRanges(ValueSpec):
     def validate_value(self, value, varprefix):
         for c, v in enumerate(value):
             self._rangevs.validate_value(v, varprefix + "_%d" % c)
+        ValueSpec.custom_validate(self, value, varprefix)
 
 # Check, if timeperiod tpa excludes or is tpb
 def timeperiod_excludes(timeperiods, tpa_name, tpb_name):
@@ -7071,12 +7073,11 @@ def declare_site_attribute():
         declare_host_attribute(SiteAttribute(), show_in_table = True, show_in_folder = True)
 
 def default_site():
-    deflt = None
     for id, site in config.sites.items():
         if not "socket" in site \
             or site["socket"] == "unix:" + defaults.livestatus_unix_socket:
             return id
-    return None
+    return config.sites.keys()[0]
 
 class SiteAttribute(Attribute):
     def __init__(self):
@@ -7647,6 +7648,13 @@ def notification_script_title(name):
 
 
 def load_notification_table():
+    # Make sure, that list is not trivially false
+    def validate_only_services(value, varprefix):
+        for s in value:
+            if s and s[0] != '!':
+                return
+        raise MKUserError(varprefix + "_0", _("The list of services will never match"))
+
     global vs_notification_method
     vs_notification_method = \
         CascadingDropdown(
@@ -7747,6 +7755,7 @@ def load_notification_table():
                                                  "entry with <tt>!</tt> in order to <i>exclude</i> that service."),
                                         orientation = "horizontal",
                                         valuespec = RegExp(size = 20),
+                                        validate = validate_only_services,
                                     ),
                                   ),
                                   ( "parameters",
@@ -8199,7 +8208,7 @@ def mode_edit_user(phase):
                 html.write("<a href='%s'>%s</a><br>" % (url, role["alias"]))
 
             html.hidden_field("role_" + role_id, is_member and '1' or '')
-    if not is_member_of_at_least_one:
+    if is_locked('roles') and not is_member_of_at_least_one:
         html.write('<i>%s</i>' % _('No roles assigned.'))
 
     # Contact groups
@@ -9757,6 +9766,10 @@ def mode_rulesets(phase):
     groupnames = [ gn for gn, rulesets in g_rulespec_groups
                    if only_used or search != None or gn == group or gn.startswith(group + "/") ]
 
+    # In case of search we need to sort the groups since main chapters would
+    # appear more than once otherwise.
+    if search != None:
+        groupnames.sort()
 
     html.write('<div class=rulesets>')
 
@@ -11136,8 +11149,8 @@ def Levels(**kwargs):
               Tuple(
                   title = _("Fixed Levels"),
                   elements = [
-                      Float(unit = unit, title = _("Warning at"), default_value = default_levels[0]),
-                      Float(unit = unit, title = _("Critical at"), default_value = default_levels[1]),
+                      Float(unit = unit, title = _("Warning at"), default_value = default_levels[0], accept_int = True),
+                      Float(unit = unit, title = _("Critical at"), default_value = default_levels[1], accept_int = True),
                   ],
               ),
               PredictiveLevels(
