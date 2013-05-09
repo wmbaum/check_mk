@@ -4,6 +4,13 @@
       used by the vSphere and SAP plugins
     * New variable host_check_commands, that allows the definition of
       an alternative host check command (without manually defining one)
+    * New variable snmp_check_interval which can be used to customize
+      the check intervals of SNMP based checks
+    * setup: Added missing vars rrd_path and rrdcached_sock
+    * new variable check_mk_exit_status: allows to make Check_MK service OK,
+      even if host in not reachable.
+    * set always_cleanup_autochecks to True per default now
+    * check_mk: new option --snmptranslate
 
     Multisite:
     * New availability view for arbitrary host/service collections
@@ -22,24 +29,35 @@
       (automatically adds width/height url parameters)
     * LDAP authentification: New config option "Do not use persistent
                              connections to ldap server"
+    * Hosttags and auxiliary tags can now be grouped in topics
+    * Fixed output of time in view if server time differs from user time
 
     Event Console:
     * New rule feature: automatically delete event after actions
     * New filter for maximum services level (minimum already existed)
+    * New global setting: hostname translation (allows e.g. to drop domain name)
 
     Checks & Agents:
     * solaris_mem: New check for memory and swap for Solaris agent
-    * New special agent agent_vsphere for monitoring ESX (VMware) Hosts
-      via vSphere interface
+    * agent_vsphere: New VMWare ESX monitoring that uses pySphere and the VMWare
+      API in order to get data very efficiently. Read (upcoming) documentation
+      for details.
     * new special agent agent_random for creating random monitoring data
     * New checks: windows_intel_bonding / windows_broadcom_bonding
-    * cisco_qos: adhere qos-bandwidth policies
     * Implemented SAP monitoring based on the agent plugin mk_sap. This
       must be run on a linux host. It connects via RFC calls to SAP R/3
       systems to retrieve monitoring information for this or other machines.
     * sap.dialog: Monitors SAP dialog statistics like the response time
     * sap.value: Simply processes information provided by SAP to Nagios
     * openvpn_clients: new check for OpenVPN connections
+    * if64_tplink: special new check for TP Link switches with broken SNMP output
+    * job: Monitoring states and performance indicators of any jobs on linux systems
+    * oracle_asm_diskgroups: Added missing agent plugin + asmcmd wrapper script
+    * oracle_jobs: New check to monitor oracle database job execution
+    * oracle_rman_backups: New check to monitor state of ORACLE RMAN backups
+    * jar_signature: New check to monitor wether or not a jar is signed and
+      certificate is not expired
+    * cisco_qos: adhere qos-bandwidth policies
     * check_disk_smb: WATO formalization for active check check_disk_smb
     * if.include: new configurable parameters for assumed input and output speed
     * cisco_qos: new param unit:    switches between bit/byte display
@@ -52,17 +70,30 @@
     * Linux agent: allow cached local/plugins checks (see docu)
     * mem.include: Linux memory check now includes size of page tables. This
       can be important e.g. on ORACLE systems with a lot of memory
-    * agent_vsphere: New VMWare ESX monitoring that uses pySphere and the VMWare
-      API in order to get data very efficiently. Read (upcoming) documentation
-      for details.
     * windows_agent: Now buffers output before writing it to the socket
                      Results in less tcp packages per call
     * smart.stats: rewrote check. Please reinventorize. Error counters are now
       snapshotted during inventory.
     * smart.temp: add WATO configuration
-    * if64_tplink: special new check for TP Link switches with broken SNMP output
     * windows_agent: check_mk.ini: new option "port" - specifies agent port
     * winperf_processor: introduce averaging, support predictive levels
+    * cpu_util.include: fixed bug when params are set to None
+    * predictive levels: fixed bug when existing predictive levels get new options
+    * windows_plugin mssql.vbs: No longer queries stopped mssql instances
+    * cisco_hsrp: fixed problem when HSRP groups had same ip address
+    * winperf_if: hell has frozen over: a new check for network adapters on Windows
+    * windows agent: new config section plugins, now able to set timeouts for specific plugins
+                     new global config option: timeout_plugins_total
+    * lnx_if in Linux agent: force deterministical order of network devices
+    * Linux agent: remove obsolete old <<<netif>>> and <<<netctr>>> sections
+    * logwatch, logwatch.ec: detect error in agent configuration
+    * Linux agent: cups_queues: do not monitor non-local queues (thanks to Olaf Morgenstern)
+    * AIX agent: call lparstat with argument 1 1, this give more accurate data
+    * Check_MK check: enable extended performance data per default now
+    * viprinet checks: New checks for firmware version/update, memory usage, power supply status, 
+                       router mode, serialnumber and temperature sensors
+    * uptime, snmp_uptime, esx_vsphere_counters.uptime: allow to set lower and upper levels
+    * winperf_processor: Now displays (and scales) to number of cpus in pnpgraph
 
     Notifications:
     * notify.py: unique spoolfiles name no longer created with uuid
@@ -72,6 +103,8 @@
     * Table statehist: Improved detection of vanished hosts and services.
                        Now able to detect and remove nonsense check plugin output 
     * FIX: able to handle equal comment_id between host and service
+    * livestatus.log: show utf-8 decoding problems only with debug logging >=2
+    * livestatus: fixed incorrect output formatting of comments_with_info column
 
     BI:
     * Integrated availability computing, including nifty time warp feature
@@ -87,6 +120,48 @@
       for each logfile on a host
     * Configuration of an alternativ host check command
     * Inventory: Display link symbol for ps ruleset
+    * FIX: Rulesets: correct display of rules within subfolders
+
+
+1.2.2p2:
+    Checks & Agents:
+    * FIX: jolokia_info: ignore ERROR instances
+    * FIX: apache_status: use (also) apache_status.cfg instead of apache_status.conf
+     
+
+1.2.2p1:
+    Core:
+    * FIX: correctly quote ! and \ in active checks for Nagios
+    * FIX: Performing regular inventory checks at configured interval even
+           when the service is in problem state
+    * Check_MK core now supports umlauts in host-/service- and contactgroup names
+
+    Checks & Agents:
+    * FIX: vsphere_agent: fix problems whith ! and \ in username or password
+    * FIX: check_mk_agent.aix: fix shebang: was python, must be ksh
+    * FIX: cisco_qos: Be compatible to newer IOS-XE versions (Thanks to Ken Smith)
+    * FIX: mk_jolokia: Handling spaces in application server instances correctly
+
+    Multisite:
+    * FIX: do not remove directories of non-exisant users anymore. This lead to
+           a deletion of users' settings in case of an external authentication
+           (like mod_ldap).
+    * FIX: Fixed handling of dashboards without title in sidebar view snapin
+    * FIX: titles and services got lost when moving join-columns in views
+    * FIX: Fixed exception during initial page rendering in python 2.6 in special cases
+           (Internal error: putenv() argument 2 must be string, not list)
+
+    Notifications:
+    * FIX: HTML mails: Handle the case where plugin argument is not set
+    * FIX: HTML mails: remove undefinded placeholders like $GRAPH_CODE$
+
+    WATO:
+    * Improved handling of valuespec validations in WATO rule editor. Displaying a
+      warning message when going to throw away the current settings.
+    * FIX: fix bug where certain settings where not saved on IE. This was mainly
+           on IE7, but also IE8,9,10 in IE7 mode (which is often active). Affected
+           was e.g. the nodes of a cluster or the list of services for service
+           inventory
 
 1.2.2:
     Core:
@@ -108,6 +183,9 @@
     WATO:
     * FIX: Fix several cases where WATO rule analyser did not hilite all matching rules
     * Added tcp port parameter to SSL certificate check (Thanks to Marcel Schulte)
+
+    Event Console:
+    * FIX: Syslog server is now able to parse RFC 5424 syslog messages
 
 1.2.2b7:
     Checks & Agents:

@@ -128,7 +128,7 @@ avoption_entries = [
                  ]
               )
             ),
-            ( "exclude_ok", 
+            ( "exclude_ok",
               Checkbox(label = _("Treat phases of UP/OK as non-downtime"))
             ),
         ],
@@ -529,9 +529,9 @@ def do_render_availability(rows, what, avoptions, timeline, timewarpcode):
                     s = "flapping"
                 else:
                     if what in [ "service", "bi" ]:
-                        s = { 0: "ok", 1:"warn", 2:"crit", 3:"unknown" }[state]
+                        s = { 0: "ok", 1:"warn", 2:"crit", 3:"unknown", -1: "unmonitored", -2: "unmonitored" }[state]
                     else:
-                        s = { 0: "up", 1:"down", 2:"unreach"}[state]
+                        s = { 0: "up", 1:"down", 2:"unreach", -1: "unmonitored", -2: "unmonitored" }[state]
                     if s == "warn":
                         s = avoptions["state_grouping"]["warn"]
                     elif s == "unknown":
@@ -725,7 +725,7 @@ def render_availability_table(availability, from_time, until_time, range_title, 
             return False
         else:
             return True
-    
+
     # Render the stuff
     availability.sort()
     show_summary = what != "bi" and avoptions.get("summary")

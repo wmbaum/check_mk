@@ -263,7 +263,7 @@ def substitute_context(template, context):
         template = template.replace('$'+varname+'$', value)
 
     # Remove the rest of the variables and make them empty
-    template = re.sub("\$[A-Z]+\$", "", template)
+    template = re.sub("\$[A-Z_][A-Z_0-9]*\$", "", template)
     return template
 
 def prepare_contents(context):
@@ -319,7 +319,7 @@ def fetch_pnp_data(context, params):
         path = "%s/share/pnp4nagios/htdocs/index.php" % context['OMD_ROOT']
     except:
         # Non-omd environment - use plugin argument 1
-        path = context['PARAMETER_1']
+        path = context.get('PARAMETER_1', '')
 
     if not os.path.exists(path):
         raise GraphException('Unable to locate pnp4nagios index.php (%s)' % path)

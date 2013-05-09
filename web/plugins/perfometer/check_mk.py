@@ -55,11 +55,10 @@ def perfometer_check_mk_df(row, check_command, perf_data):
     varname, value, unit, warn, crit, minn, maxx = perf_data[0]
     perc_used = 100 * (float(value) / float(maxx))
     perc_free = 100 - float(perc_used)
-    color = { 0: "#0f8", 1: "#ff2", 2: "#f22", 3: "#fa2" }[row["service_state"]]
-    h += perfometer_td(perc_used, color)
+    h += perfometer_td(perc_used, "#00ffc6")
     h += perfometer_td(perc_free, "white")
     h += "</tr></table>"
-    return "%d%%" % perc_used, h
+    return "%0.2f%%" % perc_used, h
 
 perfometers["check_mk-df"] = perfometer_check_mk_df
 perfometers["check_mk-vms_df"] = perfometer_check_mk_df
@@ -71,7 +70,39 @@ perfometers["check_mk-zfsget"] = perfometer_check_mk_df
 perfometers["check_mk-hr_fs"] = perfometer_check_mk_df
 perfometers["check_mk-oracle_asm_diskgroup"] = perfometer_check_mk_df
 perfometers["check_mk-mysql_capacity"] = perfometer_check_mk_df
-perfometers["check_mk-esx_vsphere_datastores"] = perfometer_check_mk_df
+perfometers["check_mk-esx_vsphere_counters.ramdisk"] = perfometer_check_mk_df
+
+def perfometer_esx_vsphere_datastores(row, check_command, perf_data):
+    used_mb        = perf_data[0][1]
+    maxx           = perf_data[0][-1]
+    uncommitted_mb = perf_data[3][1]
+    perc_used = 100 * (float(used_mb) / float(maxx))
+    perc_uncommitted = 100 * (float(uncommitted_mb) / float(maxx))
+    perc_totally_free = 100 - perc_used - perc_uncommitted
+
+    h = '<table><tr>'
+    if perc_used + perc_uncommitted <= 100:
+        # Regular handling, no overcommitt
+        h += perfometer_td(perc_used, "#00ffc6")
+        h += perfometer_td(perc_uncommitted, "#eeccff")
+        h += perfometer_td(perc_totally_free, "white")
+    else:
+        # Visualize overcommitted space by scaling to total overcommittment value
+        # and drawing the capacity as red line in the perfometer
+        total = perc_used + perc_uncommitted
+        perc_used_bar = perc_used * 100 / total
+        perc_uncommitted_bar = perc_uncommitted * 100 / total
+        perc_free = (100 - perc_used) * 100 / total
+
+        h += perfometer_td(perc_used_bar, "#00ffc6")
+        h += perfometer_td(perc_free, "#eeccff")
+        h += perfometer_td(1, "red") # This line visualizes the capacity
+        h += perfometer_td(perc_uncommitted - perc_free, "#eeccff")
+    h += "</tr></table>"
+
+    return "%0.2f%% (+%0.2f%%)" % (perc_used, perc_uncommitted), h
+
+perfometers["check_mk-esx_vsphere_datastores"] = perfometer_esx_vsphere_datastores
 
 
 def perfometer_check_mk_kernel_util(row, check_command, perf_data):
@@ -234,6 +265,7 @@ perfometers["check_mk-f5_bigip_temp"] = perfometer_temperature
 perfometers["check_mk-hp_proliant_temp"] = perfometer_temperature
 perfometers["check_mk-akcp_sensor_temp"] = perfometer_temperature
 perfometers["check_mk-fsc_temp"] = perfometer_temperature
+perfometers["check_mk-viprinet_temp"] = perfometer_temperature
 
 def perfometer_blower(row, check_command, perf_data):
     rpm = saveint(perf_data[0][1])
@@ -293,6 +325,18 @@ def perfometer_check_mk_if(row, check_command, perf_data):
         unit      = unit
     )
 
+perfometers["check_mk-if"] = perfometer_check_mk_if
+perfometers["check_mk-if64"] = perfometer_check_mk_if
+perfometers["check_mk-if64_tplink"] = perfometer_check_mk_if
+perfometers["check_mk-winperf_if"] = perfometer_check_mk_if
+perfometers["check_mk-vms_if"] = perfometer_check_mk_if
+perfometers["check_mk-if_lancom"] = perfometer_check_mk_if
+perfometers["check_mk-lnx_if"] = perfometer_check_mk_if
+perfometers["check_mk-hpux_if"] = perfometer_check_mk_if
+perfometers["check_mk-mcdata_fcport"] = perfometer_check_mk_if
+perfometers["check_mk-esx_vsphere_counters.if"] = perfometer_check_mk_if
+
+
 def perfometer_check_mk_brocade_fcport(row, check_command, perf_data):
     return perfometer_bandwidth(
         in_traffic  = savefloat(perf_data[0][1]),
@@ -300,6 +344,8 @@ def perfometer_check_mk_brocade_fcport(row, check_command, perf_data):
         in_bw     = savefloat(perf_data[0][6]),
         out_bw    = savefloat(perf_data[1][6]),
     )
+
+perfometers["check_mk-brocade_fcport"] = perfometer_check_mk_brocade_fcport
 
 def perfometer_check_mk_cisco_qos(row, check_command, perf_data):
     unit =  "Bit/s" in row["service_plugin_output"] and "Bit" or "B"
@@ -311,16 +357,8 @@ def perfometer_check_mk_cisco_qos(row, check_command, perf_data):
         unit      = unit
     )
 
-perfometers["check_mk-if"] = perfometer_check_mk_if
-perfometers["check_mk-if64"] = perfometer_check_mk_if
-perfometers["check_mk-if64_tplink"] = perfometer_check_mk_if
-perfometers["check_mk-vms_if"] = perfometer_check_mk_if
-perfometers["check_mk-if_lancom"] = perfometer_check_mk_if
-perfometers["check_mk-lnx_if"] = perfometer_check_mk_if
-perfometers["check_mk-hpux_if"] = perfometer_check_mk_if
-perfometers["check_mk-mcdata_fcport"] = perfometer_check_mk_if
-perfometers["check_mk-brocade_fcport"] = perfometer_check_mk_brocade_fcport
 perfometers["check_mk-cisco_qos"] = perfometer_check_mk_cisco_qos
+
 
 def perfometer_oracle_tablespaces(row, check_command, perf_data):
     current = float(perf_data[0][1])
@@ -381,7 +419,7 @@ perfometers["check_mk-hpux_snmp_cs.cpu"] = perfometer_hpux_snmp_cs_cpu
 
 
 def perfometer_check_mk_uptime(row, check_command, perf_data):
-    days,    rest    = divmod(int(perf_data[0][1]), 60*60*24)
+    days,    rest    = divmod(int(float(perf_data[0][1])), 60*60*24)
     hours,   rest    = divmod(rest,   60*60)
     minutes, seconds = divmod(rest,      60)
 
@@ -389,6 +427,7 @@ def perfometer_check_mk_uptime(row, check_command, perf_data):
 
 perfometers["check_mk-uptime"]      = perfometer_check_mk_uptime
 perfometers["check_mk-snmp_uptime"] = perfometer_check_mk_uptime
+perfometers["check_mk-esx_vsphere_counters.uptime"] = perfometer_check_mk_uptime
 
 
 def perfometer_check_mk_diskstat(row, check_command, perf_data):
@@ -409,6 +448,7 @@ perfometers["check_mk-diskstat"] = perfometer_check_mk_diskstat
 perfometers["check_mk-winperf_phydisk"] = perfometer_check_mk_diskstat
 perfometers["check_mk-hpux_lunstats"] = perfometer_check_mk_diskstat
 perfometers["check_mk-mysql.innodb_io"] = perfometer_check_mk_diskstat
+perfometers["check_mk-esx_vsphere_counters.diskio"] = perfometer_check_mk_diskstat
 
 def perfometer_in_out_mb_per_sec(row, check_command, perf_data):
     read_mbit = float(perf_data[0][1]) / 131072
@@ -643,12 +683,15 @@ def perfometer_simple_mem_usage(row, command, perf):
 
 perfometers['check_mk-db2_mem'] = perfometer_simple_mem_usage
 perfometers['check_mk-esx_vsphere_hostsystem.mem_usage'] = perfometer_simple_mem_usage
-perfometers['check_mk-esx_vsphere_virtualmachine.mem_usage'] = perfometer_simple_mem_usage
+
+def perfometer_vmguest_mem_usage(row, command, perf):
+    used = float(perf[0][1])
+    return number_human_readable(used), perfometer_logarithmic(used, 1024*1024*2000, 2, "#20cf80")
+
+perfometers['check_mk-esx_vsphere_vm.mem_usage'] = perfometer_vmguest_mem_usage
 
 def perfometer_esx_vsphere_hostsystem_cpu(row, command, perf):
-    cores = float(perf[0][6])
-    used = float(perf[0][1])
-    used_perc = used / cores * 100.0
+    used_perc = float(perf[0][1])
     return "%d%%" % used_perc, perfometer_linear(used_perc, "#60f020")
 
 perfometers['check_mk-esx_vsphere_hostsystem.cpu_usage'] = perfometer_esx_vsphere_hostsystem_cpu

@@ -59,6 +59,7 @@ if omd_root:
     local_notifications_dir  = local_share + "/notifications"
     local_check_manpages_dir = local_share + "/checkman"
     local_agents_dir         = local_share + "/agents"
+    local_mibs_dir           = local_share + "/mibs"
     local_web_dir            = local_share + "/web"
     local_pnp_templates_dir  = local_share + "/pnp-templates"
     local_doc_dir            = omd_root + "/local/share/doc/check_mk"
@@ -68,6 +69,7 @@ else:
     local_notifications_dir  = None
     local_check_manpages_dir = None
     local_agents_dir         = None
+    local_mibs_dir           = None
     local_web_dir            = None
     local_pnp_templates_dir  = None
     local_doc_dir            = None
@@ -225,7 +227,7 @@ piggyback_translation              = [] # Ruleset for translating piggyback host
 simulation_mode                    = False
 agent_simulator                    = False
 perfdata_format                    = "pnp" # also possible: "standard"
-check_mk_perfdata_with_times       = False
+check_mk_perfdata_with_times       = True
 debug_log                          = None
 monitoring_host                    = None # deprecated
 max_num_processes                  = 50
@@ -240,7 +242,7 @@ snmp_character_encodings           = []
 inventory_check_interval           = None # Nagios intervals (4h = 240)
 inventory_check_severity           = 1    # warning
 inventory_max_cachefile_age        = 120  # secs.
-always_cleanup_autochecks          = False
+always_cleanup_autochecks          = True
 
 # Nagios templates and other settings concerning generation
 # of Nagios configuration files. No need to change these values.
@@ -322,8 +324,9 @@ scanparent_hosts                     = [ ( ALL_HOSTS ) ]
 host_attributes                      = {} # needed by WATO, ignored by Check_MK
 ping_levels                          = [] # special parameters for host/PING check_command
 host_check_commands                  = [] # alternative host check instead of check_icmp
+check_mk_exit_status                 = [] # Rule for specifying CMK's exit status in case of various errors
 check_periods                        = []
-
+snmp_check_interval                  = []
 
 
 # global variables used to cache temporary values (not needed in check_mk_base)
@@ -696,6 +699,13 @@ def check_period_of(hostname, service):
             return period
     else:
         return None
+
+def check_interval_of(hostname, checkname):
+    if not check_uses_snmp(checkname):
+        return # no values at all for non snmp checks
+    for match, minutes in host_extra_conf(hostname, snmp_check_interval):
+        if match is None or match == checkname:
+            return minutes # use first match
 
 def get_single_oid(hostname, ipaddress, oid):
     # New in Check_MK 1.1.11: oid can end with ".*". In that case
@@ -1072,6 +1082,13 @@ def snmp_port_spec(hostname):
     else:
         return ":%d" % port
 
+def exit_code_spec(hostname):
+    spec = {}
+    specs = host_extra_conf(hostname, check_mk_exit_status)
+    for entry in specs[::-1]:
+        spec.update(entry)
+    return spec
+
 
 def service_description(check_type, item):
     if check_type not in check_info:
@@ -1296,7 +1313,7 @@ def host_check_command(hostname, ip, is_clust):
     elif value == "agent" or value[0] == "service":
         service = value == "agent" and "Check_MK" or value[1]
         command = "check-mk-host-custom-%d" % (len(hostcheck_commands_to_define) + 1)
-        hostcheck_commands_to_define.append((command, 
+        hostcheck_commands_to_define.append((command,
            'echo "$SERVICEOUTPUT:%s:%s$" && exit $SERVICESTATEID:%s:%s$' % (hostname, service, hostname, service)))
         return command
 
@@ -1524,7 +1541,6 @@ def in_extraconf_servicelist(list, item):
     # no match in list -> negative answer
     return False
 
-
 # NEW IMPLEMENTATION
 def create_nagios_config(outfile = sys.stdout, hostnames = None):
     global hostgroups_to_define
@@ -1577,8 +1593,6 @@ def create_nagios_config(outfile = sys.stdout, hostnames = None):
     if extra_nagios_conf:
         outfile.write("\n# extra_nagios_conf\n\n")
         outfile.write(extra_nagios_conf)
-
-
 
 def create_nagios_config_host(outfile, hostname):
     outfile.write("\n# ----------------------------------------------------\n")
@@ -1633,12 +1647,12 @@ def create_nagios_hostdefs(outfile, hostname):
         hostgroups_to_define.add(default_host_group)
     elif define_hostgroups:
         hostgroups_to_define.update(hgs)
-    outfile.write("  hostgroups\t\t\t%s\n" % hostgroups)
+    outfile.write("  hostgroups\t\t\t%s\n" % make_utf8(hostgroups))
 
     # Contact groups
     cgrs = host_contactgroups_of([hostname])
     if len(cgrs) > 0:
-        outfile.write("  contact_groups\t\t%s\n" % ",".join(cgrs))
+        outfile.write("  contact_groups\t\t%s\n" % make_utf8(",".join(cgrs)))
         contactgroups_to_define.update(cgrs)
 
     # Get parents manually defined via extra_host_conf["parents"]. Only honor
@@ -1662,10 +1676,6 @@ def create_nagios_hostdefs(outfile, hostname):
         outfile.write("  _NODEIPS\t\t\t%s\n" % " ".join(node_ips))
         if not extra_conf_parents:
             outfile.write("  parents\t\t\t%s\n" % ",".join(nodes))
-
-        # Host check uses (service-) IP address if available
-        if ip:
-            outfile.write("  check_command\t\t\tcheck-mk-ping\n")
 
     # Output alias, but only if it's not define in extra_host_conf
     aliases = host_extra_conf(hostname, extra_host_conf.get("alias", []))
@@ -1710,7 +1720,7 @@ def create_nagios_hostdefs(outfile, hostname):
 
         # host gets same contactgroups as real host
         if len(cgrs) > 0:
-            outfile.write("  contact_groups\t\t+%s\n" % ",".join(cgrs))
+            outfile.write("  contact_groups\t\t+%s\n" % make_utf8(",".join(cgrs)))
 
         if is_clust:
             outfile.write("  _NODEIPS\t\t\t%s\n" % " ".join(node_ips))
@@ -1774,14 +1784,26 @@ def create_nagios_servicedefs(outfile, hostname):
             if asn != "":
                 aggregated_services_conf.add(asn)
 
+        # Add the check interval of either the Check_MK service or
+        # (if configured) the snmp_check_interval for snmp based checks
+        check_interval = 1 # default hardcoded interval
+        # Customized interval of Check_MK service
+        values = service_extra_conf(hostname, "Check_MK", extra_service_conf.get('check_interval', []))
+        if values:
+            check_interval = int(values[0])
+        value = check_interval_of(hostname, checkname)
+        if value is not None:
+            check_interval = value
+
         outfile.write("""define service {
   use\t\t\t\t%s
   host_name\t\t\t%s
   service_description\t\t%s
+  check_interval\t\t%d
 %s%s  check_command\t\t\tcheck_mk-%s
 }
 
-""" % ( template, hostname, description, logwatch,
+""" % ( template, hostname, description, check_interval, logwatch,
         extra_service_conf_of(hostname, description), checkname ))
 
         checknames_to_define.add(checkname)
@@ -1812,7 +1834,7 @@ define service {
     for description in aggr_descripts:
         sergr = service_extra_conf(hostname, description, summary_service_groups)
         if len(sergr) > 0:
-            sg = "  service_groups\t\t\t+" + ",".join(sergr) + "\n"
+            sg = "  service_groups\t\t\t+" + make_utf8(",".join(sergr)) + "\n"
             if define_servicegroups:
                 servicegroups_to_define.update(sergr)
         else:
@@ -1852,6 +1874,7 @@ define service {
   use\t\t\t\t%s
   host_name\t\t\t%s
   normal_check_interval\t\t%d
+  retry_check_interval\t\t%d
 %s  service_description\t\tCheck_MK inventory
 }
 
@@ -1862,7 +1885,7 @@ define servicedependency {
   dependent_host_name\t\t%s
   dependent_service_description\tCheck_MK inventory
 }
-""" % (inventory_check_template, hostname, inventory_check_interval,
+""" % (inventory_check_template, hostname, inventory_check_interval, inventory_check_interval,
        extra_service_conf_of(hostname, "Check_MK inventory"),
        service_dependency_template, hostname, hostname))
 
@@ -1911,9 +1934,14 @@ define service {
     if actchecks:
         outfile.write("\n\n# Active checks\n")
         for acttype, act_info, params in actchecks:
+            # Make hostname available as global variable in argument functions
+            global g_hostname
+            g_hostname = hostname
+
             has_perfdata = act_info.get('has_perfdata', False)
             description = act_info["service_description"](params)
-            args = act_info["argument_function"](params)
+            # compute argument, and quote ! and \ for Nagios
+            args = act_info["argument_function"](params).replace("\\", "\\\\").replace("!", "\\!")
 
             if description in used_descriptions:
                 cn, it = used_descriptions[description]
@@ -1968,12 +1996,12 @@ define service {
                                 break
                     except:
                         pass
-            
+
             if "freshness" in entry:
                 freshness = "  check_freshness\t\t1\n" + \
                             "  freshness_threshold\t\t%d\n" % (60 * entry["freshness"]["interval"])
                 command_line = "echo %s && exit %d" % (
-                       quote_shell_string(entry["freshness"]["output"]), entry["freshness"]["state"]) 
+                       quote_nagios_string(entry["freshness"]["output"]), entry["freshness"]["state"])
             else:
                 freshness = ""
 
@@ -2045,7 +2073,7 @@ define hostgroup {
   hostgroup_name\t\t%s
   alias\t\t\t\t%s
 }
-""" % (hg, make_utf8(alias)))
+""" % (make_utf8(hg), make_utf8(alias)))
 
     # No creation of host groups but we need to define
     # default host group
@@ -2075,7 +2103,7 @@ define servicegroup {
   servicegroup_name\t\t%s
   alias\t\t\t\t%s
 }
-""" % (sg, make_utf8(alias)))
+""" % (make_utf8(sg), make_utf8(alias)))
 
 def create_nagios_config_contactgroups(outfile):
     if define_contactgroups:
@@ -2091,7 +2119,7 @@ def create_nagios_config_contactgroups(outfile):
                 alias = name
             outfile.write("\ndefine contactgroup {\n"
                     "  contactgroup_name\t\t%s\n"
-                    "  alias\t\t\t\t%s\n" % (name, make_utf8(alias)))
+                    "  alias\t\t\t\t%s\n" % (make_utf8(name), make_utf8(alias)))
             members = contactgroup_members.get(name)
             if members:
                 outfile.write("  members\t\t\t%s\n" % ",".join(members))
@@ -2198,6 +2226,12 @@ def create_nagios_config_contacts(outfile):
             outfile.write("  contactgroups\t\t\t%s\n" % ", ".join(cgrs))
             outfile.write("}\n\n")
 
+
+# Quote string for use in a nagios command execution.
+# Please note that also quoting for ! and \ vor Nagios
+# itself takes place here.
+def quote_nagios_string(s):
+    return "'" + s.replace('\\', '\\\\').replace("'", "'\"'\"'").replace('!', '\\!') + "'"
 
 
 
@@ -2327,7 +2361,7 @@ def make_inventory(checkname, hostnamelist, check_only=False, include_state=Fals
 
             checkname_base = checkname.split('.')[0]    # make e.g. 'lsi' from 'lsi.arrays'
             try:
-                info = get_realhost_info(hostname, ipaddress, checkname_base, inventory_max_cachefile_age)
+                info = get_realhost_info(hostname, ipaddress, checkname_base, inventory_max_cachefile_age, True)
                 # Add information about nodes if check wants this
                 if check_info[checkname]["node_info"]:
                     if clusters_of(hostname):
@@ -2742,6 +2776,7 @@ no_inventory_possible = None
     needed_check_types = set([])
     needed_sections = set([])
     service_timeperiods = {}
+    check_intervals = {}
     for check_type, item, param, descr, aggr in check_table:
         if check_type not in check_info:
             sys.stderr.write('Warning: Ignoring missing check %s.\n' % check_type)
@@ -2749,12 +2784,17 @@ no_inventory_possible = None
         period = check_period_of(hostname, descr)
         if period:
             service_timeperiods[descr] = period
+        interval = check_interval_of(hostname, check_type)
+        if interval is not None:
+            check_intervals[check_type] = interval
 
         needed_sections.add(check_type.split(".")[0])
         needed_check_types.add(check_type)
         if check_uses_snmp(check_type):
             need_snmp_module = True
 
+    output.write("precompiled_check_intervals = %r\n" % check_intervals)
+    output.write("def check_interval_of(hostname, checktype):\n    return precompiled_check_intervals.get(checktype)\n\n")
     output.write("precompiled_service_timeperiods = %r\n" % service_timeperiods)
     output.write("def check_period_of(hostname, service):\n    return precompiled_service_timeperiods.get(service)\n\n")
 
@@ -2862,6 +2902,9 @@ no_inventory_possible = None
     # TCP and SNMP port of agent
     output.write("def agent_port_of(hostname):\n    return %d\n\n" % agent_port_of(hostname))
     output.write("def snmp_port_spec(hostname):\n    return %r\n\n" % snmp_port_spec(hostname))
+
+    # Exit code of Check_MK in case of various errors
+    output.write("def exit_code_spec(hostname):\n    return %r\n\n" % exit_code_spec(hostname))
 
     # Piggyback translations
     output.write("def get_piggyback_translation(hostname):\n    return %r\n\n" % get_piggyback_translation(hostname))
@@ -3569,6 +3612,61 @@ def output_plain_hostinfo(hostname):
 
     sys.stdout.write(get_piggyback_info(hostname))
 
+def do_snmptranslate(walk):
+    walk = walk[0]
+
+    path_walk = "%s/%s" % (snmpwalks_dir, walk)
+    if not os.path.exists(path_walk):
+        print "Walk does not exist"
+        return
+
+    def translate(lines):
+        result_lines = []
+        try:
+            oids_for_command = []
+            for line in lines:
+                oids_for_command.append(line.split(" ")[0])
+
+            extra_mib_path = ""
+            if local_mibs_dir:
+                extra_mib_path = " -M+%s" % local_mibs_dir
+            command = "snmptranslate -m ALL%s %s 2>/dev/null" % (extra_mib_path, " ".join(oids_for_command))
+            process = os.popen(command, "r")
+            output  = process.read()
+            result  = output.split("\n")[0::2]
+            for idx, line in enumerate(result):
+                result_lines.append((line, lines[idx]))
+
+            # Add missing fields one by one
+            for line in lines[len(result_lines):]:
+                result_lines.extend(translate([line]))
+        except Exception, e:
+            print e
+
+        return result_lines
+
+
+    # Translate n-oid's per cycle
+    entries_per_cycle = 50
+    translated_lines = []
+
+    walk_lines = file(path_walk).readlines()
+    print("Processing %d lines (%d per dot)" %  (len(walk_lines), entries_per_cycle))
+    for i in range(0, len(walk_lines), entries_per_cycle):
+        sys.stdout.write(".")
+        sys.stdout.flush()
+        process_lines = walk_lines[i:i+entries_per_cycle]
+        translated_lines.extend(translate(process_lines))
+
+    # Output formatted
+    longest_translation = 40
+    for translation, line in translated_lines:
+        longest_translation = max(longest_translation, len(translation))
+
+    format_string = "%%-%ds %%s" % longest_translation
+    for translation, line in translated_lines:
+        sys.stdout.write(format_string % (translation, line))
+
 def do_snmpwalk(hostnames):
     if len(hostnames) == 0:
         sys.stderr.write("Please specify host names to walk on.\n")
@@ -3811,7 +3909,7 @@ def dump_host(hostname):
         item,
         params,
         description,
-        ",".join(service_extra_conf(hostname, description, service_groups)),
+        make_utf8(",".join(service_extra_conf(hostname, description, service_groups))),
         if_aggr(aggregated_service_name(hostname, description)),
         if_aggr(",".join(service_extra_conf(hostname, aggregated_service_name(hostname, description), summary_service_groups))),
         ",".join(deps)
@@ -3881,6 +3979,7 @@ def usage():
  check_mk --flush [HOST1 HOST2...]         flush all data of some or all hosts
  check_mk --donate                         Email data of configured hosts to MK
  check_mk --snmpwalk HOST1 HOST2 ...       Do snmpwalk on host
+ check_mk --snmptranslate HOST             Do snmptranslate on walk
  check_mk --snmpget OID HOST1 HOST2 ...    Fetch single OIDs and output them
  check_mk --scan-parents [HOST1 HOST2...]  autoscan parents, create conf.d/parents.mk
  check_mk -P, --package COMMAND            do package operations
@@ -3974,9 +4073,12 @@ NOTES:
   Check_MK and developing checks by donating hosts. This is completely
   voluntary and turned off by default.
 
-  --snmpwalk does a complete snmpwalk for the specifies hosts both
+  --snmpwalk does a complete snmpwalk for the specified hosts both
   on the standard MIB and the enterprises MIB and stores the
   result in the directory %s.
+
+  --snmptranslate does not contact the host again, but reuses the hosts
+  walk from the directory %s.%s
 
   --scan-parents uses traceroute in order to automatically detect
   hosts's parents. It creates the file conf.d/parents.mk which
@@ -3990,6 +4092,8 @@ NOTES:
 """ % (check_mk_configfile,
        precompiled_hostchecks_dir,
        snmpwalks_dir,
+       snmpwalks_dir,
+       local_mibs_dir and ("\n  You can add further mibs to %s" % local_mibs_dir) or "",
        )
 
 
@@ -4127,9 +4231,9 @@ def lock_nagios_objects_file():
         fcntl.fcntl(restart_lock_fd, fcntl.F_SETFD, fcntl.FD_CLOEXEC)
         try:
             if opt_debug:
-                sys.stderr.write("Waiting for exclusive lock on %s.\n" % 
+                sys.stderr.write("Waiting for exclusive lock on %s.\n" %
                     lock_file)
-            fcntl.flock(restart_lock_fd, fcntl.LOCK_EX | 
+            fcntl.flock(restart_lock_fd, fcntl.LOCK_EX |
                 ( restart_locking == "abort" and fcntl.LOCK_NB or 0))
         except:
             return False
@@ -4809,8 +4913,8 @@ if __name__ == "__main__":
     short_options = 'SHVLCURODMd:Ic:nhvpXPuN'
     long_options = [ "help", "version", "verbose", "compile", "debug",
                      "list-checks", "list-hosts", "list-tag", "no-tcp", "cache",
-                     "flush", "package", "localize", "donate", "snmpwalk", "usewalk",
-                     "scan-parents", "procs=", "automation=", "notify",
+                     "flush", "package", "localize", "donate", "snmpwalk", "snmptranslate",
+                     "usewalk", "scan-parents", "procs=", "automation=", "notify",
                      "snmpget=", "profile",
                      "no-cache", "update", "restart", "reload", "dump", "fake-dns=",
                      "man", "nowiki", "config-check", "backup=", "restore=",
@@ -4929,6 +5033,9 @@ if __name__ == "__main__":
                 done = True
             elif o == '--snmpwalk':
                 do_snmpwalk(args)
+                done = True
+            elif o == '--snmptranslate':
+                do_snmptranslate(args)
                 done = True
             elif o == '--snmpget':
                 do_snmpget(a, args)

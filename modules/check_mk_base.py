@@ -121,7 +121,10 @@ class MKCounterWrapped(Exception):
         self.name = countername
         self.reason = reason
     def __str__(self):
-        return '%s: %s' % (self.name, self.reason)
+        if self.name:
+            return '%s: %s' % (self.name, self.reason)
+        else:
+            return self.reason
 
 class MKAgentError(Exception):
     def __init__(self, reason):
@@ -134,6 +137,9 @@ class MKSNMPError(Exception):
         self.reason = reason
     def __str__(self):
         return self.reason
+
+class MKSkipCheck(Exception):
+    pass
 
 #   +----------------------------------------------------------------------+
 #   |         _                                    _   _                   |
@@ -278,6 +284,8 @@ def get_host_info(hostname, ipaddress, checkname):
                     new_info = [ [node] + line for line in new_info ]
                 info += new_info
                 at_least_one_without_exception = True
+            except MKSkipCheck:
+                at_least_one_without_exception = True
             except MKAgentError, e:
 		if str(e) != "": # only first error contains text
                     exception_texts.append(str(e))
@@ -316,7 +324,7 @@ def get_host_info(hostname, ipaddress, checkname):
 #
 # This function assumes, that each check type is queried
 # only once for each host.
-def get_realhost_info(hostname, ipaddress, check_type, max_cache_age):
+def get_realhost_info(hostname, ipaddress, check_type, max_cache_age, ignore_check_interval = False):
     info = get_cached_hostinfo(hostname)
     if info and info.has_key(check_type):
         return info[check_type]
@@ -328,6 +336,14 @@ def get_realhost_info(hostname, ipaddress, check_type, max_cache_age):
     # snmp info for "foo", not for "foo.bar".
     oid_info = snmp_info.get(check_type.split(".")[0])
     if oid_info:
+        cache_path = tcp_cache_dir + "/" + cache_relpath
+        check_interval = check_interval_of(hostname, check_type)
+        if not ignore_check_interval \
+           and check_interval is not None and os.path.exists(cache_path) \
+           and cachefile_age(cache_path) < check_interval * 60:
+            # cache file is newer than check_interval, skip this check
+            raise MKSkipCheck()
+
         content = read_cache_file(cache_relpath, max_cache_age)
         if content:
             return eval(content)
@@ -485,7 +501,11 @@ def translate_piggyback_host(sourcehost, backedhost):
     elif caseconf == "lower":
         backedhost = backedhost.lower()
 
-    # 2. Regular expression conversion
+    # 2. Drop domain part (not applied to IP addresses!)
+    if translation.get("drop_domain") and not backedhost[0].isdigit():
+        backedhost = backedhost.split(".", 1)[0]
+
+    # 3. Regular expression conversion
     if "regex" in translation:
         regex, subst = translation.get("regex")
         if not regex.endswith('$'):
@@ -497,7 +517,7 @@ def translate_piggyback_host(sourcehost, backedhost):
             for nr, text in enumerate(mo.groups()):
                 backedhost = backedhost.replace("\\%d" % (nr+1), text)
 
-    # 3. Explicity mapping
+    # 4. Explicity mapping
     for from_host, to_host in translation.get("mapping", []):
         if from_host == backedhost:
             backedhost = to_host
@@ -551,7 +571,7 @@ def write_cache_file(relpath, output):
 
 
 # Get information about a real host (not a cluster node) via TCP
-# or by executing an external programm. ipaddress may be None.
+# or by executing an external program. ipaddress may be None.
 # In that case it will be looked up if needed. Also caching will
 # be handled here
 def get_agent_info(hostname, ipaddress, max_cache_age):
@@ -578,10 +598,10 @@ def get_agent_info(hostname, ipaddress, max_cache_age):
 
     return output
 
-# Get data in case of external programm
+# Get data in case of external program
 def get_agent_info_program(commandline):
     if opt_verbose:
-        sys.stderr.write("Calling external programm %s\n" % commandline)
+        sys.stderr.write("Calling external program %s\n" % commandline)
     try:
         sout = os.popen(commandline + " 2>/dev/null")
         output = sout.read()
@@ -591,9 +611,9 @@ def get_agent_info_program(commandline):
 
     if exitstatus:
         if exitstatus >> 8 == 127:
-            raise MKAgentError("Programm '%s' not found (exit code 127)" % (commandline,))
+            raise MKAgentError("Program '%s' not found (exit code 127)" % (commandline,))
         else:
-            raise MKAgentError("Programm '%s' exited with code %d" % (commandline, exitstatus >> 8))
+            raise MKAgentError("Agent exited with code %d" % (exitstatus >> 8,))
     return output
 
 # Get data in case of TCP
@@ -669,7 +689,7 @@ def parse_info(lines, hostname):
     for line in lines:
         if line[:4] == '<<<<' and line[-4:] == '>>>>':
             host = line[4:-4]
-            if not host: 
+            if not host:
                 host = None
             else:
                 host = translate_piggyback_host(hostname, host)
@@ -854,25 +874,28 @@ def do_check(hostname, ipaddress, only_check_types = None):
 
     start_time = time.time()
 
+    # Exit state in various situations is confiugrable since 1.2.3i1
+    exit_spec = exit_code_spec(hostname)
+
     try:
         load_counters(hostname)
         agent_version, num_success, error_sections, problems = do_all_checks_on_host(hostname, ipaddress, only_check_types)
         num_errors = len(error_sections)
         save_counters(hostname)
         if problems:
-	    output = "CRIT - %s, " % problems
-            status = 2
+	    output = "%s, " % problems
+            status = exit_spec.get("connection", 2)
         elif num_errors > 0 and num_success > 0:
-            output = "WARN - Missing agent sections: %s - " % ", ".join(error_sections)
-            status = 1
+            output = "Missing agent sections: %s - " % ", ".join(error_sections)
+            status = exit_spec.get("missing_sections", 1)
         elif num_errors > 0:
-            output = "CRIT - Got no information from host, "
-            status = 2
+            output = "Got no information from host, "
+            status = exit_spec.get("empty_output", 2)
         elif agent_min_version and agent_version < agent_min_version:
-            output = "WARN - old plugin version %s (should be at least %s), " % (agent_version, agent_min_version)
-            status = 1
+            output = "old plugin version %s (should be at least %s), " % (agent_version, agent_min_version)
+            status = exit_spec.get("wrong_version", 1)
         else:
-            output = "OK - "
+            output = ""
             if agent_version != None:
                 output += "Agent version %s, " % agent_version
             status = 0
@@ -880,8 +903,8 @@ def do_check(hostname, ipaddress, only_check_types = None):
     except MKGeneralException, e:
         if opt_debug:
             raise
-        output = "UNKNOWN - %s, " % e
-        status = 3
+        output = "%s, " % e
+        status = exit_spec.get("exception", 3)
 
     if aggregate_check_mk:
         try:
@@ -902,7 +925,7 @@ def do_check(hostname, ipaddress, only_check_types = None):
     else:
         output += "execution time %.1f sec|execution_time=%.3f\n" % (run_time, run_time)
 
-    sys.stdout.write(output)
+    sys.stdout.write(nagios_state_names[status] + " - " + output)
     sys.exit(status)
 
 def check_unimplemented(checkname, params, info):
@@ -987,7 +1010,7 @@ def do_all_checks_on_host(hostname, ipaddress, only_check_types = None):
         if only_check_types != None and checkname not in only_check_types:
             continue
 
-        # Make service description globally available 
+        # Make service description globally available
         global g_service_description
         g_service_description = description
 
@@ -1012,6 +1035,8 @@ def do_all_checks_on_host(hostname, ipaddress, only_check_types = None):
         infotype = checkname.split('.')[0]
         try:
 	    info = get_host_info(hostname, ipaddress, infotype)
+        except MKSkipCheck, e:
+            continue
         except MKSNMPError, e:
 	    if str(e):
 	        problems.append(str(e))
@@ -1041,7 +1066,7 @@ def do_all_checks_on_host(hostname, ipaddress, only_check_types = None):
             # any check result in that case:
             except MKCounterWrapped, e:
                 if opt_verbose:
-                    print "Counter wrapped, not handled by check, ignoring this check result: %s" % e
+                    print "Cannot compute check result: %s" % e
                 dont_submit = True
             except Exception, e:
                 result = (3, "invalid output from agent, invalid check parameters or error in implementation of check %s. Please set <tt>debug_log</tt> to a filename in <tt>main.mk</tt> for enabling exception logging." % checkname)
@@ -1279,6 +1304,13 @@ def nodes_of(hostname):
 
 # Generic function for checking a value against levels. This also support
 # predictive levels.
+# value:   currently measured value
+# dsname:  name of the datasource in the RRD that corresponds to this value
+# unit:    unit to be displayed in the plugin output, e.g. "MB/s"
+# factor:  the levels are multiplied with this factor before applying
+#          them to the value. For example the disk-IO check uses B/s
+#          as the unit for the value. But the levels are in MB/s. In that
+#          case the factor is 1.0 / 1048576.
 def check_levels(value, dsname, params, unit = "", factor = 1.0, statemarkers=False):
 
     if params == None or params == (None, None):
@@ -1311,18 +1343,18 @@ def check_levels(value, dsname, params, unit = "", factor = 1.0, statemarkers=Fa
     # Critical cases
     if crit_upper != None and value >= crit_upper:
         state = 2
-        infotext += " (critical level at %.2f)" % crit_upper
+        infotext += " (critical level at %.2f%s)" % (crit_upper / factor, unit)
     elif crit_lower != None and value <= crit_lower:
         state = 2
-        infotext += " (too low: critical level at %.2f)" % crit_lower
+        infotext += " (too low: critical level at %.2f%s)" % (crit_lower / factor, unit)
 
     # Warning cases
     elif warn_upper != None and value >= warn_upper:
         state = 1
-        infotext += " (warning level at %.2f)" % warn_upper
+        infotext += " (warning level at %.2f%s)" % (warn_upper / factor, unit)
     elif warn_lower != None and value <= warn_lower:
         state = 1
-        infotext += " (too low: warning level at %.2f)" % warn_lower
+        infotext += " (too low: warning level at %.2f%s)" % (warn_lower / factor, unit)
 
     # OK
     else:
@@ -1448,8 +1480,7 @@ def get_age_human_readable(secs):
         return "%d days, %d hours" % (days, hours)
     return "%d days" % days
 
-# Quote string for use as arguments on the shell (for usage
-# in command definitions as $ARG1$)
+# Quote string for use as arguments on the shell
 def quote_shell_string(s):
     return "'" + s.replace("'", "'\"'\"'") + "'"
 
@@ -1462,13 +1493,21 @@ def check_timeperiod(timeperiod):
     global g_inactive_timerperiods
     # Let exceptions happen, they will be handled upstream.
     if g_inactive_timerperiods == None:
-        import socket
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.connect(livestatus_unix_socket)
-        # We just get the currently inactive timeperiods. All others
-        # (also non-existing) are considered to be active
-        s.send("GET timeperiods\nColumns:name\nFilter: in = 0\n")
-        s.shutdown(socket.SHUT_WR)
-        g_inactive_timerperiods = s.recv(10000000).splitlines()
+        try:
+            import socket
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.connect(livestatus_unix_socket)
+            # We just get the currently inactive timeperiods. All others
+            # (also non-existing) are considered to be active
+            s.send("GET timeperiods\nColumns:name\nFilter: in = 0\n")
+            s.shutdown(socket.SHUT_WR)
+            g_inactive_timerperiods = s.recv(10000000).splitlines()
+        except Exception, e:
+            if opt_debug:
+                raise
+            else:
+                # If the query is not successful better skip this check then fail
+                return False
+
     return timeperiod not in g_inactive_timerperiods
 

@@ -48,39 +48,41 @@ builtin_dashboards["main"] = {
         {
             "title"      : _("Host Problems (unhandled)"),
             "title_url"  : "view.py?view_name=hostproblems&is_host_acknowledged=0",
-            "view"       : "hostproblems_dash", 
+            "view"       : "hostproblems_dash",
             "position"   : (-1, 1),
             "size"       : (GROW, 18),
         },
         {
             "title"      : _("Service Problems (unhandled)"),
             "title_url"  : "view.py?view_name=svcproblems&is_service_acknowledged=0",
-            "view"       : "svcproblems_dash", 
+            "view"       : "svcproblems_dash",
             "position"   : (1, 19),
             "size"       : (GROW, MAX),
         },
         {
             "title"      : _("Events of recent 4 hours"),
             "title_url"  : "view.py?view_name=events_dash",
-            "view"       : "events_dash", 
+            "view"       : "events_dash",
             "position"   : (-1, -1),
             "size"       : (GROW, GROW),
         },
     ]
 }
 
-builtin_dashboards["topology"] = {
-    "title" : _("Network Topology"),
-    "dashlets" : [
-        {
-            "title"            : "Topology of Site " + defaults.omd_site,
-            "iframe"           : defaults.url_prefix + 'nagvis/frontend/nagvis-js/index.php?' + \
-                                 'mod=Map&header_template=default&header_menu=0&label_show=1' + \
-                                 '&sources=automap&act=view&backend_id=' + defaults.omd_site + \
-                                 '&render_mode=undirected&url_target=main',
-            "reload_on_resize" : True,
-            "position"         : (1, 0),
-            "size"             : (GROW, GROW),
-        },
-    ]
-}
+#Only work in OMD installations
+if defaults.omd_site:
+    builtin_dashboards["topology"] = {
+        "title" : _("Network Topology"),
+        "dashlets" : [
+            {
+                "title"            : "Topology of Site " + defaults.omd_site,
+                "iframe"           : defaults.url_prefix + 'nagvis/frontend/nagvis-js/index.php?' + \
+                                     'mod=Map&header_template=default&header_menu=0&label_show=1' + \
+                                     '&sources=automap&act=view&backend_id=' + defaults.omd_site + \
+                                     '&render_mode=undirected&url_target=main',
+                "reload_on_resize" : True,
+                "position"         : (1, 0),
+                "size"             : (GROW, GROW),
+            },
+        ]
+    }

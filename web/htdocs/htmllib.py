@@ -190,6 +190,7 @@ class html:
         self.have_help = False
         self.plugged = False
         self.keybindings = []
+        self.keybindings_enabled = True
         self.io_error = False
 
     RETURN = 13
@@ -378,8 +379,8 @@ class html:
     # [('varname1', value1), ('varname2', value2) ]
     def makeuri(self, addvars, remove_prefix = None, filename=None):
         new_vars = [ nv[0] for nv in addvars ]
-        vars = [ (v, self.var(v)) 
-                 for v in self.req.vars 
+        vars = [ (v, self.var(v))
+                 for v in self.req.vars
                  if v[0] != "_" and v not in new_vars ]
         if remove_prefix != None:
             vars = [ i for i in vars if not i[0].startswith(remove_prefix) ]
@@ -515,7 +516,7 @@ class html:
             idtext = " id='%s'" % id
         else:
             idtext = ""
-        self.write('<div%s style="display:%s" class="contextlink%s%s" ' % (idtext, display, hot and " hot" or "", fkey and " button" or ""))
+        self.write('<div%s style="display:%s" class="contextlink%s%s" ' % (idtext, display, hot and " hot" or "", (fkey and self.keybindings_enabled) and " button" or ""))
         self.context_button_hover_code(hot and "_hot" or "")
         self.write('>')
         self.write('<a href="%s"' % url)
@@ -523,7 +524,7 @@ class html:
             self.write(' title="%s"' % hover_title)
         if bestof:
             self.write(' onmousedown="count_context_button(this); document.location=this.href; " ')
-        if fkey:
+        if fkey and self.keybindings_enabled:
             title += '<div class=keysym>F%d</div>' % fkey
             self.add_keybinding([html.F1 + (fkey - 1)], "document.location='%s';" % url)
         self.write('>%s</a></div>\n' % title)
@@ -561,6 +562,8 @@ class html:
             addprops += " style=\"%s%s\"" % (add_style, args["style"])
         elif add_style:
             addprops += " style=\"%s\"" % add_style
+        if args.get("read_only"):
+            addprops += " readonly"
 
         if submit != None:
             if not id:
@@ -883,8 +886,9 @@ class html:
         self.write('<a href="#" onfocus="if (this.blur) this.blur();" '
                    'onclick="this.innerHTML=\'%s\'; document.location.reload();">%s</a></td>' %
                    (_("Reloading..."), title))
-        self.write('<td style="min-width:240px" class=right><span id=headinfo></span>%s &nbsp; <b id=headertime>%s</b>' %
-                   (login_text, time.strftime("%H:%M")))
+        self.write('<td style="min-width:240px" class=right><span id=headinfo></span>%s &nbsp; <b id=headertime></b>' %
+                   login_text)
+        self.write("<script language=\"javascript\" type=\"text/javascript\">updateHeaderTime()</script>")
         try:
             self.help_visible = config.load_user_file("help", False)  # cache for later usage
         except:
@@ -934,7 +938,7 @@ class html:
     def body_end(self):
         if self.have_help:
             self.javascript("help_enable();")
-        if self.keybindings:
+        if self.keybindings_enabled and self.keybindings:
             self.javascript("""var keybindings = %r;\n
 document.body.onkeydown = keybindings_keydown;
 document.body.onkeyup = keybindings_keyup;
@@ -1190,7 +1194,8 @@ document.body.onfocus = keybindings_focus;
 
     def omd_mode(self):
         # Load mod_python env into regular environment
-        os.environ.update(self.req.subprocess_env)
+        for k, v in self.req.subprocess_env.items():
+            os.environ[k] = v
 
         omd_mode = None
         omd_site = None
@@ -1305,5 +1310,5 @@ document.body.onfocus = keybindings_focus;
     def add_keybindings(self, bindings):
         self.keybindings += bindings
 
-
-
+    def disable_keybindings(self):
+        self.keybindings_enabled = False

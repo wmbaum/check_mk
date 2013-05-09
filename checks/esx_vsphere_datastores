@@ -67,16 +67,36 @@ def check_esx_vsphere_datastores(item, params, info):
     state, infotext, perfdata = df_check_filesystem_single(
         g_hostname, item, size_mb, avail_mb, params)
 
-    uncommitted_mb = store["uncommitted"] / 1024.0 / 1024.0
-    used_mb = size_mb - avail_mb
-    overprov_mb = used_mb + uncommitted_mb
-    overprov_percent = (overprov_mb / size_mb) * 100
+    if 'uncommitted' in store:
+        uncommitted_mb = store["uncommitted"] / 1024.0 / 1024.0
+        used_mb = size_mb - avail_mb
+        overprov_mb = used_mb + uncommitted_mb
+        overprov_percent = (overprov_mb / size_mb) * 100
 
-    infotext += ", uncommitted: %.2f GB, provisioning: %.1f%%" % (
-                  uncommitted_mb / 1024, overprov_percent)
+        overprov_txt = ''
+        overprov_warn_mb = None
+        overprov_crit_mb = None
+        if 'provisioning_levels' in params:
+            warn, crit = params['provisioning_levels']
+            overprov_warn_mb = avail_mb / 100 * warn
+            overprov_crit_mb = avail_mb / 100 * crit
+            if overprov_percent >= crit:
+                state = max(state, 2)
+                overprov_txt = ' (!!)'
+            elif overprov_percent >= warn:
+                state = max(state, 1)
+                overprov_txt = ' (!)'
+
+        infotext += ", uncommitted: %.2f GB, provisioning: %.1f%%%s" % (
+                      uncommitted_mb / 1024, overprov_percent, overprov_txt)
+        perfdata += [
+            ('uncommitted', str(uncommitted_mb) + 'MB'),
+            ('overprovisioned', str(overprov_mb) + 'MB', overprov_warn_mb, overprov_crit_mb),
+        ]
+
     if not store["accessible"]:
         state = 2
-        infotext += "unaccessible(!!), " + infotext
+        infotext += " unaccessible(!!), " + infotext
 
     return state, infotext, perfdata
 
@@ -86,7 +106,7 @@ check_info['esx_vsphere_datastores'] = {
     "service_description"     : "fs_%s",
     "includes"                : [ 'df.include' ],
     "has_perfdata"            : True,
-    "group"                   : "filesystem", 
+    "group"                   : "esx_vsphere_datastores",
     "default_levels_variable" : "filesystem_default_levels",
 }
 

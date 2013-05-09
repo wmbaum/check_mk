@@ -37,8 +37,6 @@
 
 group = _("Configuration of Checks")
 
-# ignored_checktypes --> Hier brauchen wir noch einen neuen Value-Typ
-
 group = _("Multisite & WATO")
 
 register_configvar(group,
@@ -1186,7 +1184,7 @@ register_rule(
                  "you can specify an alternative way of determining the host's state."),
         choices = [
           ( "ping",    _("PING (ICMP echo request)") ),
-          ( "tcp" ,    _("TCP Connect"), Integer(label = _("to port:"), minvalue=1, maxvalue=65535, default_value=80 )), 
+          ( "tcp" ,    _("TCP Connect"), Integer(label = _("to port:"), minvalue=1, maxvalue=65535, default_value=80 )),
           ( "ok",      _("Always assume host to be up") ),
           ( "agent",   _("Use the status of the Check_MK Agent") ),
           ( "service", _("Use the status of the service..."), TextUnicode(label = ":", size=32, allow_empty=False )),
@@ -1207,6 +1205,34 @@ register_rule(group,
                  "it changes the default check_command for a host check. You need to "
                  "define that command manually in your monitoring configuration."),
     ),
+)
+
+def get_snmp_checktypes():
+   checks = check_mk_local_automation("get-check-information")
+   types = [ (cn, (c['title'] != cn and '%s: ' % cn or '') + c['title'])
+             for (cn, c) in checks.items() if c['snmp'] ]
+   types.sort()
+   return types
+
+register_rule(group,
+    "snmp_check_interval",
+    Tuple(
+        title = _('Check intervals for SNMP checks'),
+        help = _('This rule can be used to customize the check interval of each SNMP based check. '
+                 'With this option it is possible to configure a longer check interval for specific '
+                 'checks, than then normal check interval.'),
+        elements = [
+            DropdownChoice(
+                title = _("Checktype"),
+                choices = [ (None, _('All SNMP Checks')) ] + get_snmp_checktypes(),
+            ),
+            Integer(
+                title = _("Do check every"),
+                unit = _("minutes"),
+                min_value = 1,
+            ),
+        ]
+    )
 )
 
 group = "monconf/" + _("Notifications")
@@ -1629,33 +1655,55 @@ group = "agent/" + _("Check_MK Agent")
 register_rule(group,
     "agent_ports",
     Integer(
-            help = _("This variable allows to specify the TCP port to "
-                     "be used to connect to the agent on a per-host-basis. "),
             minvalue = 1,
             maxvalue = 65535,
             default_value = 6556),
-    title = _("TCP port for connection to Check_MK agent")
+    title = _("TCP port for connection to Check_MK agent"),
+    help = _("This variable allows to specify the TCP port to "
+             "be used to connect to the agent on a per-host-basis. "),
 )
 
-
-
 register_rule(group,
-    "datasource_programs",
-    TextAscii(
-        title = _("Individual program call instead of agent access"),
-        help = _("For agent based checks Check_MK allows you to specify an alternative "
-                 "program that should be called by Check_MK instead of connecting the agent "
-                 "via TCP. That program must output the agent's data on standard output in "
-                 "the same format the agent would do. This is for example useful for monitoring "
-                 "via SSH. The command line may contain the placeholders <tt>&lt;IP&gt;</tt> and "
-                 "<tt>&lt;HOST&gt;</tt>."),
-        label = _("Command line to execute"),
-        size = 80,
-        attrencode = True))
+    "check_mk_exit_status",
+    Dictionary(
+        elements = [
+            ( "connection",
+              MonitoringState(
+                default_value = 2,
+                title = _("State in case of connection problems")),
+            ),
+            ( "missing_sections",
+              MonitoringState(
+                default_value = 1,
+                title = _("State if just <i>some</i> agent sections are missing")),
+            ),
+            ( "empty_output",
+              MonitoringState(
+                default_value = 2,
+                title = _("State in case of empty agent output")),
+            ),
+            ( "wrong_version",
+              MonitoringState(
+                default_value = 1,
+                title = _("State in case of wrong agent version")),
+            ),
+            ( "exception",
+              MonitoringState(
+                default_value = 3,
+                title = _("State in case of unhandled exception")),
+            ),
+        ],
+    ),
+    title = _("Status of the Check_MK service"),
+    help = _("This ruleset specifies the total status of the Check_MK service in "
+             "case of various error situations. One use case is the monitoring "
+             "of hosts that are not always up. You can have Check_MK an OK status "
+             "here if the host is not reachable."),
+)
 
 register_rule(group,
     "piggyback_translation",
-    Dictionary(
+    HostnameTranslation(
         title = _("Hostname translation for piggybacked hosts"),
         help = _("Some agents or agent plugins send data not only for the queried host but also "
                  "for other hosts &quot;piggyback&quot; with their own data. This is the case "
@@ -1664,62 +1712,5 @@ register_rule(group,
                  "If that is not the case, then with this rule you can define a hostname translation. "
                  "Note: This rule must be configured for the &quot;pig&quot; - i.e. the host that the "
                  "agent is running on. It is not applied to the translated piggybacked hosts."),
-        elements = [
-            ( "case",
-              DropdownChoice(
-                  title = _("Case translation"),
-                  choices = [
-                       ( None,    _("Do not convert case") ),
-                       ( "upper", _("Convert hostnames to upper case") ),
-                       ( "lower", _("Convert hostnames to lower case") ),
-                  ]
-            )),
-            ( "regex",
-              Tuple(
-                  title = _("Regular expression substitution"),
-                  help = _("Please specify a regular expression in the first field. This expression should at "
-                           "least contain one subexpression exclosed in brackets - for example <tt>vm_(.*)_prod</tt>. "
-                           "In the second field you specify the translated host name and can refer to the first matched " 
-                           "group with <tt>\1</tt>, the second with <tt>\2</tt> and so on, for example <tt>\1.example.org</tt>"),
-                  elements = [
-                      RegExpUnicode(
-                          title = _("Regular expression"),
-                          help = _("Must contain at least one subgroup <tt>(...)</tt>"),
-                          mingroups = 1,
-                          maxgroups = 9,
-                          size = 30,
-                          allow_empty = False,
-                      ),
-                      TextUnicode(
-                          title = _("Replacement"),
-                          help = _("Use <tt>\\1</tt>, <tt>\\2</tt> etc. to replace matched subgroups"),
-                          size = 30,
-                          allow_empty = False,
-                      )
-                 ]
-            )),
-            ( "mapping",
-              ListOf(
-                  Tuple(
-                      orientation = "horizontal",
-                      elements =  [
-                          TextUnicode(
-                               title = _("Original hostname"),  
-                               size = 30,
-                               allow_empty = False),
-                          TextUnicode(
-                               title = _("Translated hostname"), 
-                               size = 30,
-                               allow_empty = False),
-                      ],
-                  ),
-                  title = _("Explicit host name mapping"),
-                  help = _("If case conversion and regular expression do not work for all cases then you can "
-                           "specify explicity pairs of origin host name  and translated host name here. This "
-                           "mapping is being applied <b>after</b> the case conversion and <b>after</b> a regular "
-                           "expression conversion (if that matches)."),
-                  add_label = _("Add new mapping"),
-                  movable = False,
-            )),
-        ]),
+    ),
     match = "dict")

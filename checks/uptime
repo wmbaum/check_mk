@@ -26,19 +26,10 @@
 
 def inventory_uptime(info):
     if len(info) >= 1 and len(info[0]) >= 1:
-        return [ (None, None) ]
+        return [ (None, {}) ]
 
-def check_uptime(_no_item, _no_params, info):
-    uptime = int(float(info[0][0]))
-    seconds = uptime % 60
-    rem = uptime / 60
-    minutes = rem % 60
-    hours = (rem % 1440) / 60
-    days = rem / 1440
-    now = int(time.time())
-    since = time.strftime("%c", time.localtime(now - uptime))
-    return (0, "up since %s (%dd %02d:%02d:%02d)" % (since, days, hours, minutes, seconds), [ ("uptime", uptime) ])
-
+def check_uptime(_no_item, params, info):
+    return check_uptime_seconds(params, float(info[0][0]))
 
 
 check_info["uptime"] = {
@@ -46,5 +37,6 @@ check_info["uptime"] = {
     'inventory_function':      inventory_uptime,
     'service_description':     'Uptime',
     'has_perfdata':            True,
+    'includes':                [ 'uptime.include' ],
     'group':                   'uptime',
 }
