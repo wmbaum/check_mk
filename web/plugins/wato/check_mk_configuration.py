@@ -567,6 +567,23 @@ register_configvar(group,
                    "containing details about connecting to LDAP and the single transactions.")),
     domain = "multisite")
 
+register_configvar(group,
+    "lock_on_logon_failures",
+    Optional(
+        Integer(
+            label = _("Number of logon failures to lock the account"),
+            default_value = 3,
+            minvalue = 1,
+        ),
+        none_value = False,
+        title = _("Lock user accounts after N logon failures"),
+        label = _("Activate automatic locking of user accounts"),
+        help = _("This options enables automatic locking of user account after "
+                 "N logon failures. One successful login resets the failure counter.")
+    ),
+    domain = "multisite"
+)
+
 
 def list_roles():
     roles = userdb.load_roles()
@@ -1055,28 +1072,32 @@ register_rule(group,
 
 register_rule(group,
     "extra_service_conf:check_interval",
-    Integer(title = _("Normal check interval for service checks"),
-            help = _("Check_MK usually uses an interval of one minute for the active Check_MK "
-                     "check and for legacy checks. Here you can specify a larger interval. Please "
-                     "note, that this setting only applies to active checks (those with the "
-                     "%s reschedule button). If you want to change the check interval of "
-                     "the Check_MK service only, specify <tt><b>Check_MK$</b></tt> in the list "
-                     "of services.") % '<img class="icon docu" src="images/icon_reload.gif">',
-            minvalue = 1,
-            label = _("minutes")),
+    Transform(
+        Age(minvalue=1, default_value=60),
+        forth = lambda v: int(v * 60),
+        back = lambda v: float(v) / 60.0,
+        title = _("Normal check interval for service checks"),
+        help = _("Check_MK usually uses an interval of one minute for the active Check_MK "
+                 "check and for legacy checks. Here you can specify a larger interval. Please "
+                 "note, that this setting only applies to active checks (those with the "
+                 "%s reschedule button). If you want to change the check interval of "
+                 "the Check_MK service only, specify <tt><b>Check_MK$</b></tt> in the list "
+                 "of services.") % '<img class="icon docu" src="images/icon_reload.gif">'),
     itemtype = "service")
 
 register_rule(group,
     "extra_service_conf:retry_interval",
-    Integer(title = _("Retry check interval for service checks"),
-            help = _("This setting is relevant if you have set the maximum number of check "
-                     "attempts to a number greater than one. In case a service check is not OK "
-                     "and the maximum number of check attempts is not yet reached, it will be "
-                     "rescheduled with this interval. The retry interval is usually set to a smaller "
-                     "value than the normal interval.<br><br>This setting only applies to "
-                     "active checks."),
-            minvalue = 1,
-            label = _("minutes")),
+    Transform(
+        Age(minvalue=1, default_value=60),
+        forth = lambda v: int(v * 60),
+        back = lambda v: float(v) / 60.0,
+        title = _("Retry check interval for service checks"),
+        help = _("This setting is relevant if you have set the maximum number of check "
+                 "attempts to a number greater than one. In case a service check is not OK "
+                 "and the maximum number of check attempts is not yet reached, it will be "
+                 "rescheduled with this interval. The retry interval is usually set to a smaller "
+                 "value than the normal interval.<br><br>This setting only applies to "
+                 "active checks.")),
     itemtype = "service")
 
 register_rule(group,
@@ -1141,27 +1162,30 @@ register_rule(group,
 
 register_rule(group,
     "extra_host_conf:check_interval",
-    Integer(
+    Transform(
+        Age(minvalue=1, default_value=60),
+        forth = lambda v: int(v * 60),
+        back = lambda v: float(v) / 60.0,
         title = _("Normal check interval for host checks"),
         help = _("The default interval is set to one minute. Here you can specify a larger "
                  "interval. The host is contacted in this interval on a regular base. The host "
                  "check is also being executed when a problematic service state is detected to check "
-                 "wether or not the service problem is resulting from a host problem."),
-        minvalue = 1,
-        label = _("minutes")
+                 "wether or not the service problem is resulting from a host problem.")
     )
 )
 
 register_rule(group,
     "extra_host_conf:retry_interval",
-    Integer(title = _("Retry check interval for host checks"),
+    Transform(
+        Age(minvalue=1, default_value=60),
+        forth = lambda v: int(v * 60),
+        back = lambda v: float(v) / 60.0,
+        title = _("Retry check interval for host checks"),
         help = _("This setting is relevant if you have set the maximum number of check "
                  "attempts to a number greater than one. In case a host check is not UP "
                  "and the maximum number of check attempts is not yet reached, it will be "
                  "rescheduled with this interval. The retry interval is usually set to a smaller "
                  "value than the normal interval."),
-        minvalue = 1,
-        label = _("minutes")
     )
 )
 
@@ -1257,8 +1281,57 @@ register_rule(group,
                  "service completely. Per default all notifications are enabled."),
         choices = [ ("1", _("Enable service notifications")),
                     ("0", _("Disable service notifications")) ],
+    ),
+    itemtype = "service"
+)
+
+register_rule(group,
+    "extra_host_conf:notification_options",
+    Transform(
+        ListChoice(
+            choices = [
+               ( "d",  _("Host goes down")),
+               ( "u",  _("Host gets unreachble")),
+               ( "r",  _("Host goes up again")),
+               ( "f",  _("Start or end of flapping state")),
+               ( "s",  _("Start or end of a scheduled downtime")),
+            ],
+            default_value = [ "d", "u", "r", "f", "s" ],
         ),
-        itemtype = "service")
+        title = _("Notified events for hosts"),
+        help = _("This ruleset allows you to restrict notifications of host problems to certain "
+               "states, e.g. only notify on DOWN, but not on UNREACHABLE. Please select the types "
+               "of events that should initiate notifications. Please note that several other "
+               "filters must also be passed in order for notifications to finally being sent out."),
+        forth = lambda x: x != 'n' and x.split(",") or [],
+        back = lambda x: ",".join(x) or "n",
+    ),
+)
+
+register_rule(group,
+    "extra_service_conf:notification_options",
+    Transform(
+        ListChoice(
+            choices = [
+                ("w", _("Service goes into warning state")),
+                ("u", _("Service goes into unknown state")),
+                ("c", _("Service goes into critical state")),
+                ("r", _("Service recovers to OK")),
+                ("f", _("Start or end of flapping state")),
+                ("s", _("Start or end of a scheduled downtime")),
+            ],
+            default_value = [ "w", "u", "c", "r", "f", "s" ],
+        ),
+        title = _("Notified events for services"),
+        help = _("This ruleset allows you to restrict notifications of service problems to certain "
+               "states, e.g. only notify on CRIT, but not on WARN. Please select the types "
+               "of events that should initiate notifications. Please note that several other "
+               "filters must also be passed in order for notifications to finally being sent out."),
+        forth = lambda x: x != 'n' and x.split(",") or [],
+        back = lambda x: ",".join(x) or "n",
+    ),
+    itemtype = "service"
+)
 
 register_rule(group,
     "extra_host_conf:notification_period",
@@ -1419,7 +1492,7 @@ register_rule(group,
     CheckTypeSelection(
         title = _("Ignored checks"),
         help = _("This ruleset is similar to 'Ignored services', but selects checks to be ignored "
-                 "by their <b>type</b>. This allows to disable certain techinal implementations "
+                 "by their <b>type</b>. This allows you to disable certain technical implementations "
                  "such as filesystem checks via SNMP on hosts that also have the Check_MK agent "
                  "installed."),
     ))

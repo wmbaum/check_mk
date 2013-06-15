@@ -131,6 +131,16 @@
 #define DEFAULT_PLUGIN_TIMEOUT         30
 #define DEFAULT_TOTAL_PLUGINS_TIMEOUT  60
 
+// Check compilation environment 32/64 bit
+#if _WIN32 || _WIN64
+    #if _WIN64
+        #define ENVIRONMENT64
+    #else
+        #define ENVIRONMENT32
+    #endif
+#endif
+
+
 // Needed for only_from
 struct ipspec {
     uint32_t address;
@@ -1461,33 +1471,30 @@ void load_logwatch_offsets()
     }
 }
 
-
-
-
 // debug output
-void print_logwatch_config()
-{
-    printf("\nLOGWATCH CONFIG\n=================\nFILES\n");
-    for (unsigned int i = 0; i < g_num_logwatch_textfiles ; i++) {
-        printf("  %s %u %x missing %d\n", g_logwatch_textfiles[i]->path, 
-               (unsigned int)g_logwatch_textfiles[i]->offset, 
-               (unsigned int) g_logwatch_textfiles[i]->patterns, 
-               g_logwatch_textfiles[i]->missing);  
-    }
-    printf("\n");
-
-    printf("GLOBS\n");
-    for (unsigned int i = 0; i < g_num_logwatch_globlines ; i++) {
-        printf("Globline Container %x\n", (unsigned int)g_logwatch_globlines[i]->patterns); 
-        for (int j = 0; j < g_logwatch_globlines[i]->num_tokens ; j++)
-            printf("  %s\n", g_logwatch_globlines[i]->token[j]->pattern);
-        printf("Pattern Container\n");
-        for (int j = 0; j < g_logwatch_globlines[i]->patterns->num_patterns; j++) 
-            printf("  %c %s\n", g_logwatch_globlines[i]->patterns->patterns[j]->state, 
-                                g_logwatch_globlines[i]->patterns->patterns[j]->glob_pattern);
-    }
-    printf("\n");
-}
+//void print_logwatch_config()
+//{
+//    printf("\nLOGWATCH CONFIG\n=================\nFILES\n");
+//    for (unsigned int i = 0; i < g_num_logwatch_textfiles ; i++) {
+//        printf("  %s %u %x missing %d\n", g_logwatch_textfiles[i]->path, 
+//               (unsigned int)g_logwatch_textfiles[i]->offset, 
+//               (unsigned int) g_logwatch_textfiles[i]->patterns, 
+//               g_logwatch_textfiles[i]->missing);  
+//    }
+//    printf("\n");
+//
+//    printf("GLOBS\n");
+//    for (unsigned int i = 0; i < g_num_logwatch_globlines ; i++) {
+//        printf("Globline Container %x\n", (unsigned int)g_logwatch_globlines[i]->patterns); 
+//        for (int j = 0; j < g_logwatch_globlines[i]->num_tokens ; j++)
+//            printf("  %s\n", g_logwatch_globlines[i]->token[j]->pattern);
+//        printf("Pattern Container\n");
+//        for (int j = 0; j < g_logwatch_globlines[i]->patterns->num_patterns; j++) 
+//            printf("  %c %s\n", g_logwatch_globlines[i]->patterns->patterns[j]->state, 
+//                                g_logwatch_globlines[i]->patterns->patterns[j]->glob_pattern);
+//    }
+//    printf("\n");
+//}
 
 // Add a new state pattern to the current pattern container
 void add_condition_pattern(char state, char *value)
@@ -2103,6 +2110,12 @@ void launch_program(SOCKET &out, char *dirname, char *name, bool is_plugin){
     char path[512];
     snprintf(path, sizeof(path), "%s\\%s", dirname, name);
 
+    // If the path in question is a directory -> return
+    DWORD dwAttr = GetFileAttributes(path);
+    if(dwAttr != 0xffffffff && (dwAttr & FILE_ATTRIBUTE_DIRECTORY)) {
+        return;
+    }
+
     crash_log("Running program %s", path);
     char newpath[512];
     char *command = add_interpreter(path, newpath);
@@ -2112,7 +2125,7 @@ void launch_program(SOCKET &out, char *dirname, char *name, bool is_plugin){
     SECURITY_ATTRIBUTES sa;
     SECURITY_DESCRIPTOR sd;   // security information for pipes
     PROCESS_INFORMATION pi;
-    HANDLE newstdin,newstdout,read_stdout,write_stdin;  // pipe handles
+    HANDLE newstdout,read_stdout;  // pipe handles
     
     // initialize security descriptor (Windows NT)
     if (IsWinNT())        
@@ -2126,17 +2139,9 @@ void launch_program(SOCKET &out, char *dirname, char *name, bool is_plugin){
     sa.nLength = sizeof(SECURITY_ATTRIBUTES);
     sa.bInheritHandle = true;                       // allow inheritable handles
 
-    // stdin is unused
-    if (!CreatePipe(&newstdin,&write_stdin,&sa,0))  // create stdin pipe
-    {
-      crash_log("Error creating stdin pipe");
-      return; 
-    }
     if (!CreatePipe(&read_stdout,&newstdout,&sa,0)) // create stdout pipe
     {
       crash_log("Error creating stdout pipe");
-      CloseHandle(newstdin);
-      CloseHandle(write_stdin);
       return;
     }
 
@@ -2150,17 +2155,14 @@ void launch_program(SOCKET &out, char *dirname, char *name, bool is_plugin){
     si.wShowWindow = SW_HIDE;
     si.hStdOutput = newstdout;
     si.hStdError = newstdout;     // set the new handles for the child process
-    si.hStdInput = newstdin;
 
     // spawn the child process
     if (!CreateProcess(NULL,command,NULL,NULL,TRUE,CREATE_NEW_CONSOLE,
                        NULL,NULL,&si,&pi))
     {
       crash_log("Error creating process");
-      CloseHandle(newstdin);
       CloseHandle(newstdout);
       CloseHandle(read_stdout);
-      CloseHandle(write_stdin);
       return;
     }
 
@@ -2219,10 +2221,8 @@ void launch_program(SOCKET &out, char *dirname, char *name, bool is_plugin){
     // cleanup the mess
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
-    CloseHandle(newstdin);            
     CloseHandle(newstdout);
     CloseHandle(read_stdout);
-    CloseHandle(write_stdin);
     return;
 }
 
@@ -2336,6 +2336,11 @@ void section_check_mk(SOCKET &out)
     crash_log("<<<check_mk>>>");
     output(out, "<<<check_mk>>>\n");
     output(out, "Version: %s\n", CHECK_MK_VERSION);
+    #ifdef ENVIRONMENT32
+    output(out, "Architecture: 32bit\n");
+    #else
+    output(out, "Architecture: 64bit\n");
+    #endif
     output(out, "AgentOS: windows\n");
     output(out, "Hostname: %s\n",         g_hostname);
     output(out, "WorkingDirectory: %s\n", g_current_directory);

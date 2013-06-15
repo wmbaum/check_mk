@@ -1,3 +1,48 @@
+1.2.3i2:
+    Core:
+    * New option -B for just generating the configuration
+
+    Checks & Agents:
+    * esx_hostystem multipath: criticize standby paths only if not equal to active paths
+    * mk_logwatch: fixed bug when rewriting logwatch messages
+    * check_mk: Re-inventory is no longer required when a service is ignored via rule
+    * check_mk: Now possible to assign services to clusters without the need to
+                reinventorize
+    * lnx_if: Fixed crash on missing "Address" field
+    * viprinet_router: Now able to set required target state via rule
+    * windows_agent: Now available as 64 bit version
+    * agent_vsphere: fix problem where sensors were missing when
+      you queried multiple host systems via vCenter
+    * apache_status: fix exception if parameter is None
+    * cached checks: no longer output cached data if the age of the
+                     cache file is twice the maximum cache age
+    * windows agent: no longer tries to execute directories
+    * FIX: esx_vsphere_datastores: Fix incomplete performance data and Perf-O-Meter
+    * fileinfo: no longer inventorize missing files(reported by windows agent)
+
+    Multisite:
+    * User accounts can now be locked after a specified amount of auth
+      failures (lock_on_logon_failures can be set to a number of tries)
+    * FIX: better error message in case of exception in SNMP handling
+    * Column Perf-O-Meter is now sortable: it sorts after the *first*
+      performance value. This might not always be the one you like, but
+      its far better than nothing.
+    * logwatch: Logwatch icon no longer uses notes_url
+    * check_mk-if.pnp: fixed bug with pnp template on esx hosts without perfdata
+
+    WATO:
+    * Allow to configure check-/retry_interval in second precision
+
+    Notifications:
+    * Flexible Notification can now filter service levels
+    * FIX: check_tcp corrected order of parameters in definition
+
+    Event Console:
+    * New global setting "force message archiving", converts the EC into
+      a kind of syslog archive
+    * FIX: fix layout of filter for history action type
+    * FIX: better detect non-IP-number hosts in hostname translation
+
 1.2.3i1:
     Core:
     * Agents can send data for other hosts "piggyback". This is being
@@ -36,6 +81,7 @@
     * New rule feature: automatically delete event after actions
     * New filter for maximum services level (minimum already existed)
     * New global setting: hostname translation (allows e.g. to drop domain name)
+    * New rule match: only apply rule within specified time period
 
     Checks & Agents:
     * solaris_mem: New check for memory and swap for Solaris agent
@@ -94,6 +140,15 @@
                        router mode, serialnumber and temperature sensors
     * uptime, snmp_uptime, esx_vsphere_counters.uptime: allow to set lower and upper levels
     * winperf_processor: Now displays (and scales) to number of cpus in pnpgraph
+    * mk_postgres plugin: replace select * with list of explicit columns (fix for PG 9.1)
+    * lnx_if: show MAC address for interfaces (needs also agent update)
+    * winperf_tcp_conn: New check. Displays number of established tcpv4 connections in windows
+                        Uses WATO Rule "TCP connection stats (Windows)"
+    * windows_agent: fixed timeouts for powershell scripts in local/plugins
+    * logwatch: Agent can now use logwatch.d/ to split config to multipe files
+    * logwatch: Agent can now rewrite Messages
+    * apache_status: New rule: set levels for number of remaining open slots
+    * mrpe: handle long plugin output correctly, including performance data
 
     Notifications:
     * notify.py: unique spoolfiles name no longer created with uuid
@@ -120,14 +175,46 @@
       for each logfile on a host
     * Configuration of an alternativ host check command
     * Inventory: Display link symbol for ps ruleset
+    * New rule for notification_options of hosts and services
     * FIX: Rulesets: correct display of rules within subfolders
+    * Remove Notification Command user settings, please use flexible notifications instead
 
 
 1.2.2p2:
+    Core:
+    * FIX: livecheck: fixed handling of one-line plugin outputs and missing \n
+           (Thanks to Florent Peterschmitt)
+
     Checks & Agents:
     * FIX: jolokia_info: ignore ERROR instances
     * FIX: apache_status: use (also) apache_status.cfg instead of apache_status.conf
-     
+    * FIX: f5_bigip_vserver: fix wrong OID (13 instead of 1), thanks to Miro Ramza
+    * FIX: f5_bigip_psu: handle more than first power supply, thanks to Miro Ramza
+    * FIX: ipmi_sensors: ignore sensors in state [NA] (not available)
+    * FIX: aix_lvm: handle agents that output an extra header line
+    * FIX: zfsget: do not assume that devices begin with /, but mountpoints
+    * FIX: ipmi_sensors: handle two cases for DELL correctly (thanks to Sebastian Talmon)
+    * FIX: check_dns: enable performance data
+    * FIX: free_ipmi: fix name of sensor cache file if hostname contains domain part
+    * FIX: ad_replication plugin: Fixed typo (Thanks to Dennis Honke)
+
+    Multisite:
+    * List of views: Output the alias of a datasource instead of internal name
+    * FIX: fix column editor for join columns if "SERVICE:" is l10n'ed
+    * FIX: fix invalid request in livestatus query after reconnect
+
+    WATO:
+    * FIX: convert editing of global setting to POST. This avoid URL-too-long
+      when defining lots of Event Console actions
+    * FIX: LDAP configuration: allow DNs without DC=
+
+    Event Console:
+    * FIX: fix icon in events check if host specification is by IP address
+    * Renamed "Delete Event" to "Archive Event" to clearify the meaning
+
+    Notifications:
+    * FIX: contacts with notifications disabled no longer receive 
+           custom notifications, unless forced
 
 1.2.2p1:
     Core:
@@ -150,6 +237,9 @@
     * FIX: titles and services got lost when moving join-columns in views
     * FIX: Fixed exception during initial page rendering in python 2.6 in special cases
            (Internal error: putenv() argument 2 must be string, not list)
+
+    Livestatus:
+    * livestatus.log: show utf-8 decoding problems only with debug logging >=2
 
     Notifications:
     * FIX: HTML mails: Handle the case where plugin argument is not set
@@ -255,7 +345,7 @@
            user/kernel percentages. (thanks to William Baum)
     * FIX: UPS checks support Eaton Evolution
     * FIX: windows agent plugin: mssql now exits after 10 seconds
-    
+
     Notifications:
     * FIX: fixed crash on host notification when contact had explicit services set
 
@@ -269,12 +359,12 @@
     Multisite:
     * FIX: Avoid duplicate "Services" button in host detail views
     * FIX: fix rescheduling icon for services with non-ASCII characters
-    * New filter for IP address of a host 
+    * New filter for IP address of a host
     * Quicksearch: allow searching for complete IP addresses and IP
       address prefixes
     * Add logentry class filter to view 'Host- and Service events'
 
-    BI: 
+    BI:
     * FIX: fix exception with expansion level being 'None'
     * FIX: speedup for single host tables joined by hostname (BI-Boxes)
     * FIX: avoid closing BI subtree while tree is being loaded

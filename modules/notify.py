@@ -34,8 +34,7 @@
 # hostname, servicedesc, hoststate, servicestate, output in
 # the form %(variable)s
 
-import pprint
-import urllib
+import pprint, urllib, select
 
 # Default settings
 notification_logdir   = var_dir + "/notify"
@@ -178,7 +177,7 @@ def notify_log(message):
             file(notification_log, "a").write(formatted.encode("utf-8"))
 
 def notify_usage():
-    sys.stderr.write("""Usage: check_mk --notify
+    sys.stderr.write("""Usage: check_mk --notify [--keepalive]
        check_mk --notify fake-service <plugin>
        check_mk --notify fake-host <plugin>
        check_mk --notify spoolfile <filename>
@@ -276,21 +275,22 @@ def urlencode(s):
     return urllib.quote(s)
 
 def do_notify(args):
+    global notify_mode
     try:
-        mode = 'notify'
+        notify_mode = 'notify'
         if args:
             if len(args) != 2 or args[0] not in ['fake-service', 'fake-host', 'spoolfile']:
                 sys.stderr.write("ERROR: Invalid call to check_mk --notify.\n\n")
                 notify_usage()
                 sys.exit(1)
 
-            mode, argument = args
-            if mode in ['fake-service', 'fake-host']:
+            notify_mode, argument = args
+            if notify_mode in ['fake-service', 'fake-host']:
                 plugin = argument
-            if mode in ['spoolfile']:
+            if notify_mode in ['spoolfile']:
                filename = argument
 
-            if mode in ['fake-service', 'fake-host']:
+            if notify_mode in ['fake-service', 'fake-host']:
                 global g_interactive
                 g_interactive = True
 
@@ -299,84 +299,20 @@ def do_notify(args):
         if not os.path.exists(notification_spooldir):
             os.makedirs(notification_spooldir)
 
-        # If the mode is set to 'spoolfile' we try to parse the given spoolfile
+        # If the notify_mode is set to 'spoolfile' we try to parse the given spoolfile
         # This spoolfile contains a python dictionary
         # { context: { Dictionary of environment variables }, plugin: "Plugin name" }
         # Any problems while reading the spoolfile results in returning 2
         # -> mknotifyd deletes this file
-        if mode == "spoolfile":
+        if notify_mode == "spoolfile":
             return handle_spoolfile(filename)
 
-        # Hier müssen wir erstmal rausfinden, an wen die Notifikation gehen soll.
-        # Das sollte hoffentlich als Env-Variable da sein. Wenn nicht in check_mk_templates.cfg
-        # einbauen. Dann können wir in den Kontaktdefinitionen nachschauen. Diese sollten
-        # ja in main.mk/conf.d vorhanden sein. Die neue Notifikationstabelle muss auf jeden
-        # fall da rein. Für den Benutzer rufen also diese Tabelle auf. Wenn es die
-        # nicht gibt (garkein Eintrag), verfahren wir nach dem alten Verfahren und
-        # senden direkt eine Email. Wenn es die Tabelle aber gibt, werten wir
-        # Zeile für Zeile aus:
-        # - Bestimmen, ob die Zeile aktiv ist. Dazu ist evtl. eine Livestatus-Rückanfrage
-        #   notwendig. Das ist nicht optimal, aber zumindest wegen der Timeperiods notwendig.
-        # - Wenn aktiv, dann rufen wir das Plugin dazu auf. Dieses hat sich mit einer
-        #   Python-Funktion registriert. Wo werden diese definiert? Im precompiled-Fall
-        #   brauchen wir das *nicht*. Man könnte die Plugins also einfach nur bei --notify
-        #   einlesen. Zeitkritisch ist das nicht sehr, denn Notifikationen sind selten.
+        if opt_keepalive:
+            notify_keepalive()
 
-        # Information about notification is excpected in the
-        # environment in variables with the prefix NOTIFY_
-        context = dict([
-            (var[7:], value.decode("utf-8"))
-            for (var, value)
-            in os.environ.items()
-            if var.startswith("NOTIFY_")
-                and not re.match('^\$[A-Z]+\$$', value)])
+        else:
+            notify_notify()
 
-        # Add a few further helper variables
-        import socket
-        context["MONITORING_HOST"] = socket.gethostname()
-        if omd_root:
-            context["OMD_ROOT"] = omd_root
-            context["OMD_SITE"] = os.getenv("OMD_SITE", "")
-
-        context["WHAT"] = context.get("SERVICEDESC") and "SERVICE" or "HOST"
-        context["MAIL_COMMAND"] = notification_mail_command
-
-        # Handle interactive calls
-        if mode == 'fake-service':
-            set_fake_env('service', context)
-        elif mode == 'fake-host':
-            set_fake_env('host', context)
-
-        context['HOSTURL'] = '/check_mk/view.py?view_name=hoststatus&host=%s' % urlencode(context['HOSTNAME'])
-        if context['WHAT'] == 'SERVICE':
-            context['SERVICEURL'] = '/check_mk/view.py?view_name=service&host=%s&service=%s' % \
-                                     (urlencode(context['HOSTNAME']), urlencode(context['SERVICEDESC']))
-
-        if mode in [ 'fake-service', 'fake-host' ]:
-            sys.exit(call_notification_script(plugin, [], context, True))
-
-        if 'LASTHOSTSTATECHANGE' in context:
-            context['LASTHOSTSTATECHANGE_REL'] = get_readable_rel_date(context['LASTHOSTSTATECHANGE'])
-        if context['WHAT'] != 'HOST' and 'LASTSERVICESTATECHANGE' in context:
-            context['LASTSERVICESTATECHANGE_REL'] = get_readable_rel_date(context['LASTSERVICESTATECHANGE'])
-
-        if notification_logging >= 2:
-            notify_log("Notification context:\n"
-                       + "\n".join(["%s=%s" % v for v in sorted(context.items())]))
-
-        if not context:
-            sys.stderr.write("check_mk --notify expects context data in environment variables "
-                             "that are prefixed with NOTIFY_\n")
-            sys.exit(1)
-
-        if notification_spooling:
-            # Create spoolfile
-            target_site = "%s:%s" % notification_spool_to[0:2]
-            create_spoolfile({"context": context, "forward": target_site})
-            if not notification_spool_to[2]:
-                return 0
-
-        process_context(context, notification_spooling)
     except Exception, e:
         if g_interactive:
             raise
@@ -384,6 +320,155 @@ def do_notify(args):
         if not os.path.exists(crash_dir):
             os.makedirs(crash_dir)
         file(crash_dir + "/crash.log", "a").write("CRASH:\n%s\n\n" % format_exception())
+
+
+def notify_data_available():
+    readable, writeable, exceptionable = select.select([0], [], [], None)
+    return not not readable
+
+def notify_config_timestamp():
+    mtime = 0
+    for dirpath, dirnames, filenames in os.walk(check_mk_configdir):
+        for f in filenames:
+            mtime = max(mtime, os.stat(dirpath + "/" + f).st_mtime)
+    mtime = max(mtime, os.stat(default_config_dir + "/main.mk").st_mtime)
+    try:
+        mtime = max(mtime, os.stat(default_config_dir + "/final.mk").st_mtime)
+    except:
+        pass
+    try:
+        mtime = max(mtime, os.stat(default_config_dir + "/local.mk").st_mtime)
+    except:
+        pass
+    return mtime
+
+
+
+def notify_keepalive():
+    global g_notify_readahead_buffer
+    g_notify_readahead_buffer = ""
+    config_timestamp = notify_config_timestamp()
+
+    while True:
+        try:
+            # If the configuration has changed, we do a restart. But we do
+            # this check just before the next notification arrives. We must
+            # *not* read data from stdin, just peek! On the other hand we
+            # must *not* restart when there is danger that the buffered
+            # sys.stdin has already read data from the next notification. That
+            # would get lost! So we do restart if:
+            # - The last time we look *no* data was available on stdin.
+            # - Now there *is* data available
+            # - The buffer of stdin is empty
+            # - The timestamp of the youngest configuration file has changed.
+            if notify_data_available():
+                if not g_notify_readahead_buffer:
+                    current_config_timestamp = notify_config_timestamp()
+                    if current_config_timestamp > config_timestamp:
+                        notify_log("Configuration has changed. Restarting myself.")
+                        os.execvp("cmk", sys.argv)
+
+                new_data = os.read(0, 4096)
+                if not new_data:
+                    sys.exit(0) # closed stdin
+                g_notify_readahead_buffer += new_data
+                if g_notify_readahead_buffer.startswith('\n\n'):
+                    exit(0)
+                while '\n\n' in g_notify_readahead_buffer:
+                    notify_notify()
+        except Exception, e:
+            if opt_debug:
+                raise
+            notify_log("ERROR %s\n%s" % (e, format_exception()))
+
+def notify_get_context():
+    global g_notify_readahead_buffer
+    if opt_keepalive:
+        # Context is line-by-line in g_notify_readahead_buffer
+        this_part, rest = g_notify_readahead_buffer.split('\n\n', 1)
+        g_notify_readahead_buffer = rest
+        context = {}
+        try:
+            for line in this_part.split('\n'):
+                varname, value = line.strip().split("=", 1)
+                context[varname] = value
+        except Exception, e: # line without '=' ignored or alerted
+            if opt_debug:
+                raise
+        return context
+
+    else:
+        # Information about notification is excpected in the
+        # environment in variables with the prefix NOTIFY_
+        return dict([
+            (var[7:], value.decode("utf-8"))
+            for (var, value)
+            in os.environ.items()
+            if var.startswith("NOTIFY_")
+                and not re.match('^\$[A-Z]+\$$', value)])
+
+
+
+def notify_notify():
+    context = notify_get_context()
+    notify_log("Got notification context with %s variables" % len(context))
+
+    # Add a few further helper variables
+    import socket
+    context["MONITORING_HOST"] = socket.gethostname()
+    if omd_root:
+        context["OMD_ROOT"] = omd_root
+        context["OMD_SITE"] = os.getenv("OMD_SITE", "")
+
+    context["WHAT"] = context.get("SERVICEDESC") and "SERVICE" or "HOST"
+    context["MAIL_COMMAND"] = notification_mail_command
+
+    # The Check_MK Micro Core sends the MICROTIME and now
+    # other time stamps
+    if "MICROTIME" in context:
+        microtime = int(context["MICROTIME"])
+        timestamp = float(microtime) / 1000000.0
+        broken = time.localtime(timestamp)
+        context["DATE"] = time.strftime("%Y-%m-%d", broken)
+        context["SHORTDATETIME"] = time.strftime("%Y-%m-%d %H:%M:%S", broken)
+        context["LONGDATETIME"] = time.strftime("%a %b %d %H:%M:%S %Z %Y", broken) 
+
+    # Handle interactive calls
+    if notify_mode == 'fake-service':
+        set_fake_env('service', context)
+    elif notify_mode == 'fake-host':
+        set_fake_env('host', context)
+
+    context['HOSTURL'] = '/check_mk/view.py?view_name=hoststatus&host=%s' % urlencode(context['HOSTNAME'])
+    if context['WHAT'] == 'SERVICE':
+        context['SERVICEURL'] = '/check_mk/view.py?view_name=service&host=%s&service=%s' % \
+                                 (urlencode(context['HOSTNAME']), urlencode(context['SERVICEDESC']))
+
+    if notify_mode in [ 'fake-service', 'fake-host' ]:
+        sys.exit(call_notification_script(plugin, [], context, True))
+
+    if 'LASTHOSTSTATECHANGE' in context:
+        context['LASTHOSTSTATECHANGE_REL'] = get_readable_rel_date(context['LASTHOSTSTATECHANGE'])
+    if context['WHAT'] != 'HOST' and 'LASTSERVICESTATECHANGE' in context:
+        context['LASTSERVICESTATECHANGE_REL'] = get_readable_rel_date(context['LASTSERVICESTATECHANGE'])
+
+    if notification_logging >= 2:
+        notify_log("Notification context:\n"
+                   + "\n".join(["%s=%s" % v for v in sorted(context.items())]))
+
+    if not context:
+        sys.stderr.write("check_mk --notify expects context data in environment variables "
+                         "that are prefixed with NOTIFY_\n")
+        sys.exit(1)
+
+    if notification_spooling:
+        # Create spoolfile
+        target_site = "%s:%s" % notification_spool_to[0:2]
+        create_spoolfile({"context": context, "forward": target_site})
+        if not notification_spool_to[2]:
+            return 0
+
+    process_context(context, notification_spooling)
 
 
 def notify_via_email(context, write_into_spoolfile):
@@ -435,6 +520,18 @@ def should_notify(context, entry):
         hostname = context.get("HOSTNAME")
         if hostname not in entry["only_hosts"]:
             notify_log(" - Skipping: host '%s' matches non of %s" % (hostname, ", ".join(entry["only_hosts"])))
+            return False
+
+    # Check if the host has to be in a special service_level
+    if "match_sl" in entry:
+        from_sl, to_sl = entry['match_sl']
+        if context['WHAT'] == "SERVICE":
+            sl = saveint(context['SVC_SL'])
+        else:
+            sl = saveint(context['HOST_SL'])
+
+        if sl < from_sl or sl > to_sl: 
+            notify_log(" - Skipping: service level %d not between %d and %d" % (sl, from_sl, to_sl))
             return False
 
     # Check service, if configured

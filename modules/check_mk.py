@@ -24,9 +24,6 @@
 # to the Free Software Foundation, Inc., 51 Franklin St,  Fifth Floor,
 # Boston, MA 02110-1301 USA.
 
-# This file is also read in by check_mk's web pages. In that case,
-# the variable check_mk_web is set to True
-
 import os, sys, socket, time, getopt, glob, re, stat, py_compile, urllib, inspect
 
 # These variable will be substituted at 'make dist' time
@@ -127,7 +124,7 @@ def verbose(t):
 # read in this file first. It tells us where to look for our
 # configuration file. In python argv[0] always contains the directory,
 # even if the binary lies in the PATH and is called without
-# '/'. This allows us to find our directory by taking everying up to
+# '/'. This allows us to find our directory by taking everything up to
 # the first '/'
 
 # Allow to specify defaults file on command line (needed for OMD)
@@ -211,6 +208,7 @@ ALL_SERVICES   = [ "" ]          # optical replacement"
 NEGATE         = '@negate'       # negation in boolean lists
 
 # Basic Settings
+monitoring_core                    = "nagios" # other option: "cmc"
 agent_port                         = 6556
 agent_ports                        = []
 snmp_ports                         = [] # UDP ports used for SNMP
@@ -222,7 +220,7 @@ aggr_summary_hostname              = "%s-s"
 agent_min_version                  = 0 # warn, if plugin has not at least version
 check_max_cachefile_age            = 0 # per default do not use cache files when checking
 cluster_max_cachefile_age          = 90   # secs.
-piggyback_max_cachefile_age        = 900  # secs
+piggyback_max_cachefile_age        = 3600  # secs
 piggyback_translation              = [] # Ruleset for translating piggyback host names
 simulation_mode                    = False
 agent_simulator                    = False
@@ -231,6 +229,8 @@ check_mk_perfdata_with_times       = True
 debug_log                          = None
 monitoring_host                    = None # deprecated
 max_num_processes                  = 50
+timeperiod_horizon                 = 365 * 86400  # for CMC
+
 
 # SNMP communities and encoding
 snmp_default_community             = 'public'
@@ -348,12 +348,13 @@ special_agent_info                 = {}
 
 
 # Now include the other modules. They contain everything that is needed
-# at check time (and many of that is also needed at administration time).
+# at check time (and many of what is also needed at administration time).
 try:
-    modules =  [ 'check_mk_base', 'snmp', 'notify', 'prediction' ]
+    modules =  [ 'check_mk_base', 'snmp', 'notify', 'prediction', 'cmc' ]
     for module in modules:
         filename = modules_dir + "/" + module + ".py"
-        execfile(filename)
+        if os.path.exists(filename):
+            execfile(filename)
 
 except Exception, e:
     sys.stderr.write("Cannot read file %s: %s\n" % (filename, e))
@@ -524,7 +525,7 @@ def host_is_aggregated(hostname):
     if not service_aggregations:
         return False
 
-    # host might by explicitely configured as not aggregated
+    # host might by explicitly configured as not aggregated
     if in_binary_hostlist(hostname, non_aggregated_hosts):
         return False
 
@@ -533,7 +534,7 @@ def host_is_aggregated(hostname):
     is_aggr = len(host_extra_conf(hostname, host_conf_list)) > 0
     return is_aggr
 
-# Determines the aggretated service name for a given
+# Determines the aggregated service name for a given
 # host and service description. Returns "" if the service
 # is not aggregated
 def aggregated_service_name(hostname, servicedesc):
@@ -844,7 +845,7 @@ def is_cluster(hostname):
 def clusters_of(hostname):
     return [ strip_tags(c) for c,n in clusters.items() if hostname in n ]
 
-# Determine wether a service (found on a physical host) is a clustered
+# Determine weather a service (found on a physical host) is a clustered
 # service and - if yes - return the cluster host of the service. If
 # no, returns the hostname of the physical host.
 def host_of_clustered_service(hostname, servicedesc):
@@ -852,7 +853,7 @@ def host_of_clustered_service(hostname, servicedesc):
     if not the_clusters:
         return hostname
 
-    # 1. New style: explicitlely assigned services
+    # 1. New style: explicitly assigned services
     for cluster, conf in clustered_services_of.items():
         nodes = nodes_of(cluster)
         if not nodes:
@@ -884,7 +885,7 @@ def host_of_clustered_service(hostname, servicedesc):
 # Format: ( checkname, item ) -> (params, description )
 
 # Keep a global cache of per-host-checktables, since this
-# operation is quiet lengty.
+# operation is quite lengthy.
 g_check_table_cache = {}
 # A further cache splits up all checks into single-host-entries
 # and those possibly matching multiple hosts. The single host entries
@@ -939,11 +940,15 @@ def get_check_table(hostname):
         elif type(hostlist[0]) == str:
             hostlist = strip_tags(hostlist)
         elif hostlist != []:
-            raise MKGeneralException("Invalid entry '%r' in check table. Must be single hostname or list of hostnames" % hostinfolist)
+            raise MKGeneralException("Invalid entry '%r' in check table. Must be single hostname or list of hostnames" % hostlist)
 
         if hosttags_match_taglist(tags_of_host(hostname), tags) and \
                in_extraconf_hostlist(hostlist, hostname):
             descr = service_description(checkname, item)
+            if service_ignored(hostname, checkname, descr):
+                return
+            if hostname != host_of_clustered_service(hostname, descr):
+                return
             deps  = service_deps(hostname, descr)
             check_table[(checkname, item)] = (params, descr, deps)
 
@@ -954,6 +959,16 @@ def get_check_table(hostname):
 
     for entry in g_multihost_checks:
         handle_entry(entry)
+
+    # Now add checks a cluster might receive from its nodes
+    if is_cluster(hostname):
+        for node in nodes_of(hostname):
+            node_checks = g_singlehost_checks.get(node, [])
+            for nodename, checkname, item, params in node_checks:
+                descr = service_description(checkname, item)
+                if hostname == host_of_clustered_service(node, descr):
+                    handle_entry((hostname, checkname, item, params))
+
 
     # Remove dependencies to non-existing services
     all_descr = set([ descr for ((checkname, item), (params, descr, deps)) in check_table.items() ])
@@ -1106,7 +1121,7 @@ def service_description(check_type, item):
         descr_format = check_info[check_type]["service_description"]
 
     # Note: we strip the service description (remove spaces).
-    # One check defines "Pages %s" as a desription, but the item
+    # One check defines "Pages %s" as a description, but the item
     # can by empty in some cases. Nagios silently drops leading
     # and trailing spaces in the configuration file.
 
@@ -1204,6 +1219,17 @@ def parse_hostname_list(args):
                                  "not match any host.\n" % arg)
                 sys.exit(1)
     return hostlist
+
+def alias_of(hostname, fallback):
+    aliases = host_extra_conf(hostname, extra_host_conf.get("alias", []))
+    if len(aliases) == 0:
+        if fallback:
+            return fallback
+        else:
+            return hostname
+    else:
+        return aliases[0]
+
 
 
 def hostgroups_of(hostname):
@@ -1311,6 +1337,10 @@ def host_check_command(hostname, ip, is_clust):
         return "check-mk-host-ok"
 
     elif value == "agent" or value[0] == "service":
+        if monitoring_core == "cmc":
+            raise MKGeneralException("Cannot configure host check command for host <b>%s</b>: "
+                   "Sorry, host checks of type 'Use status of a service' "
+                   "are not implemented in the Check_MK Micro Core" % hostname)
         service = value == "agent" and "Check_MK" or value[1]
         command = "check-mk-host-custom-%d" % (len(hostcheck_commands_to_define) + 1)
         hostcheck_commands_to_define.append((command,
@@ -1677,12 +1707,12 @@ def create_nagios_hostdefs(outfile, hostname):
         if not extra_conf_parents:
             outfile.write("  parents\t\t\t%s\n" % ",".join(nodes))
 
-    # Output alias, but only if it's not define in extra_host_conf
-    aliases = host_extra_conf(hostname, extra_host_conf.get("alias", []))
-    if len(aliases) == 0:
+    # Output alias, but only if it's not defined in extra_host_conf
+    alias = alias_of(hostname, None)
+    if alias == None:
         outfile.write("  alias\t\t\t\t%s\n" % alias)
     else:
-        alias = make_utf8(aliases[0])
+        alias = make_utf8(alias)
 
 
     # Custom configuration last -> user may override all other values
@@ -1790,7 +1820,10 @@ def create_nagios_servicedefs(outfile, hostname):
         # Customized interval of Check_MK service
         values = service_extra_conf(hostname, "Check_MK", extra_service_conf.get('check_interval', []))
         if values:
-            check_interval = int(values[0])
+            try:
+                check_interval = int(values[0])
+            except:
+                check_interval = float(values[0])
         value = check_interval_of(hostname, checkname)
         if value is not None:
             check_interval = value
@@ -2201,7 +2234,7 @@ def create_nagios_config_contacts(outfile):
             # If the contact is in no contact group or all of the contact groups
             # of the contact have neither hosts nor services assigned - in other
             # words if the contact is not assigned to any host or service, then
-            # we do not create this contact in Nagios. It's useless and wil produce
+            # we do not create this contact in Nagios. It's useless and will produce
             # warnings.
             cgrs = [ cgr for cgr in contact.get("contactgroups", []) if cgr in contactgroups_to_define ]
             if not cgrs:
@@ -2218,6 +2251,7 @@ def create_nagios_config_contacts(outfile):
             for what in [ "host", "service" ]:
                 no = contact.get(what + "_notification_options", "")
                 if not no or not not_enabled:
+                    outfile.write("  %s_notifications_enabled\t0\n" % what)
                     no = "n"
                 outfile.write("  %s_notification_options\t%s\n" % (what, ",".join(list(no))))
                 outfile.write("  %s_notification_period\t%s\n" % (what, contact.get("notification_period", "24X7")))
@@ -2468,14 +2502,14 @@ def make_inventory(checkname, hostnamelist, check_only=False, include_state=Fals
                     else:
                         continue # user does not want this item to be checked
 
-                newcheck = '  ("%s", "%s", %r, %s),' % (hn, checkname, item, paramstring)
+                newcheck = '  ("%s", "%s", %r, %s),' % (hostname, checkname, item, paramstring)
                 newcheck += "\n"
                 if newcheck not in newchecks: # avoid duplicates if inventory outputs item twice
                     newchecks.append(newcheck)
                     if include_state:
-                        newitems.append( (hn, checkname, item, paramstring, state_type) )
+                        newitems.append( (hostname, checkname, item, paramstring, state_type) )
                     else:
-                        newitems.append( (hn, checkname, item) )
+                        newitems.append( (hostname, checkname, item) )
                     count_new += 1
 
 
@@ -2525,7 +2559,7 @@ def check_inventory(hostname):
             info = ", ".join([ "%s:%d" % (ct, count) for ct,count in newchecks ])
             statustext = { 0 : "OK", 1: "WARNING", 2:"CRITICAL" }.get(inventory_check_severity, "UNKNOWN")
             sys.stdout.write("%s - %d unchecked services (%s)\n" % (statustext, total_count, info))
-            # Put detailed list into long pluging output
+            # Put detailed list into long plugin output
             for hostname, checkname, item in newitems:
                 sys.stdout.write("%s: %s\n" % (checkname, service_description(checkname, item)))
             sys.exit(inventory_check_severity)
@@ -2755,7 +2789,7 @@ no_inventory_possible = None
     for var in [ 'check_mk_version', 'tcp_connect_timeout', 'agent_min_version',
                  'perfdata_format', 'aggregation_output_format',
                  'aggr_summary_hostname', 'nagios_command_pipe_path',
-                 'check_result_path', 'check_submission',
+                 'check_result_path', 'check_submission', 'monitoring_core',
                  'var_dir', 'counters_directory', 'tcp_cache_dir', 'tmp_dir',
                  'snmpwalks_dir', 'check_mk_basedir', 'nagios_user', 'rrd_path', 'rrdcached_socket',
                  'omd_root',
@@ -3756,9 +3790,14 @@ def show_paths():
         ( check_manpages_dir,          dir, inst, "Check manpages (for check_mk -M)"),
         ( lib_dir,                     dir, inst, "Binary plugins (architecture specific)"),
         ( pnp_templates_dir,           dir, inst, "Templates for PNP4Nagios"),
-        ( nagios_startscript,          fil, inst, "Startscript for Nagios daemon"),
-        ( nagios_binary,               fil, inst, "Path to Nagios executable"),
+    ]
+    if monitoring_core == "nagios":
+        paths += [
+            ( nagios_startscript,          fil, inst, "Startscript for Nagios daemon"),
+            ( nagios_binary,               fil, inst, "Path to Nagios executable"),
+        ]
 
+    paths += [
         ( default_config_dir,          dir, conf, "Directory that contains main.mk"),
         ( check_mk_configdir,          dir, conf, "Directory containing further *.mk files"),
         ( nagios_config_file,          fil, conf, "Main configuration file of Nagios"),
@@ -3961,10 +4000,11 @@ def usage():
  check_mk [-u] -II ...                     renew inventory, drop old services
  check_mk -u, --cleanup-autochecks         reorder autochecks files
  check_mk -N [HOSTS...]                    output Nagios configuration
+ check_mk -B                               create configuration for core
  check_mk -C, --compile                    precompile host checks
- check_mk -U, --update                     precompile + create Nagios config
- check_mk -O, --reload                     precompile + config + Nagios reload
- check_mk -R, --restart                    precompile + config + Nagios restart
+ check_mk -U, --update                     precompile + create config for core
+ check_mk -O, --reload                     precompile + config + core reload
+ check_mk -R, --restart                    precompile + config + core restart
  check_mk -D, --dump [H1 H2 ..]            dump all or some hosts
  check_mk -d HOSTNAME|IPADDRESS            show raw information from agent
  check_mk --check-inventory HOSTNAME       check for items not yet checked
@@ -3984,13 +4024,15 @@ def usage():
  check_mk --scan-parents [HOST1 HOST2...]  autoscan parents, create conf.d/parents.mk
  check_mk -P, --package COMMAND            do package operations
  check_mk --localize COMMAND               do localization operations
+ check_mk --notify                         used to send notifications from core
+ check_mk --create-rrd [--keepalive|SPEC]  create round robin database
  check_mk -V, --version                    print version
  check_mk -h, --help                       print this help
 
 OPTIONS:
   -v             show what's going on
   -p             also show performance data (use with -v)
-  -n             do not submit results to Nagios, do not save counters
+  -n             do not submit results to core, do not save counters
   -c FILE        read config file FILE instead of %s
   --cache        read info from cache file is present and fresh, use TCP
                  only, if cache file is absent or too old
@@ -4003,6 +4045,9 @@ OPTIONS:
   --debug        never catch Python exceptions
   --procs N      start up to N processes in parallel during --scan-parents
   --checks A,..  restrict checks/inventory to specified checks (tcp/snmp/check type)
+  --keepalive    used by Check_MK Mirco Core: run check and --notify in continous
+                 mode. Read data from stdin and von from cmd line and environment
+  --cmc-file=X   relative filename for CMC config file (used by -B/-U)
 
 NOTES:
   -I can be restricted to certain check types. Write '--checks df -I' if you
@@ -4031,7 +4076,7 @@ NOTES:
   -d does not work on clusters (such defined in main.mk) but only on
   real hosts.
 
-  --check-inventory make check_mk behave as Nagios plugins that
+  --check-inventory make check_mk behave as monitoring plugins that
   checks if an inventory would find new services for the host.
 
   --list-hosts called without argument lists all hosts. You may
@@ -4084,7 +4129,7 @@ NOTES:
   hosts's parents. It creates the file conf.d/parents.mk which
   defines gateway hosts and parent declarations.
 
-  Nagios can call check_mk without options and the hostname and its IP
+  The core can call check_mk without options and the hostname and its IP
   address as arguments. Much faster is using precompiled host checks,
   though.
 
@@ -4098,10 +4143,13 @@ NOTES:
 
 
 def do_create_config():
-    out = file(nagios_objects_file, "w")
-    sys.stdout.write("Generating Nagios configuration...")
+    sys.stdout.write("Generating configuration for core (type %s)..." % monitoring_core)
     sys.stdout.flush()
-    create_nagios_config(out)
+    if monitoring_core == "cmc":
+        do_create_cmc_config(opt_cmc_relfilename)
+    else:
+        out = file(nagios_objects_file, "w")
+        create_nagios_config(out)
     sys.stdout.write(tty_ok + "\n")
 
 def do_output_nagios_conf(args):
@@ -4116,14 +4164,11 @@ def do_precompile_hostchecks():
     sys.stdout.write(tty_ok + "\n")
 
 
-def do_update():
+def do_update(with_precompile):
     try:
         do_create_config()
-        do_precompile_hostchecks()
-        sys.stdout.write(("Successfully created Nagios configuration file %s%s%s.\n\n" +
-                         "Please make sure that file will be read by Nagios.\n" +
-                         "You need to restart Nagios in order to activate " +
-                         "the changes.\n") % (tty_green + tty_bold, nagios_objects_file, tty_normal))
+        if with_precompile and monitoring_core != "cmc":
+            do_precompile_hostchecks()
 
     except Exception, e:
         sys.stderr.write("Configuration Error: %s\n" % e)
@@ -4133,30 +4178,36 @@ def do_update():
 
 
 def do_check_nagiosconfig():
-    command = nagios_binary + " -vp "  + nagios_config_file + " 2>&1"
-    sys.stdout.write("Validating Nagios configuration...")
-    if opt_verbose:
-        sys.stderr.write("Running '%s'" % command)
-    sys.stderr.flush()
+    if monitoring_core == 'nagios':
+        command = nagios_binary + " -vp "  + nagios_config_file + " 2>&1"
+        sys.stdout.write("Validating Nagios configuration...")
+        if opt_verbose:
+            sys.stderr.write("Running '%s'" % command)
+        sys.stderr.flush()
 
-    process = os.popen(command, "r")
-    output = process.read()
-    exit_status = process.close()
-    if not exit_status:
-        sys.stdout.write(tty_ok + "\n")
-        return True
+        process = os.popen(command, "r")
+        output = process.read()
+        exit_status = process.close()
+        if not exit_status:
+            sys.stdout.write(tty_ok + "\n")
+            return True
+        else:
+            sys.stdout.write("ERROR:\n")
+            sys.stderr.write(output)
+            return False
     else:
-        sys.stdout.write("ERROR:\n")
-        sys.stderr.write(output)
-        return False
+        return True
 
 
-def do_restart_nagios(only_reload):
+def do_restart_core(only_reload):
     action = only_reload and "load" or "start"
-    sys.stdout.write("Re%sing Nagios..." % action)
+    sys.stdout.write("Re%sing monitoring core..." % action)
     sys.stdout.flush()
-    os.putenv("CORE_NOVERIFY", "yes")
-    command = nagios_startscript + " re%s 2>&1" % action
+    if monitoring_core == "nagios":
+        os.putenv("CORE_NOVERIFY", "yes")
+        command = nagios_startscript + " re%s 2>&1" % action
+    else:
+        command = "omd re%s cmc 2>&1" % action
 
     process = os.popen(command, "r")
     output = process.read()
@@ -4173,7 +4224,7 @@ def do_restart(only_reload = False):
     try:
         backup_path = None
 
-        if not lock_nagios_objects_file():
+        if not lock_objects_file():
             sys.stderr.write("Other restart currently in progress. Aborting.\n")
             sys.exit(1)
 
@@ -4190,7 +4241,8 @@ def do_restart(only_reload = False):
             do_create_config()
         except Exception, e:
             sys.stderr.write("Error creating configuration: %s\n" % e)
-            os.rename(backup_path, nagios_objects_file)
+            if backup_path:
+                os.rename(backup_path, nagios_objects_file)
             if opt_debug:
                 raise
             sys.exit(1)
@@ -4198,8 +4250,9 @@ def do_restart(only_reload = False):
         if do_check_nagiosconfig():
             if backup_path:
                 os.remove(backup_path)
-            do_precompile_hostchecks()
-            do_restart_nagios(only_reload)
+            if monitoring_core != "cmc":
+                do_precompile_hostchecks()
+            do_restart_core(only_reload)
         else:
             sys.stderr.write("Nagios configuration is invalid. Rolling back.\n")
             if backup_path:
@@ -4220,7 +4273,7 @@ def do_restart(only_reload = False):
         sys.exit(1)
 
 restart_lock_fd = None
-def lock_nagios_objects_file():
+def lock_objects_file():
     global restart_lock_fd
     # In some bizarr cases (as cmk -RR) we need to avoid duplicate locking!
     if restart_locking and restart_lock_fd == None:
@@ -4431,7 +4484,7 @@ def scan_parents_of(hosts, silent=False, settings={}):
             sys.stdout.flush()
 
     # Now all run and we begin to read the answers. For each host
-    # we add a triple to gateways: the gateway, a scan state  and a diagnostig output
+    # we add a triple to gateways: the gateway, a scan state  and a diagnostic output
     gateways = []
     for host, ip, proc in procs:
         lines = [l.strip() for l in proc.readlines()]
@@ -4910,15 +4963,16 @@ def output_profile():
 # Do option parsing and execute main function -
 # if check_mk is not called as module
 if __name__ == "__main__":
-    short_options = 'SHVLCURODMd:Ic:nhvpXPuN'
+    short_options = 'SHVLCURODMd:Ic:nhvpXPuNB'
     long_options = [ "help", "version", "verbose", "compile", "debug",
                      "list-checks", "list-hosts", "list-tag", "no-tcp", "cache",
                      "flush", "package", "localize", "donate", "snmpwalk", "snmptranslate",
                      "usewalk", "scan-parents", "procs=", "automation=", "notify",
-                     "snmpget=", "profile",
+                     "snmpget=", "profile", "keepalive", "create-rrd",
                      "no-cache", "update", "restart", "reload", "dump", "fake-dns=",
                      "man", "nowiki", "config-check", "backup=", "restore=",
-                     "check-inventory=", "paths", "cleanup-autochecks", "checks=" ]
+                     "check-inventory=", "paths", "cleanup-autochecks", "checks=", 
+                     "cmc-file=" ]
 
     non_config_options = ['-L', '--list-checks', '-P', '--package', '-M', '--notify',
                           '--man', '-V', '--version' ,'-h', '--help', '--automation', ]
@@ -4960,6 +5014,8 @@ if __name__ == "__main__":
             opt_cleanup_autochecks = True
         elif o == '--fake-dns':
             fake_dns = a
+        elif o == '--keepalive':
+            opt_keepalive = True
         elif o == '--usewalk':
             opt_use_snmp_walk = True
         elif o == '--procs':
@@ -4972,6 +5028,8 @@ if __name__ == "__main__":
             seen_I += 1
         elif o == "--checks":
             inventory_checks = a
+        elif o == "--cmc-file":
+            opt_cmc_relfilename = a
 
     # Perform actions (major modes)
     try:
@@ -4993,11 +5051,14 @@ if __name__ == "__main__":
             elif o == '-N':
                 do_output_nagios_conf(args)
                 done = True
+            elif o == '-B':
+                do_update(False)
+                done = True
             elif o in [ '-C', '--compile' ]:
                 precompile_hostchecks()
                 done = True
             elif o in [ '-U', '--update' ] :
-                do_update()
+                do_update(True)
                 done = True
             elif o in [ '-R', '--restart' ] :
                 do_restart()
@@ -5077,6 +5138,12 @@ if __name__ == "__main__":
             elif o == '--notify':
                 read_config_files(False, True)
                 sys.exit(do_notify(args))
+            elif o == '--create-rrd':
+                read_config_files(False, True)
+                execfile(modules_dir + "/rrd.py")
+                do_create_rrd(args)
+                done = True
+
 
     except MKGeneralException, e:
         sys.stderr.write("%s\n" % e)
@@ -5159,9 +5226,11 @@ if __name__ == "__main__":
     if done:
         output_profile()
         sys.exit(0)
-    elif len(args) == 0 or len(args) > 2:
+    elif (len(args) == 0 and not opt_keepalive) or len(args) > 2:
         usage()
         sys.exit(1)
+    elif opt_keepalive:
+        do_check_keepalive()
     else:
 
         hostname = args[0]

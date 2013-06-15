@@ -63,9 +63,18 @@ function run_cached () {
     if [ ! -d $MK_CONFDIR/cache ]; then mkdir -p $MK_CONFDIR/cache ; fi
     CACHEFILE="$MK_CONFDIR/cache/$NAME.cache"
 
+    # Check if the creation of the cache takes suspiciously long and return 
+    # nothing if the age (access time) of $CACHEFILE.new is twice the MAXAGE
+    local NOW=$(date +%s)
+    if [ -e "$CACHEFILE.new" ] ; then
+        local CF_ATIME=$(stat -c %X "$CACHEFILE.new")
+        if [ $((NOW - CF_ATIME)) -ge $((MAXAGE * 2)) ] ; then 
+            return
+        fi
+    fi
+
     # Check if cache file exists and is recent enough
     if [ -s "$CACHEFILE" ] ; then
-        local NOW=$(date +%s)
         local MTIME=$(stat -c %Y "$CACHEFILE")
         if [ $((NOW - MTIME)) -le $MAXAGE ] ; then local USE_CACHEFILE=1 ; fi
         # Output the file in any case, even if it is
@@ -166,8 +175,9 @@ if type ethtool > /dev/null
 then
     for eth in $(sed -e 1,2d < /proc/net/dev | cut -d':' -f1 | sort)
     do
-      echo "[$eth]"
-      ethtool $eth | egrep '(Speed|Duplex|Link detected|Auto-negotiation):'
+        echo "[$eth]"
+        ethtool $eth | egrep '(Speed|Duplex|Link detected|Auto-negotiation):'
+        echo -en "\tAddress: " ; cat /sys/class/net/$eth/address
     done
 fi
 
@@ -242,7 +252,7 @@ fi
 # for the first run (where the cache is created). If ipmi-sensors runs into
 # that timeout, it leaves and empty cache file. We skip this check forever
 # if we find that empty cache file.
-sdrcache=/var/cache/.freeipmi/sdr-cache/sdr-cache-$(hostname).127.0.0.1
+sdrcache=/var/cache/.freeipmi/sdr-cache/sdr-cache-$(hostname | cut -d. -f1).127.0.0.1
 if type ipmi-sensors >/dev/null && [ ! -e "$sdrcache" -o -s "$sdrcache" ]
 then
     echo '<<<ipmi_sensors>>>'

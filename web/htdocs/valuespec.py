@@ -1517,7 +1517,7 @@ class Timeofday(ValueSpec):
 
     def from_html_vars(self, varprefix):
         # Fully specified
-        text = html.var(varprefix).strip()
+        text = html.var(varprefix, "").strip()
         if not text:
             return None
 
@@ -2339,10 +2339,6 @@ class LDAPDistinguishedName(TextAscii):
 
     def validate_value(self, value, varprefix):
         TextAscii.validate_value(self, value, varprefix)
-
-        # At least one DC= must be in distinguished name
-        if value and 'dc=' not in value.lower():
-            raise MKUserError(varprefix, _('Found no "dc=" (Domain Component).'))
 
         # Check wether or not the given DN is below a base DN
         if self.enforce_suffix and value and not value.lower().endswith(self.enforce_suffix.lower()):
